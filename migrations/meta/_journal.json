@@ -15,6 +15,13 @@
       "when": 1782713827433,
       "tag": "0001_fresh_thor_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1782715659806,
+      "tag": "0002_needy_moonstone",
+      "breakpoints": true
     }
   ]
 }

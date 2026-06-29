@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { lbToKg, inToCm, MEASUREMENT_SITES, SITE_LABELS } from "../shared/types";
-import type { Adherence } from "../shared/types";
-import { api, todayLocal } from "./api";
+import { api } from "./api";
+import { MealAnalyzer } from "./MealAnalyzer";
 
 type Tab = "weight" | "measure" | "nutrition";
 
@@ -9,17 +9,12 @@ export function AddSheet({ onClose, onSaved }: { onClose: () => void; onSaved: (
   const [tab, setTab] = useState<Tab>("weight");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
   // weight
   const [lb, setLb] = useState("");
   const [bf, setBf] = useState("");
   // measure
   const [site, setSite] = useState<string>("shoulders");
   const [inches, setInches] = useState("");
-  // nutrition
-  const [kcal, setKcal] = useState("");
-  const [protein, setProtein] = useState("");
-  const [adherence, setAdherence] = useState<Adherence | "">("");
 
   async function save() {
     setErr(null);
@@ -35,18 +30,6 @@ export function AddSheet({ onClose, onSaved }: { onClose: () => void; onSaved: (
         const v = parseFloat(inches);
         if (!isFinite(v) || v < 1 || v > 120) throw new Error("Enter a measurement between 1 and 120 in");
         await api.addMeasurement(site, inToCm(v));
-      } else {
-        const kc = kcal ? parseInt(kcal, 10) : null;
-        const pr = protein ? parseInt(protein, 10) : null;
-        if (kc != null && (!isFinite(kc) || kc < 0 || kc > 20000)) throw new Error("Calories must be 0–20000");
-        if (pr != null && (!isFinite(pr) || pr < 0 || pr > 1000)) throw new Error("Protein must be 0–1000 g");
-        await api.putNutrition({
-          date: todayLocal(),
-          kcal: kc,
-          proteinG: pr,
-          hitProtein: pr != null ? pr >= 160 : null,
-          adherence: adherence || null,
-        });
       }
       onSaved();
     } catch (e) {
@@ -61,7 +44,7 @@ export function AddSheet({ onClose, onSaved }: { onClose: () => void; onSaved: (
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="tabs">
           {(["weight", "measure", "nutrition"] as Tab[]).map((t) => (
-            <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
+            <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => { setTab(t); setErr(null); }}>
               {t}
             </button>
           ))}
@@ -99,36 +82,25 @@ export function AddSheet({ onClose, onSaved }: { onClose: () => void; onSaved: (
           </div>
         )}
 
-        {tab === "nutrition" && (
-          <div className="form">
-            <label className="field">
-              <span>Calories (today)</span>
-              <input inputMode="numeric" value={kcal} onChange={(e) => setKcal(e.target.value)} placeholder="1850" />
-            </label>
-            <label className="field">
-              <span>Protein (g)</span>
-              <input inputMode="numeric" value={protein} onChange={(e) => setProtein(e.target.value)} placeholder="160" />
-            </label>
-            <label className="field">
-              <span>Adherence</span>
-              <select value={adherence} onChange={(e) => setAdherence(e.target.value as Adherence | "")}>
-                <option value="">—</option>
-                <option value="under">Under target</option>
-                <option value="on">On target</option>
-                <option value="over">Over target</option>
-              </select>
-            </label>
-          </div>
-        )}
+        {tab === "nutrition" && <MealAnalyzer onLogged={onSaved} />}
 
-        {err && <p className="form-err">{err}</p>}
+        {tab !== "nutrition" && err && <p className="form-err">{err}</p>}
+
         <div className="sheet-actions">
-          <button className="btn ghost" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button className="btn" onClick={save} disabled={busy}>
-            {busy ? "Saving…" : "Save"}
-          </button>
+          {tab === "nutrition" ? (
+            <button className="btn ghost" onClick={onClose} disabled={busy}>
+              Done
+            </button>
+          ) : (
+            <>
+              <button className="btn ghost" onClick={onClose} disabled={busy}>
+                Cancel
+              </button>
+              <button className="btn" onClick={save} disabled={busy}>
+                {busy ? "Saving…" : "Save"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

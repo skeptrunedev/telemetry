@@ -60,6 +60,29 @@ export const nutritionDays = sqliteTable(
   (t) => ({ pk: primaryKey({ columns: [t.userEmail, t.date] }) }),
 );
 
+// A logged meal: one AI photo-analysis (or manual add). Photos live in R2.
+export const meals = sqliteTable("meals", {
+  id: text("id").primaryKey(), // uuid
+  userEmail: text("user_email").notNull().default(""),
+  date: text("date").notNull(), // YYYY-MM-DD
+  note: text("note"),
+  photoKeys: text("photo_keys"), // JSON array of R2 object keys
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+});
+
+// Per-food line items; SUM per (user, date) rolls up into nutrition_days.
+export const nutritionItems = sqliteTable("nutrition_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userEmail: text("user_email").notNull().default(""),
+  mealId: text("meal_id"),
+  date: text("date").notNull(),
+  name: text("name").notNull(),
+  kcal: integer("kcal").notNull(),
+  proteinG: real("protein_g").notNull(),
+  source: text("source", { enum: ["ai", "manual"] }).notNull().default("ai"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+});
+
 export const ingestTokens = sqliteTable("ingest_tokens", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userEmail: text("user_email"),

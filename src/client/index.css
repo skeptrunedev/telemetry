@@ -486,6 +486,35 @@ body {
   outline: none;
   border-color: var(--good);
 }
+.photo-pick {
+  display: block;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 1.2rem 1rem;
+  text-align: center;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  transition: border-color 160ms var(--ease-out);
+}
+.photo-pick:active {
+  border-color: var(--good);
+}
+.thumbs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+
 .form-err {
   color: var(--alert);
   font-size: 0.85rem;

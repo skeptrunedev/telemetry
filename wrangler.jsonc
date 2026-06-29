@@ -18,5 +18,11 @@
       "database_id": "375af6a2-f028-46d2-8ac3-d51e5c3cece8",
       "migrations_dir": "migrations"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      "bucket_name": "telemetry-photos"
+    }
   ]
 }
