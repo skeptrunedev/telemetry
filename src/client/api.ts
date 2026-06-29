@@ -17,6 +17,7 @@ async function jsend(url: string, method: string, body: unknown): Promise<void> 
 
 export const api = {
   dashboard: (date: string) => jget<DashboardData>(`/api/dashboard?date=${date}`),
+  whoami: () => jget<{ email: string }>(`/api/whoami`),
   targets: () => jget<Targets>(`/api/targets`),
   addWeight: (weightKg: number, bodyFatPct?: number | null) =>
     jsend(`/api/weight`, "POST", { weightKg, bodyFatPct }),

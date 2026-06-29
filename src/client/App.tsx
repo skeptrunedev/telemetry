@@ -41,6 +41,7 @@ function Photos() {
 export default function App() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
   const [view, setView] = useState<View>("today");
   const [adding, setAdding] = useState(false);
 
@@ -55,12 +56,15 @@ export default function App() {
   }, []);
 
   useEffect(load, [load]);
+  useEffect(() => {
+    api.whoami().then((w) => setEmail(w.email)).catch(() => {});
+  }, []);
 
   return (
     <div className="app">
       <header className="topbar">
         <span className="brand">TELEMETRY</span>
-        <span className="brand-sub">{todayLocal()}</span>
+        <span className="brand-sub">{email ?? todayLocal()}</span>
       </header>
 
       <main className="shell">

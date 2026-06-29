@@ -8,6 +8,13 @@
       "when": 1782710150570,
       "tag": "0000_first_rictor",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1782713827433,
+      "tag": "0001_fresh_thor_girl",
+      "breakpoints": true
     }
   ]
 }
