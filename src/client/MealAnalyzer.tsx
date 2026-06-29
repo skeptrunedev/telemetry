@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, todayLocal } from "./api";
 import type { MealAnalysis } from "./api";
+import { compressImage } from "./image";
 
 export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
   const [files, setFiles] = useState<File[]>([]);
@@ -31,7 +32,8 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
     setBusy(true);
     setErr(null);
     try {
-      const res = await api.analyzeMeal(todayLocal(), files);
+      const prepared = await Promise.all(files.map(compressImage));
+      const res = await api.analyzeMeal(todayLocal(), prepared);
       setResult(res);
       onLogged(); // it's already saved server-side; refresh the dashboard total
     } catch (e) {
