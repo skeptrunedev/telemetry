@@ -1,13 +1,29 @@
 import type { DashboardData, NutritionDay, Targets } from "../shared/types";
 
+function reauth(): never {
+  // Cloudflare Access answered a background fetch with a cross-origin login
+  // redirect (session expired/logged out). A top-level reload lets Access show
+  // its login page in a real navigation instead of a dead "Failed to fetch".
+  window.location.reload();
+  throw new Error("Session expired — reloading to sign in…");
+}
+
+// Use redirect:"manual" so an Access login redirect surfaces as an
+// opaqueredirect response we can detect, rather than a thrown CORS error.
+async function rawFetch(url: string, init?: RequestInit): Promise<Response> {
+  const r = await fetch(url, { ...init, redirect: "manual" });
+  if (r.type === "opaqueredirect" || r.status === 0) reauth();
+  return r;
+}
+
 async function jget<T>(url: string): Promise<T> {
-  const r = await fetch(url);
+  const r = await rawFetch(url);
   if (!r.ok) throw new Error(`GET ${url} → ${r.status}`);
   return r.json() as Promise<T>;
 }
 
 async function jsend(url: string, method: string, body: unknown): Promise<void> {
-  const r = await fetch(url, {
+  const r = await rawFetch(url, {
     method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -45,7 +61,7 @@ export const api = {
     const fd = new FormData();
     files.forEach((f, i) => fd.append("photos", f, `meal-${i}.jpg`));
     const q = mode === "beforeafter" ? `&mode=beforeafter` : "";
-    const r = await fetch(`/api/nutrition/analyze?date=${date}${q}`, { method: "POST", body: fd });
+    const r = await rawFetch(`/api/nutrition/analyze?date=${date}${q}`, { method: "POST", body: fd });
     if (!r.ok) throw new Error(`analyze → ${r.status}: ${await r.text().catch(() => "")}`);
     return r.json() as Promise<MealAnalysis>;
   },
