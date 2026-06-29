@@ -73,7 +73,14 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <span className="brand">TELEMETRY</span>
-        <span className="brand-sub">{email ?? todayLocal()}</span>
+        <span className="brand-right">
+          <span className="brand-sub">{email ?? todayLocal()}</span>
+          {email && (
+            <a className="switch" href="https://skeptrune.cloudflareaccess.com/cdn-cgi/access/logout">
+              switch
+            </a>
+          )}
+        </span>
       </header>
 
       <main className="shell">

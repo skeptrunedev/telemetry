@@ -72,6 +72,19 @@ body {
   font-size: 0.7rem;
   color: var(--dim);
 }
+.brand-right {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+.switch {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--good);
+  text-decoration: none;
+}
 
 .shell {
   max-width: 520px;
