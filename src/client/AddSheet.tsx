@@ -27,18 +27,24 @@ export function AddSheet({ onClose, onSaved }: { onClose: () => void; onSaved: (
     try {
       if (tab === "weight") {
         const v = parseFloat(lb);
-        if (!isFinite(v)) throw new Error("Enter a weight in lb");
-        await api.addWeight(lbToKg(v), bf ? parseFloat(bf) : null);
+        if (!isFinite(v) || v < 30 || v > 700) throw new Error("Enter a weight between 30 and 700 lb");
+        const bfv = bf ? parseFloat(bf) : null;
+        if (bfv != null && (!isFinite(bfv) || bfv < 1 || bfv > 80)) throw new Error("Body fat % must be 1–80");
+        await api.addWeight(lbToKg(v), bfv);
       } else if (tab === "measure") {
         const v = parseFloat(inches);
-        if (!isFinite(v)) throw new Error("Enter a measurement in inches");
+        if (!isFinite(v) || v < 1 || v > 120) throw new Error("Enter a measurement between 1 and 120 in");
         await api.addMeasurement(site, inToCm(v));
       } else {
+        const kc = kcal ? parseInt(kcal, 10) : null;
+        const pr = protein ? parseInt(protein, 10) : null;
+        if (kc != null && (!isFinite(kc) || kc < 0 || kc > 20000)) throw new Error("Calories must be 0–20000");
+        if (pr != null && (!isFinite(pr) || pr < 0 || pr > 1000)) throw new Error("Protein must be 0–1000 g");
         await api.putNutrition({
           date: todayLocal(),
-          kcal: kcal ? parseInt(kcal, 10) : null,
-          proteinG: protein ? parseInt(protein, 10) : null,
-          hitProtein: protein ? parseInt(protein, 10) >= 160 : null,
+          kcal: kc,
+          proteinG: pr,
+          hitProtein: pr != null ? pr >= 160 : null,
           adherence: adherence || null,
         });
       }

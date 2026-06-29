@@ -31,7 +31,7 @@ app.get("/api/weight", async (c) => {
   const rows = await db(c)
     .select()
     .from(schema.weightReadings)
-    .orderBy(desc(schema.weightReadings.ts))
+    .orderBy(desc(schema.weightReadings.ts), desc(schema.weightReadings.id))
     .limit(365);
   return c.json(
     rows.map((r) => ({
@@ -46,8 +46,11 @@ app.get("/api/weight", async (c) => {
 
 app.post("/api/weight", async (c) => {
   const body = await c.req.json<{ weightKg?: number; bodyFatPct?: number | null }>();
-  if (typeof body.weightKg !== "number" || !isFinite(body.weightKg)) {
-    return c.json({ error: "weightKg (number) required" }, 400);
+  if (typeof body.weightKg !== "number" || !isFinite(body.weightKg) || body.weightKg < 9 || body.weightKg > 320) {
+    return c.json({ error: "weightKg must be 9–320 kg" }, 400);
+  }
+  if (body.bodyFatPct != null && (body.bodyFatPct < 1 || body.bodyFatPct > 80)) {
+    return c.json({ error: "bodyFatPct must be 1–80" }, 400);
   }
   await db(c).insert(schema.weightReadings).values({
     weightKg: body.weightKg,
@@ -62,7 +65,7 @@ app.get("/api/measurements", async (c) => {
   const rows = await db(c)
     .select()
     .from(schema.measurements)
-    .orderBy(desc(schema.measurements.ts))
+    .orderBy(desc(schema.measurements.ts), desc(schema.measurements.id))
     .limit(500);
   return c.json(
     rows.map((r) => ({
@@ -77,8 +80,14 @@ app.get("/api/measurements", async (c) => {
 
 app.post("/api/measurements", async (c) => {
   const body = await c.req.json<{ site?: string; valueCm?: number }>();
-  if (!body.site || typeof body.valueCm !== "number" || !isFinite(body.valueCm)) {
-    return c.json({ error: "site + valueCm (number) required" }, 400);
+  if (
+    !body.site ||
+    typeof body.valueCm !== "number" ||
+    !isFinite(body.valueCm) ||
+    body.valueCm < 1 ||
+    body.valueCm > 300
+  ) {
+    return c.json({ error: "site + valueCm (1–300 cm) required" }, 400);
   }
   await db(c).insert(schema.measurements).values({
     site: body.site,
@@ -108,6 +117,12 @@ app.put("/api/nutrition", async (c) => {
   }>();
   if (!b.date || !/^\d{4}-\d{2}-\d{2}$/.test(b.date)) {
     return c.json({ error: "date (YYYY-MM-DD) required" }, 400);
+  }
+  if (b.kcal != null && (b.kcal < 0 || b.kcal > 20000)) {
+    return c.json({ error: "kcal must be 0–20000" }, 400);
+  }
+  if (b.proteinG != null && (b.proteinG < 0 || b.proteinG > 1000)) {
+    return c.json({ error: "proteinG must be 0–1000" }, 400);
   }
   const values = {
     date: b.date,
@@ -179,7 +194,7 @@ app.get("/api/dashboard", async (c) => {
   const weightRows = await db(c)
     .select()
     .from(schema.weightReadings)
-    .orderBy(desc(schema.weightReadings.ts))
+    .orderBy(desc(schema.weightReadings.ts), desc(schema.weightReadings.id))
     .limit(120);
 
   const trend = weightRows
@@ -196,7 +211,7 @@ app.get("/api/dashboard", async (c) => {
   const mRows = await db(c)
     .select()
     .from(schema.measurements)
-    .orderBy(desc(schema.measurements.ts))
+    .orderBy(desc(schema.measurements.ts), desc(schema.measurements.id))
     .limit(500);
   const seen = new Set<string>();
   const measurementsLatest: { site: string; valueCm: number; ts: number }[] = [];
@@ -238,7 +253,9 @@ app.post("/api/ingest/weight", async (c) => {
   if (!c.env.INGEST_TOKEN) return c.json({ error: "ingest not configured" }, 503);
   if (token !== c.env.INGEST_TOKEN) return c.json({ error: "unauthorized" }, 401);
   const b = await c.req.json<{ weightKg?: number; bodyFatPct?: number | null; raw?: unknown }>();
-  if (typeof b.weightKg !== "number") return c.json({ error: "weightKg required" }, 400);
+  if (typeof b.weightKg !== "number" || !isFinite(b.weightKg) || b.weightKg < 9 || b.weightKg > 320) {
+    return c.json({ error: "weightKg out of range" }, 400);
+  }
   await db(c).insert(schema.weightReadings).values({
     weightKg: b.weightKg,
     bodyFatPct: b.bodyFatPct ?? null,
