@@ -6,6 +6,7 @@ import { Dashboard } from "./Dashboard";
 import { AreaChart } from "./Chart";
 import { AddSheet } from "./AddSheet";
 import { BottomNav, type View } from "./BottomNav";
+import { WeightHistory } from "./WeightHistory";
 
 function Trends({ data }: { data: DashboardData }) {
   const latestLb = data.weight.latestKg != null ? kgToLb(data.weight.latestKg) : null;
@@ -25,6 +26,7 @@ function Trends({ data }: { data: DashboardData }) {
         <p className="big-num">{data.shoulderToWaist != null ? data.shoulderToWaist.toFixed(3) : "—"}</p>
         <p className="meta">track this climbing as you lean out + build delts</p>
       </section>
+      <WeightHistory />
     </div>
   );
 }

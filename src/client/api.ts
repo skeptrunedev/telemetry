@@ -28,6 +28,7 @@ export type MealAnalysis = {
 };
 export type Meal = { id: string; note: string | null; createdAt: number; photoKeys: string[]; items: LoggedItem[] };
 export type MealMode = "angles" | "beforeafter";
+export type WeightReading = { id: number; ts: number; weightKg: number; bodyFatPct: number | null; note: string | null; source: string };
 
 export const api = {
   dashboard: (date: string) => jget<DashboardData>(`/api/dashboard?date=${date}`),
@@ -35,6 +36,8 @@ export const api = {
   targets: () => jget<Targets>(`/api/targets`),
   addWeight: (weightKg: number, bodyFatPct?: number | null, note?: string | null) =>
     jsend(`/api/weight`, "POST", { weightKg, bodyFatPct, note }),
+  weightList: () => jget<WeightReading[]>(`/api/weight`),
+  setWeightNote: (id: number, note: string | null) => jsend(`/api/weight/${id}`, "PATCH", { note }),
   addMeasurement: (site: string, valueCm: number) =>
     jsend(`/api/measurements`, "POST", { site, valueCm }),
   putNutrition: (d: NutritionDay) => jsend(`/api/nutrition`, "PUT", d),

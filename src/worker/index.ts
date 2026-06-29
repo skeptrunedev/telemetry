@@ -119,6 +119,26 @@ app.post("/api/weight", async (c) => {
   return c.json({ ok: true });
 });
 
+// Edit the note on any past weigh-in (scoped to the user).
+app.patch("/api/weight/:id", async (c) => {
+  const email = userEmail(c);
+  const id = Number(c.req.param("id"));
+  if (!Number.isFinite(id)) return c.json({ error: "bad id" }, 400);
+  const b = await c.req.json<{ note?: string | null }>();
+  const note = b.note ? String(b.note).slice(0, 500) : null;
+  const rows = await db(c)
+    .select()
+    .from(schema.weightReadings)
+    .where(and(eq(schema.weightReadings.id, id), eq(schema.weightReadings.userEmail, email)))
+    .limit(1);
+  if (!rows.length) return c.json({ error: "not found" }, 404);
+  await db(c)
+    .update(schema.weightReadings)
+    .set({ note })
+    .where(and(eq(schema.weightReadings.id, id), eq(schema.weightReadings.userEmail, email)));
+  return c.json({ ok: true });
+});
+
 // ---- measurements ----------------------------------------------------------
 app.get("/api/measurements", async (c) => {
   const email = userEmail(c);

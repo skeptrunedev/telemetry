@@ -222,6 +222,45 @@ body {
   color: var(--muted);
   margin: 0.5rem 0 0;
 }
+.note-edit-trigger {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.35rem 0 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+.note-edit {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.45rem;
+}
+.note-edit input {
+  flex: 1;
+  min-width: 0;
+  background: #0f0f11;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 0.5rem 0.6rem;
+  color: var(--fg);
+  font-size: 0.9rem;
+}
+.note-edit input:focus {
+  outline: none;
+  border-color: var(--good);
+}
+.btn.sm {
+  flex: none;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.82rem;
+  border-radius: 9px;
+}
 
 /* ---- range bar (current within start→goal / value vs target) ---- */
 .rangebar {
