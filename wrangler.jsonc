@@ -2,7 +2,10 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "telemetry",
   "main": "src/worker/index.ts",
+  "account_id": "2f016a113dca4bbf3eda769b3f7d12fd",
   "compatibility_date": "2026-06-01",
+  "workers_dev": false,
+  "preview_urls": false,
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
@@ -12,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "telemetry-db",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "375af6a2-f028-46d2-8ac3-d51e5c3cece8",
       "migrations_dir": "migrations"
     }
   ]
