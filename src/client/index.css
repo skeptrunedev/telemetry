@@ -613,6 +613,26 @@ body {
   outline: none;
   border-color: var(--good);
 }
+.describe-input {
+  width: 100%;
+  background: #0f0f11;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 0.75rem 0.85rem;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 1.02rem;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 96px;
+}
+.describe-input::placeholder {
+  color: var(--muted);
+}
+.describe-input:focus {
+  outline: none;
+  border-color: var(--good);
+}
 .photo-picks {
   display: flex;
   gap: 0.5rem;

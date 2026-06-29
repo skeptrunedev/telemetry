@@ -67,6 +67,9 @@ const VISION_PROMPT =
 const VISION_PROMPT_BEFORE_AFTER =
   "These images are a BEFORE/AFTER set for ONE serving: the first image is the food before eating; the remaining image(s) show the leftovers afterward. Estimate ONLY what was actually consumed — the before portion minus what remains. If there is just one image, treat it as fully eaten. List each consumed food with its kcal and protein (grams), sum into total_kcal and total_protein_g, and in `note` say it's a before/after estimate of what was eaten.";
 
+const DESCRIBE_PROMPT =
+  "The user describes a meal they ate, in their own words. Estimate each distinct food or drink they ACTUALLY ate — respect stated quantities, sides and sauces, and EXCLUDE anything they say they skipped, ignored, or left over. Give kcal and protein (grams) for each item's described portion, sum into total_kcal and total_protein_g, and in `note` state the main assumptions (portion sizes, restaurant defaults).";
+
 // nutrition_days totals are derived from nutrition_items (SUM per user+date).
 async function recomputeDay(c: { env: Bindings }, email: string, date: string) {
   const items = await db(c)
@@ -364,6 +367,54 @@ app.post("/api/nutrition/analyze", async (c) => {
     totalProteinG: Math.round(items.reduce((s, i) => s + i.proteinG, 0)),
     note: parsed.note,
     photoKeys,
+  });
+});
+
+// ---- nutrition: text description -> Claude -> macros ------------------------
+app.post("/api/nutrition/describe", async (c) => {
+  const email = userEmail(c);
+  if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "ai not configured" }, 503);
+  const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
+  const b = await c.req.json<{ text?: string }>();
+  const text = (b.text ?? "").trim().slice(0, 2000);
+  if (!text) return c.json({ error: "describe what you ate" }, 400);
+
+  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
+  type Macro = { items: { name: string; kcal: number; protein_g: number }[]; total_kcal: number; total_protein_g: number; note: string };
+  let parsed: Macro;
+  try {
+    const msg = await anthropic.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 1024,
+      output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
+      messages: [{ role: "user", content: `${DESCRIBE_PROMPT}\n\nMeal: ${text}` }],
+    } as Anthropic.MessageCreateParamsNonStreaming);
+    const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
+    parsed = JSON.parse(out);
+  } catch (e) {
+    return c.json({ error: "analysis failed", detail: String(e) }, 502);
+  }
+
+  const mealId = crypto.randomUUID();
+  await db(c).insert(schema.meals).values({ id: mealId, userEmail: email, date: today, note: text, photoKeys: null });
+  const items = (parsed.items ?? []).slice(0, 30).map((it) => ({
+    userEmail: email, mealId, date: today,
+    name: String(it.name).slice(0, 120),
+    kcal: Math.max(0, Math.round(Number(it.kcal) || 0)),
+    proteinG: Math.max(0, Number(it.protein_g) || 0),
+    source: "ai" as const,
+  }));
+  if (items.length) await db(c).insert(schema.nutritionItems).values(items);
+  await recomputeDay(c, email, today);
+
+  return c.json({
+    ok: true,
+    mealId,
+    items: items.map((i) => ({ name: i.name, kcal: i.kcal, proteinG: i.proteinG })),
+    totalKcal: items.reduce((s, i) => s + i.kcal, 0),
+    totalProteinG: Math.round(items.reduce((s, i) => s + i.proteinG, 0)),
+    note: parsed.note,
+    photoKeys: [],
   });
 });
 

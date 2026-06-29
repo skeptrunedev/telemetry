@@ -65,6 +65,15 @@ export const api = {
     if (!r.ok) throw new Error(`analyze → ${r.status}: ${await r.text().catch(() => "")}`);
     return r.json() as Promise<MealAnalysis>;
   },
+  describeMeal: async (date: string, text: string): Promise<MealAnalysis> => {
+    const r = await rawFetch(`/api/nutrition/describe?date=${date}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!r.ok) throw new Error(`describe → ${r.status}: ${await r.text().catch(() => "")}`);
+    return r.json() as Promise<MealAnalysis>;
+  },
   meals: (date: string) => jget<Meal[]>(`/api/nutrition/meals?date=${date}`),
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),
   deleteItem: (id: number) => jsend(`/api/nutrition/items/${id}`, "DELETE", undefined),
