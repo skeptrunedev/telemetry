@@ -64,6 +64,9 @@ const MACRO_SCHEMA = {
 const VISION_PROMPT =
   "The image(s) show ONE meal, possibly from multiple angles. Identify each distinct food or drink and estimate its calories (kcal) and protein (grams) for the portion actually shown. Be realistic about portion size. Sum them into total_kcal and total_protein_g. In `note`, give one short sentence on key assumptions or uncertainty.";
 
+const VISION_PROMPT_BEFORE_AFTER =
+  "These images are a BEFORE/AFTER set for ONE serving: the first image is the food before eating; the remaining image(s) show the leftovers afterward. Estimate ONLY what was actually consumed — the before portion minus what remains. If there is just one image, treat it as fully eaten. List each consumed food with its kcal and protein (grams), sum into total_kcal and total_protein_g, and in `note` say it's a before/after estimate of what was eaten.";
+
 // nutrition_days totals are derived from nutrition_items (SUM per user+date).
 async function recomputeDay(c: { env: Bindings }, email: string, date: string) {
   const items = await db(c)
@@ -271,6 +274,7 @@ app.post("/api/nutrition/analyze", async (c) => {
   const email = userEmail(c);
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "vision not configured" }, 503);
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
+  const prompt = c.req.query("mode") === "beforeafter" ? VISION_PROMPT_BEFORE_AFTER : VISION_PROMPT;
 
   const form = await c.req.formData();
   type UploadFile = { type: string; arrayBuffer: () => Promise<ArrayBuffer> };
@@ -304,7 +308,7 @@ app.post("/api/nutrition/analyze", async (c) => {
       model: "claude-opus-4-8",
       max_tokens: 1024,
       output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
-      messages: [{ role: "user", content: [...imageBlocks, { type: "text", text: VISION_PROMPT }] }],
+      messages: [{ role: "user", content: [...imageBlocks, { type: "text", text: prompt }] }],
     } as Anthropic.MessageCreateParamsNonStreaming);
     const text = msg.content.filter((b) => b.type === "text").map((b) => (b as Anthropic.TextBlock).text).join("");
     parsed = JSON.parse(text);
@@ -355,7 +359,7 @@ app.get("/api/nutrition/meals", async (c) => {
       note: m.note,
       createdAt: m.createdAt.getTime(),
       photoKeys: m.photoKeys ? (JSON.parse(m.photoKeys) as string[]) : [],
-      items: itemRows.filter((i) => i.mealId === m.id).map((i) => ({ name: i.name, kcal: i.kcal, proteinG: i.proteinG })),
+      items: itemRows.filter((i) => i.mealId === m.id).map((i) => ({ id: i.id, name: i.name, kcal: i.kcal, proteinG: i.proteinG })),
     })),
   );
 });
@@ -369,6 +373,18 @@ app.delete("/api/nutrition/meals/:id", async (c) => {
   await Promise.all(keys.map((k) => c.env.PHOTOS.delete(k).catch(() => {})));
   await db(c).delete(schema.nutritionItems).where(and(eq(schema.nutritionItems.mealId, id), eq(schema.nutritionItems.userEmail, email)));
   await db(c).delete(schema.meals).where(and(eq(schema.meals.id, id), eq(schema.meals.userEmail, email)));
+  await recomputeDay(c, email, rows[0].date);
+  return c.json({ ok: true });
+});
+
+// Remove a single logged food item.
+app.delete("/api/nutrition/items/:id", async (c) => {
+  const email = userEmail(c);
+  const id = Number(c.req.param("id"));
+  if (!Number.isFinite(id)) return c.json({ error: "bad id" }, 400);
+  const rows = await db(c).select().from(schema.nutritionItems).where(and(eq(schema.nutritionItems.id, id), eq(schema.nutritionItems.userEmail, email))).limit(1);
+  if (!rows.length) return c.json({ error: "not found" }, 404);
+  await db(c).delete(schema.nutritionItems).where(and(eq(schema.nutritionItems.id, id), eq(schema.nutritionItems.userEmail, email)));
   await recomputeDay(c, email, rows[0].date);
   return c.json({ ok: true });
 });

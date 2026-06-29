@@ -16,6 +16,7 @@ async function jsend(url: string, method: string, body: unknown): Promise<void> 
 }
 
 export type MealItem = { name: string; kcal: number; proteinG: number };
+export type LoggedItem = MealItem & { id: number };
 export type MealAnalysis = {
   ok: true;
   mealId: string;
@@ -25,7 +26,8 @@ export type MealAnalysis = {
   note: string;
   photoKeys: string[];
 };
-export type Meal = { id: string; note: string | null; createdAt: number; photoKeys: string[]; items: MealItem[] };
+export type Meal = { id: string; note: string | null; createdAt: number; photoKeys: string[]; items: LoggedItem[] };
+export type MealMode = "angles" | "beforeafter";
 
 export const api = {
   dashboard: (date: string) => jget<DashboardData>(`/api/dashboard?date=${date}`),
@@ -36,15 +38,17 @@ export const api = {
   addMeasurement: (site: string, valueCm: number) =>
     jsend(`/api/measurements`, "POST", { site, valueCm }),
   putNutrition: (d: NutritionDay) => jsend(`/api/nutrition`, "PUT", d),
-  analyzeMeal: async (date: string, files: Blob[]): Promise<MealAnalysis> => {
+  analyzeMeal: async (date: string, files: Blob[], mode: MealMode = "angles"): Promise<MealAnalysis> => {
     const fd = new FormData();
     files.forEach((f, i) => fd.append("photos", f, `meal-${i}.jpg`));
-    const r = await fetch(`/api/nutrition/analyze?date=${date}`, { method: "POST", body: fd });
+    const q = mode === "beforeafter" ? `&mode=beforeafter` : "";
+    const r = await fetch(`/api/nutrition/analyze?date=${date}${q}`, { method: "POST", body: fd });
     if (!r.ok) throw new Error(`analyze → ${r.status}: ${await r.text().catch(() => "")}`);
     return r.json() as Promise<MealAnalysis>;
   },
   meals: (date: string) => jget<Meal[]>(`/api/nutrition/meals?date=${date}`),
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),
+  deleteItem: (id: number) => jsend(`/api/nutrition/items/${id}`, "DELETE", undefined),
   photoUrl: (key: string) => `/api/nutrition/photo/${key}`,
 };
 

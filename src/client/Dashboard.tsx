@@ -1,6 +1,7 @@
 import { kgToLb, cmToIn, SITE_LABELS, MEASUREMENT_SITES } from "../shared/types";
 import type { DashboardData } from "../shared/types";
 import { AreaChart } from "./Chart";
+import { FoodLog } from "./FoodLog";
 
 const f1 = (n: number) => n.toFixed(1);
 const DAY = 86_400_000;
@@ -21,7 +22,7 @@ function insight(latestLb: number | null, delta: number | null) {
   return { head: "Holding steady this week", status: ["info", "STEADY"] as [string, string] };
 }
 
-export function Dashboard({ data }: { data: DashboardData }) {
+export function Dashboard({ data, refreshKey, onChange }: { data: DashboardData; refreshKey: number; onChange: () => void }) {
   const { weight, targets, measurementsLatest, shoulderToWaist, nutritionToday } = data;
   const latestLb = weight.latestKg != null ? kgToLb(weight.latestKg) : null;
   const avgLb = weight.weeklyAvgKg != null ? kgToLb(weight.weeklyAvgKg) : null;
@@ -174,6 +175,8 @@ export function Dashboard({ data }: { data: DashboardData }) {
             </div>
           )}
         </section>
+
+        <FoodLog refreshKey={refreshKey} onChange={onChange} />
       </div>
     </>
   );

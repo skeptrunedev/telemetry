@@ -5,7 +5,7 @@ import { MealAnalyzer } from "./MealAnalyzer";
 
 type Tab = "weight" | "measure" | "nutrition";
 
-export function AddSheet({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+export function AddSheet({ onClose, onChange }: { onClose: () => void; onChange: () => void }) {
   const [tab, setTab] = useState<Tab>("weight");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -31,7 +31,8 @@ export function AddSheet({ onClose, onSaved }: { onClose: () => void; onSaved: (
         if (!isFinite(v) || v < 1 || v > 120) throw new Error("Enter a measurement between 1 and 120 in");
         await api.addMeasurement(site, inToCm(v));
       }
-      onSaved();
+      onChange();
+      onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -82,7 +83,7 @@ export function AddSheet({ onClose, onSaved }: { onClose: () => void; onSaved: (
           </div>
         )}
 
-        {tab === "nutrition" && <MealAnalyzer onLogged={onSaved} />}
+        {tab === "nutrition" && <MealAnalyzer onLogged={onChange} />}
 
         {tab !== "nutrition" && err && <p className="form-err">{err}</p>}
 

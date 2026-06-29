@@ -326,6 +326,74 @@ body {
   padding: 0.6rem 0;
 }
 
+/* food log */
+.meals {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.meal {
+  border-top: 1px solid var(--line);
+  padding-top: 0.85rem;
+}
+.meal:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.meal-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.meal-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 9px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  flex: none;
+}
+.meal-sum {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+.meal-total {
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+.meal-note {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.item-right {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.x {
+  border: none;
+  background: transparent;
+  color: var(--dim);
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0.2rem 0.3rem;
+  cursor: pointer;
+  transition: color 160ms var(--ease-out);
+}
+.x:active {
+  color: var(--alert);
+}
+.x.sm {
+  font-size: 0.78rem;
+}
+
 /* ---- bottom nav (floating pill) + FAB ---- */
 .dock {
   position: fixed;

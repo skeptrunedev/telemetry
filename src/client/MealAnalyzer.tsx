@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, todayLocal } from "./api";
-import type { MealAnalysis } from "./api";
+import type { MealAnalysis, MealMode } from "./api";
 import { compressImage } from "./image";
 
 export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
@@ -9,6 +9,7 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<MealAnalysis | null>(null);
+  const [mode, setMode] = useState<MealMode>("angles");
 
   function pick(e: React.ChangeEvent<HTMLInputElement>) {
     const incoming = Array.from(e.target.files ?? []);
@@ -33,7 +34,7 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
     setErr(null);
     try {
       const prepared = await Promise.all(files.map(compressImage));
-      const res = await api.analyzeMeal(todayLocal(), prepared);
+      const res = await api.analyzeMeal(todayLocal(), prepared, mode);
       setResult(res);
       onLogged(); // it's already saved server-side; refresh the dashboard total
     } catch (e) {
@@ -79,6 +80,14 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
 
   return (
     <div className="form">
+      <div className="tabs">
+        <button className={`tab ${mode === "angles" ? "active" : ""}`} onClick={() => setMode("angles")}>
+          One meal
+        </button>
+        <button className={`tab ${mode === "beforeafter" ? "active" : ""}`} onClick={() => setMode("beforeafter")}>
+          Before / after
+        </button>
+      </div>
       <div className="photo-picks">
         <label className="photo-pick">
           <input type="file" accept="image/*" capture="environment" multiple onChange={pick} hidden />
@@ -99,7 +108,13 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
           </button>
         </div>
       )}
-      <p className="meta">{files.length ? `${files.length}/5 photos of one meal` : "Add up to 5 photos of one meal"}</p>
+      <p className="meta">
+        {mode === "beforeafter"
+          ? "First photo = full plate, then the leftovers — AI logs only what you ate."
+          : files.length
+            ? `${files.length}/5 photos of one meal`
+            : "Add up to 5 photos of one meal (multiple angles)"}
+      </p>
       {err && <p className="form-err">{err}</p>}
       <button className="btn" onClick={analyze} disabled={busy || !files.length}>
         {busy ? "Analyzing…" : "Analyze with AI"}

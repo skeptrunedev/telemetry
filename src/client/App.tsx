@@ -44,6 +44,7 @@ export default function App() {
   const [email, setEmail] = useState<string | null>(null);
   const [view, setView] = useState<View>("today");
   const [adding, setAdding] = useState(false);
+  const [tick, setTick] = useState(0);
 
   const load = useCallback(() => {
     api
@@ -54,6 +55,12 @@ export default function App() {
       })
       .catch((e) => setError(String(e)));
   }, []);
+
+  // refresh dashboard totals AND signal child lists (FoodLog) to refetch
+  const reloadAll = useCallback(() => {
+    load();
+    setTick((t) => t + 1);
+  }, [load]);
 
   useEffect(load, [load]);
   useEffect(() => {
@@ -70,22 +77,14 @@ export default function App() {
       <main className="shell">
         {error && <p className="form-err">{error}</p>}
         {!data && !error && <p className="meta">loading…</p>}
-        {data && view === "today" && <Dashboard data={data} />}
+        {data && view === "today" && <Dashboard data={data} refreshKey={tick} onChange={reloadAll} />}
         {data && view === "trends" && <Trends data={data} />}
         {view === "photos" && <Photos />}
       </main>
 
       <BottomNav view={view} onChange={setView} onAdd={() => setAdding(true)} />
 
-      {adding && (
-        <AddSheet
-          onClose={() => setAdding(false)}
-          onSaved={() => {
-            setAdding(false);
-            load();
-          }}
-        />
-      )}
+      {adding && <AddSheet onClose={() => setAdding(false)} onChange={reloadAll} />}
     </div>
   );
 }
