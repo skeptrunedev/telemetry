@@ -1,0 +1,1 @@
+ALTER TABLE `weight_readings` ADD `note` text;

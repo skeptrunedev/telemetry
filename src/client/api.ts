@@ -33,8 +33,8 @@ export const api = {
   dashboard: (date: string) => jget<DashboardData>(`/api/dashboard?date=${date}`),
   whoami: () => jget<{ email: string }>(`/api/whoami`),
   targets: () => jget<Targets>(`/api/targets`),
-  addWeight: (weightKg: number, bodyFatPct?: number | null) =>
-    jsend(`/api/weight`, "POST", { weightKg, bodyFatPct }),
+  addWeight: (weightKg: number, bodyFatPct?: number | null, note?: string | null) =>
+    jsend(`/api/weight`, "POST", { weightKg, bodyFatPct, note }),
   addMeasurement: (site: string, valueCm: number) =>
     jsend(`/api/measurements`, "POST", { site, valueCm }),
   putNutrition: (d: NutritionDay) => jsend(`/api/nutrition`, "PUT", d),

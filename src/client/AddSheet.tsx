@@ -12,6 +12,7 @@ export function AddSheet({ onClose, onChange }: { onClose: () => void; onChange:
   // weight
   const [lb, setLb] = useState("");
   const [bf, setBf] = useState("");
+  const [note, setNote] = useState("");
   // measure
   const [site, setSite] = useState<string>("shoulders");
   const [inches, setInches] = useState("");
@@ -25,7 +26,7 @@ export function AddSheet({ onClose, onChange }: { onClose: () => void; onChange:
         if (!isFinite(v) || v < 30 || v > 700) throw new Error("Enter a weight between 30 and 700 lb");
         const bfv = bf ? parseFloat(bf) : null;
         if (bfv != null && (!isFinite(bfv) || bfv < 1 || bfv > 80)) throw new Error("Body fat % must be 1–80");
-        await api.addWeight(lbToKg(v), bfv);
+        await api.addWeight(lbToKg(v), bfv, note.trim() || null);
       } else if (tab === "measure") {
         const v = parseFloat(inches);
         if (!isFinite(v) || v < 1 || v > 120) throw new Error("Enter a measurement between 1 and 120 in");
@@ -60,6 +61,10 @@ export function AddSheet({ onClose, onChange }: { onClose: () => void; onChange:
             <label className="field">
               <span>Body fat % (optional, noisy)</span>
               <input inputMode="decimal" value={bf} onChange={(e) => setBf(e.target.value)} placeholder="20" />
+            </label>
+            <label className="field">
+              <span>Note (optional)</span>
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="post-workout, dehydrated, …" maxLength={500} />
             </label>
           </div>
         )}

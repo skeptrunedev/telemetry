@@ -22,6 +22,13 @@
       "when": 1782715659806,
       "tag": "0002_needy_moonstone",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1782747346054,
+      "tag": "0003_cute_tattoo",
+      "breakpoints": true
     }
   ]
 }

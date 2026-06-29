@@ -53,6 +53,7 @@ export type DashboardData = {
     latestKg: number | null;
     weeklyAvgKg: number | null;
     bodyFatPct: number | null;
+    note: string | null;
     trend: { ts: number; kg: number }[];
   };
   targets: Targets;

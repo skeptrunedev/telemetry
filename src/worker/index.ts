@@ -97,19 +97,25 @@ app.get("/api/weight", async (c) => {
     .where(eq(schema.weightReadings.userEmail, email))
     .orderBy(desc(schema.weightReadings.ts), desc(schema.weightReadings.id))
     .limit(365);
-  return c.json(rows.map((r) => ({ id: r.id, ts: r.ts.getTime(), weightKg: r.weightKg, bodyFatPct: r.bodyFatPct, source: r.source })));
+  return c.json(rows.map((r) => ({ id: r.id, ts: r.ts.getTime(), weightKg: r.weightKg, bodyFatPct: r.bodyFatPct, note: r.note, source: r.source })));
 });
 
 app.post("/api/weight", async (c) => {
   const email = userEmail(c);
-  const body = await c.req.json<{ weightKg?: number; bodyFatPct?: number | null }>();
+  const body = await c.req.json<{ weightKg?: number; bodyFatPct?: number | null; note?: string }>();
   if (typeof body.weightKg !== "number" || !isFinite(body.weightKg) || body.weightKg < 9 || body.weightKg > 320) {
     return c.json({ error: "weightKg must be 9–320 kg" }, 400);
   }
   if (body.bodyFatPct != null && (body.bodyFatPct < 1 || body.bodyFatPct > 80)) {
     return c.json({ error: "bodyFatPct must be 1–80" }, 400);
   }
-  await db(c).insert(schema.weightReadings).values({ userEmail: email, weightKg: body.weightKg, bodyFatPct: body.bodyFatPct ?? null, source: "manual" });
+  await db(c).insert(schema.weightReadings).values({
+    userEmail: email,
+    weightKg: body.weightKg,
+    bodyFatPct: body.bodyFatPct ?? null,
+    note: body.note ? String(body.note).slice(0, 500) : null,
+    source: "manual",
+  });
   return c.json({ ok: true });
 });
 
@@ -239,7 +245,7 @@ app.get("/api/dashboard", async (c) => {
 
   const targets = await getTargets(c, email);
   const data: DashboardData = {
-    weight: { latestKg: latest?.weightKg ?? null, weeklyAvgKg, bodyFatPct: latest?.bodyFatPct ?? null, trend },
+    weight: { latestKg: latest?.weightKg ?? null, weeklyAvgKg, bodyFatPct: latest?.bodyFatPct ?? null, note: latest?.note ?? null, trend },
     targets,
     measurementsLatest,
     shoulderToWaist,

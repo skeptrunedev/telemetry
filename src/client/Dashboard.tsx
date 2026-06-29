@@ -107,6 +107,7 @@ export function Dashboard({ data, refreshKey, onChange }: { data: DashboardData;
             <span className="meta">7-DAY AVG {avgLb != null ? f1(avgLb) : "—"}</span>
             {weight.bodyFatPct != null && <span className="meta">BF≈ {f1(weight.bodyFatPct)}% (noisy)</span>}
           </div>
+          {weight.note && <p className="note-line">“{weight.note}”</p>}
         </section>
 
         {/* SHOULDER : WAIST */}

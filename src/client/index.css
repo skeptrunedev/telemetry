@@ -215,6 +215,13 @@ body {
   gap: 1rem;
   margin-top: 0.6rem;
 }
+.note-line {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 0.5rem 0 0;
+}
 
 /* ---- range bar (current within start→goal / value vs target) ---- */
 .rangebar {

@@ -12,6 +12,7 @@ export const weightReadings = sqliteTable("weight_readings", {
   ts: integer("ts", { mode: "timestamp_ms" }).notNull().default(nowMs),
   weightKg: real("weight_kg").notNull(),
   bodyFatPct: real("body_fat_pct"),
+  note: text("note"),
   source: text("source", { enum: ["scale", "manual"] }).notNull().default("manual"),
   rawPayload: text("raw_payload"),
 });
