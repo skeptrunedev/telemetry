@@ -9,6 +9,12 @@ export default defineConfig({
     cloudflare(),
     VitePWA({
       registerType: "autoUpdate",
+      injectRegister: false, // we register manually in main.tsx to add update polling
+      workbox: {
+        clientsClaim: true,
+        skipWaiting: true,
+        cleanupOutdatedCaches: true,
+      },
       manifest: {
         name: "Telemetry",
         short_name: "Telemetry",
