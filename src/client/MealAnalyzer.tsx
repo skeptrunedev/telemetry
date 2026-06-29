@@ -10,11 +10,20 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
   const [result, setResult] = useState<MealAnalysis | null>(null);
 
   function pick(e: React.ChangeEvent<HTMLInputElement>) {
-    const fs = Array.from(e.target.files ?? []).slice(0, 5);
-    setFiles(fs);
-    setPreviews(fs.map((f) => URL.createObjectURL(f)));
-    setResult(null);
-    setErr(null);
+    const incoming = Array.from(e.target.files ?? []);
+    if (incoming.length) {
+      setFiles((prev) => [...prev, ...incoming].slice(0, 5));
+      setPreviews((prev) => [...prev, ...incoming.map((f) => URL.createObjectURL(f))].slice(0, 5));
+      setResult(null);
+      setErr(null);
+    }
+    e.target.value = ""; // allow re-selecting the same file
+  }
+
+  function clearPhotos() {
+    previews.forEach((u) => URL.revokeObjectURL(u));
+    setFiles([]);
+    setPreviews([]);
   }
 
   async function analyze() {
@@ -68,17 +77,27 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
 
   return (
     <div className="form">
-      <label className="photo-pick">
-        <input type="file" accept="image/*" capture="environment" multiple onChange={pick} hidden />
-        <span>{files.length ? `${files.length} photo${files.length > 1 ? "s" : ""} selected — tap to change` : "📷  Photograph your meal (1–5 photos)"}</span>
-      </label>
+      <div className="photo-picks">
+        <label className="photo-pick">
+          <input type="file" accept="image/*" capture="environment" multiple onChange={pick} hidden />
+          <span>📷 Take photo</span>
+        </label>
+        <label className="photo-pick">
+          <input type="file" accept="image/*" multiple onChange={pick} hidden />
+          <span>🖼 Camera roll</span>
+        </label>
+      </div>
       {previews.length > 0 && (
         <div className="thumbs">
           {previews.map((src, i) => (
             <img key={i} src={src} className="thumb" alt="" />
           ))}
+          <button type="button" className="thumb-clear" onClick={clearPhotos} aria-label="Clear photos">
+            ✕
+          </button>
         </div>
       )}
+      <p className="meta">{files.length ? `${files.length}/5 photos of one meal` : "Add up to 5 photos of one meal"}</p>
       {err && <p className="form-err">{err}</p>}
       <button className="btn" onClick={analyze} disabled={busy || !files.length}>
         {busy ? "Analyzing…" : "Analyze with AI"}
