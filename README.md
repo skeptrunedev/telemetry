@@ -1,5 +1,7 @@
 # Telemetry
 
+[![CI](https://github.com/skeptrunedev/telemetry/actions/workflows/ci.yml/badge.svg)](https://github.com/skeptrunedev/telemetry/actions/workflows/ci.yml)
+
 A single-user, mobile-first **PWA for tracking body recomposition** — weight,
 body circumferences, progress photos, and daily nutrition adherence — with
 optional hardware auto-capture and **zero third-party cloud** in the data path.
@@ -33,6 +35,23 @@ npm run typecheck
 npm run db:generate      # generate a D1 migration from src/db/schema.ts
 npm run db:migrate:local # apply migrations to the local D1
 ```
+
+## API & OpenAPI
+
+The HTTP API is documented in-code: each route carries an `@openapi` JSDoc
+comment (in `src/worker/index.ts`), and the shared data models live as
+`@openapi` component comments next to the Drizzle tables (`src/db/schema.ts`).
+A build step assembles them into a single OpenAPI 3.1 document.
+
+```bash
+npm run openapi:gen      # comments -> src/worker/openapi.gen.json (also runs on prebuild)
+npm run openapi:lint     # quobix vacuum, gated at a perfect 100/100 score
+```
+
+The generated spec is served by the Worker at **`/openapi.json`**
+([live](https://telemetry.skeptrune.com/openapi.json)). CI regenerates the spec,
+fails if the committed copy drifted from the comments, and holds the vacuum
+score at 100.
 
 ## Deploy (Cloudflare)
 

@@ -6,6 +6,596 @@ const nowMs = sql`(unixepoch() * 1000)`;
 // Every row is owned by the Cloudflare Access-verified email (user_email).
 // All queries are scoped by it, so users only ever see their own data.
 
+/**
+ * @openapi
+ * components:
+ *   securitySchemes:
+ *     cloudflareAccess:
+ *       type: apiKey
+ *       in: cookie
+ *       name: CF_Authorization
+ *       description: >-
+ *         Cloudflare Access session. Access verifies the user via SSO at the edge,
+ *         sets the `CF_Authorization` cookie, and injects the trusted
+ *         `Cf-Access-Authenticated-User-Email` header that the API uses as identity.
+ *     ingestToken:
+ *       type: http
+ *       scheme: bearer
+ *       description: "Shared secret carried as `Authorization: Bearer <token>`, used only by the scale-ingest route."
+ *   responses:
+ *     BadRequest:
+ *       description: The request body or parameters failed validation.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Error'
+ *     Unauthorized:
+ *       description: Missing or incorrect ingest bearer token.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Error'
+ *     Forbidden:
+ *       description: The requested resource belongs to another user.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Error'
+ *     NotFound:
+ *       description: No matching resource owned by the caller.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Error'
+ *     BadGateway:
+ *       description: The upstream model call failed.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Error'
+ *     ServiceUnavailable:
+ *       description: A required secret (model key or ingest token) is not configured.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Error'
+ *   schemas:
+ *     Error:
+ *       type: object
+ *       description: Standard error envelope returned by every non-2xx response.
+ *       additionalProperties: false
+ *       required: [error]
+ *       properties:
+ *         error:
+ *           type: string
+ *           description: Human-readable failure reason.
+ *           example: weightKg must be 9-320 kg
+ *         detail:
+ *           type: string
+ *           description: Optional extra context, present on upstream failures.
+ *           example: upstream model returned 500
+ *     Ok:
+ *       type: object
+ *       description: Minimal success acknowledgement for write operations.
+ *       additionalProperties: false
+ *       required: [ok]
+ *       properties:
+ *         ok:
+ *           type: boolean
+ *           const: true
+ *           description: Always true.
+ *           example: true
+ *     Health:
+ *       type: object
+ *       description: Liveness probe payload.
+ *       additionalProperties: false
+ *       required: [ok, service, ts]
+ *       properties:
+ *         ok:
+ *           type: boolean
+ *           description: Always true when the Worker is responding.
+ *           example: true
+ *         service:
+ *           type: string
+ *           description: Service identifier.
+ *           example: telemetry
+ *         ts:
+ *           type: string
+ *           format: date-time
+ *           description: Server time when the probe was answered.
+ *           example: "2026-06-29T12:00:00.000Z"
+ *     WhoAmI:
+ *       type: object
+ *       description: The Cloudflare Access identity resolved for this request.
+ *       additionalProperties: false
+ *       required: [email]
+ *       properties:
+ *         email:
+ *           type: string
+ *           format: email
+ *           description: Verified account email, or `dev@local` in local development.
+ *           example: nick@mintlify.com
+ *     WeightReading:
+ *       type: object
+ *       description: A single body-weight reading.
+ *       additionalProperties: false
+ *       required: [id, ts, weightKg, bodyFatPct, note, source]
+ *       properties:
+ *         id:
+ *           type: integer
+ *           description: Auto-increment weight-reading identifier.
+ *           example: 4821
+ *         ts:
+ *           type: integer
+ *           format: int64
+ *           description: Weigh-in time as a Unix epoch in milliseconds.
+ *           example: 1782000000000
+ *         weightKg:
+ *           type: number
+ *           description: Recorded body weight in kilograms.
+ *           example: 72.6
+ *         bodyFatPct:
+ *           type: [number, "null"]
+ *           description: Body-fat percentage, if recorded (noisy on consumer scales).
+ *           example: 17.4
+ *         note:
+ *           type: [string, "null"]
+ *           description: Free-text note attached to the reading.
+ *           example: morning, fasted
+ *         source:
+ *           type: string
+ *           description: Where the reading came from, e.g. `manual` or `scale`.
+ *           example: manual
+ *     NewWeight:
+ *       type: object
+ *       description: Body for logging a manual weigh-in.
+ *       additionalProperties: false
+ *       required: [weightKg]
+ *       properties:
+ *         weightKg:
+ *           type: number
+ *           minimum: 9
+ *           maximum: 320
+ *           description: Body weight to log, in kilograms.
+ *           example: 72.6
+ *         bodyFatPct:
+ *           type: [number, "null"]
+ *           minimum: 1
+ *           maximum: 80
+ *           description: Optional body-fat percentage for the weigh-in.
+ *           example: 17.4
+ *         note:
+ *           type: string
+ *           maxLength: 500
+ *           description: Optional note (truncated to 500 characters).
+ *           example: morning, fasted
+ *     WeightNote:
+ *       type: object
+ *       description: Body for editing the note on an existing weigh-in.
+ *       additionalProperties: false
+ *       properties:
+ *         note:
+ *           type: [string, "null"]
+ *           maxLength: 500
+ *           description: New note text, or null to clear it.
+ *           example: re-weighed after workout
+ *     Measurement:
+ *       type: object
+ *       description: A body-part circumference measurement.
+ *       additionalProperties: false
+ *       required: [id, ts, site, valueCm, source]
+ *       properties:
+ *         id:
+ *           type: integer
+ *           description: Auto-increment measurement identifier.
+ *           example: 318
+ *         ts:
+ *           type: integer
+ *           format: int64
+ *           description: Measurement time as a Unix epoch in milliseconds.
+ *           example: 1782000000000
+ *         site:
+ *           type: string
+ *           description: Body site, e.g. `waist`, `shoulders`, `arm_r`.
+ *           example: waist
+ *         valueCm:
+ *           type: number
+ *           description: Measured circumference in centimetres.
+ *           example: 81.5
+ *         source:
+ *           type: string
+ *           description: Where the measurement came from.
+ *           example: manual
+ *     NewMeasurement:
+ *       type: object
+ *       description: Body for recording a measurement.
+ *       additionalProperties: false
+ *       required: [site, valueCm]
+ *       properties:
+ *         site:
+ *           type: string
+ *           description: Body site identifier for the new measurement.
+ *           example: waist
+ *         valueCm:
+ *           type: number
+ *           minimum: 1
+ *           maximum: 300
+ *           description: Circumference to record, in centimetres.
+ *           example: 81.5
+ *     NutritionDay:
+ *       type: object
+ *       description: Rolled-up calorie and protein totals for one calendar day.
+ *       additionalProperties: false
+ *       required: [userEmail, date, kcal, proteinG, hitProtein, adherence]
+ *       properties:
+ *         userEmail:
+ *           type: string
+ *           format: email
+ *           description: Owning account email.
+ *           example: nick@mintlify.com
+ *         date:
+ *           type: string
+ *           format: date
+ *           description: Calendar day these totals cover (YYYY-MM-DD).
+ *           example: "2026-06-29"
+ *         kcal:
+ *           type: [integer, "null"]
+ *           description: Total calories logged that day.
+ *           example: 2150
+ *         proteinG:
+ *           type: [integer, "null"]
+ *           description: Total protein in grams logged that day.
+ *           example: 168
+ *         hitProtein:
+ *           type: [boolean, "null"]
+ *           description: Whether the day's protein target was met.
+ *           example: true
+ *         adherence:
+ *           type: [string, "null"]
+ *           enum: [under, on, over, null]
+ *           description: Calorie adherence bucket for the day.
+ *           example: on
+ *     NutritionDayInput:
+ *       type: object
+ *       description: Body for upserting a day's totals directly.
+ *       additionalProperties: false
+ *       required: [date]
+ *       properties:
+ *         date:
+ *           type: string
+ *           format: date
+ *           description: Calendar day to upsert (YYYY-MM-DD).
+ *           example: "2026-06-29"
+ *         kcal:
+ *           type: [integer, "null"]
+ *           minimum: 0
+ *           maximum: 20000
+ *           description: Total calories to set for the day.
+ *           example: 2150
+ *         proteinG:
+ *           type: [integer, "null"]
+ *           minimum: 0
+ *           maximum: 1000
+ *           description: Total protein in grams to set for the day.
+ *           example: 168
+ *         hitProtein:
+ *           type: [boolean, "null"]
+ *           description: Whether to mark the protein target as met.
+ *           example: true
+ *         adherence:
+ *           type: [string, "null"]
+ *           enum: [under, on, over, null]
+ *           description: Calorie adherence bucket to set.
+ *           example: on
+ *     Targets:
+ *       type: object
+ *       description: A user's goals. Created with defaults on first read.
+ *       additionalProperties: false
+ *       required: [id, goalWeightKg, startWeightKg, targetDate, startDate, dailyKcalTarget, proteinTargetG]
+ *       properties:
+ *         id:
+ *           type: integer
+ *           description: Auto-increment targets-row identifier.
+ *           example: 1
+ *         goalWeightKg:
+ *           type: [number, "null"]
+ *           description: Target body weight in kilograms.
+ *           example: 70
+ *         startWeightKg:
+ *           type: [number, "null"]
+ *           description: Starting body weight in kilograms.
+ *           example: 78.4
+ *         targetDate:
+ *           type: [integer, "null"]
+ *           format: int64
+ *           description: Goal date as a Unix epoch in milliseconds.
+ *           example: 1790000000000
+ *         startDate:
+ *           type: [integer, "null"]
+ *           format: int64
+ *           description: Plan start date as a Unix epoch in milliseconds.
+ *           example: 1782000000000
+ *         dailyKcalTarget:
+ *           type: [integer, "null"]
+ *           description: Daily calorie target.
+ *           example: 2100
+ *         proteinTargetG:
+ *           type: [integer, "null"]
+ *           description: Daily protein target in grams.
+ *           example: 170
+ *     TargetsInput:
+ *       type: object
+ *       description: Partial update to a user's targets; omitted fields are left unchanged.
+ *       additionalProperties: false
+ *       properties:
+ *         goalWeightKg:
+ *           type: number
+ *           description: New target body weight in kilograms.
+ *           example: 70
+ *         startWeightKg:
+ *           type: number
+ *           description: New starting body weight in kilograms.
+ *           example: 78.4
+ *         dailyKcalTarget:
+ *           type: integer
+ *           description: New daily calorie target.
+ *           example: 2100
+ *         proteinTargetG:
+ *           type: integer
+ *           description: New daily protein target in grams.
+ *           example: 170
+ *         targetDate:
+ *           type: integer
+ *           format: int64
+ *           description: New goal date as a Unix epoch in milliseconds.
+ *           example: 1790000000000
+ *     TrendPoint:
+ *       type: object
+ *       description: One point on the weight trend line.
+ *       additionalProperties: false
+ *       required: [ts, kg]
+ *       properties:
+ *         ts:
+ *           type: integer
+ *           format: int64
+ *           description: Trend-point time as a Unix epoch in milliseconds.
+ *           example: 1782000000000
+ *         kg:
+ *           type: number
+ *           description: Trend-point body weight in kilograms.
+ *           example: 72.6
+ *     WeightSummary:
+ *       type: object
+ *       description: Latest-weight summary block of the dashboard.
+ *       additionalProperties: false
+ *       required: [latestKg, weeklyAvgKg, bodyFatPct, note, trend]
+ *       properties:
+ *         latestKg:
+ *           type: [number, "null"]
+ *           description: Most recent weight in kilograms.
+ *           example: 72.6
+ *         weeklyAvgKg:
+ *           type: [number, "null"]
+ *           description: Mean weight over the last seven days.
+ *           example: 72.9
+ *         bodyFatPct:
+ *           type: [number, "null"]
+ *           description: Body-fat percentage from the latest reading.
+ *           example: 17.4
+ *         note:
+ *           type: [string, "null"]
+ *           description: Note on the latest reading.
+ *           example: morning, fasted
+ *         trend:
+ *           type: array
+ *           description: Chronological weight trend (oldest first).
+ *           example: [{ ts: 1781000000000, kg: 73.1 }, { ts: 1782000000000, kg: 72.6 }]
+ *           items:
+ *             $ref: '#/components/schemas/TrendPoint'
+ *     MeasurementLatest:
+ *       type: object
+ *       description: Most recent value for one measurement site.
+ *       additionalProperties: false
+ *       required: [site, valueCm, ts]
+ *       properties:
+ *         site:
+ *           type: string
+ *           description: Body site of this latest measurement.
+ *           example: waist
+ *         valueCm:
+ *           type: number
+ *           description: Latest circumference in centimetres.
+ *           example: 81.5
+ *         ts:
+ *           type: integer
+ *           format: int64
+ *           description: Time of the latest measurement as a Unix epoch in milliseconds.
+ *           example: 1782000000000
+ *     DashboardData:
+ *       type: object
+ *       description: Everything the home screen needs in a single response.
+ *       additionalProperties: false
+ *       required: [weight, targets, measurementsLatest, shoulderToWaist, nutritionToday]
+ *       properties:
+ *         weight:
+ *           type: object
+ *           $ref: '#/components/schemas/WeightSummary'
+ *           description: Latest-weight summary for the dashboard card.
+ *           example: { latestKg: 72.6, weeklyAvgKg: 72.9, bodyFatPct: 17.4, note: "morning, fasted", trend: [{ ts: 1782000000000, kg: 72.6 }] }
+ *         targets:
+ *           type: object
+ *           $ref: '#/components/schemas/Targets'
+ *           description: The user's current goals shown on the dashboard.
+ *           example: { id: 1, goalWeightKg: 70, startWeightKg: 78.4, targetDate: 1790000000000, startDate: 1782000000000, dailyKcalTarget: 2100, proteinTargetG: 170 }
+ *         measurementsLatest:
+ *           type: array
+ *           description: Latest value per measured site.
+ *           example: [{ site: waist, valueCm: 81.5, ts: 1782000000000 }, { site: shoulders, valueCm: 122, ts: 1782000000000 }]
+ *           items:
+ *             $ref: '#/components/schemas/MeasurementLatest'
+ *         shoulderToWaist:
+ *           type: [number, "null"]
+ *           description: Shoulder-to-waist ratio (V-taper metric).
+ *           example: 1.497
+ *         nutritionToday:
+ *           oneOf:
+ *             - $ref: '#/components/schemas/NutritionDay'
+ *             - type: "null"
+ *           description: Today's nutrition totals, or null if nothing is logged.
+ *           example: { userEmail: nick@mintlify.com, date: "2026-06-29", kcal: 2150, proteinG: 168, hitProtein: true, adherence: on }
+ *     IngestWeight:
+ *       type: object
+ *       description: Body for a machine-submitted scale reading.
+ *       additionalProperties: false
+ *       required: [weightKg]
+ *       properties:
+ *         weightKg:
+ *           type: number
+ *           minimum: 9
+ *           maximum: 320
+ *           description: Scale-reported body weight in kilograms.
+ *           example: 72.6
+ *         bodyFatPct:
+ *           type: [number, "null"]
+ *           description: Optional scale-reported body-fat percentage.
+ *           example: 17.4
+ *         userEmail:
+ *           type: string
+ *           format: email
+ *           description: Owner to attribute the reading to; falls back to the configured ingest user.
+ *           example: nick@mintlify.com
+ *         raw:
+ *           type: object
+ *           additionalProperties: true
+ *           description: Opaque raw payload from the scale, stored for debugging.
+ *           example: { device: "withings-body+", battery: 82 }
+ *     AnalyzedItem:
+ *       type: object
+ *       description: One food item estimated by the model.
+ *       additionalProperties: false
+ *       required: [name, kcal, proteinG]
+ *       properties:
+ *         name:
+ *           type: string
+ *           description: Estimated food item name.
+ *           example: grilled chicken breast
+ *         kcal:
+ *           type: integer
+ *           description: Estimated calories for the portion.
+ *           example: 284
+ *         proteinG:
+ *           type: number
+ *           description: Estimated protein in grams.
+ *           example: 53.4
+ *     MealAnalysis:
+ *       type: object
+ *       description: Result of logging a meal from photos or a text description.
+ *       additionalProperties: false
+ *       required: [ok, mealId, items, totalKcal, totalProteinG, note, photoKeys]
+ *       properties:
+ *         ok:
+ *           type: boolean
+ *           const: true
+ *           description: Always true once analysis succeeds.
+ *           example: true
+ *         mealId:
+ *           type: string
+ *           format: uuid
+ *           description: Identifier of the created meal.
+ *           example: 3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071
+ *         items:
+ *           type: array
+ *           description: Estimated food items.
+ *           example: [{ name: grilled chicken breast, kcal: 284, proteinG: 53.4 }, { name: toum, kcal: 90, proteinG: 0.4 }]
+ *           items:
+ *             $ref: '#/components/schemas/AnalyzedItem'
+ *         totalKcal:
+ *           type: integer
+ *           description: Summed calories across items.
+ *           example: 374
+ *         totalProteinG:
+ *           type: integer
+ *           description: Summed protein in grams across items.
+ *           example: 54
+ *         note:
+ *           type: string
+ *           description: The model's one-line assumptions note.
+ *           example: assumed a single chicken breast and one tablespoon of toum
+ *         photoKeys:
+ *           type: array
+ *           description: R2 object keys of stored photos (empty for text descriptions).
+ *           example: ["nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071"]
+ *           items:
+ *             type: string
+ *             example: nick@mintlify.com/2026-06-29/3f8b1c2a
+ *     DescribeMeal:
+ *       type: object
+ *       description: Body for logging a meal from a freeform text description.
+ *       additionalProperties: false
+ *       required: [text]
+ *       properties:
+ *         text:
+ *           type: string
+ *           maxLength: 2000
+ *           description: What you ate, in your own words. State anything you skipped so it is excluded.
+ *           example: two scrambled eggs, a slice of sourdough, and black coffee
+ *     LoggedItem:
+ *       type: object
+ *       description: A persisted food item within a meal.
+ *       additionalProperties: false
+ *       required: [id, name, kcal, proteinG]
+ *       properties:
+ *         id:
+ *           type: integer
+ *           description: Auto-increment food-item identifier.
+ *           example: 9012
+ *         name:
+ *           type: string
+ *           description: Persisted food item name.
+ *           example: grilled chicken breast
+ *         kcal:
+ *           type: integer
+ *           description: Stored calories for the portion.
+ *           example: 284
+ *         proteinG:
+ *           type: number
+ *           description: Stored protein in grams.
+ *           example: 53.4
+ *     Meal:
+ *       type: object
+ *       description: A logged meal with its food items.
+ *       additionalProperties: false
+ *       required: [id, note, createdAt, photoKeys, items]
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *           description: Meal identifier.
+ *           example: 3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071
+ *         note:
+ *           type: [string, "null"]
+ *           description: Meal note or the original text description.
+ *           example: lunch at the office
+ *         createdAt:
+ *           type: integer
+ *           format: int64
+ *           description: Meal creation time as a Unix epoch in milliseconds.
+ *           example: 1782000000000
+ *         photoKeys:
+ *           type: array
+ *           description: R2 object keys of the meal's photos.
+ *           example: ["nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071"]
+ *           items:
+ *             type: string
+ *             example: nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e
+ *         items:
+ *           type: array
+ *           description: Food items in the meal.
+ *           example: [{ id: 9012, name: grilled chicken breast, kcal: 284, proteinG: 53.4 }]
+ *           items:
+ *             $ref: '#/components/schemas/LoggedItem'
+ */
+
 export const weightReadings = sqliteTable("weight_readings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userEmail: text("user_email").notNull().default(""),

@@ -1,0 +1,41 @@
+name: CI
+
+# Tracks the in-code OpenAPI docs: regenerates the spec from the @openapi
+# comments, fails if the committed spec drifted, and holds it to a perfect
+# vacuum score. Also typechecks and builds the Worker + client.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  openapi-and-build:
+    name: OpenAPI + typecheck + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Regenerate OpenAPI from in-code @openapi comments
+        run: npm run openapi:gen
+
+      - name: Fail if the committed spec is stale
+        # The spec is generated from comments; if this diff is non-empty,
+        # someone edited a route's docs without running `npm run openapi:gen`.
+        run: git diff --exit-code -- src/worker/openapi.gen.json
+
+      - name: Lint OpenAPI with vacuum (must score 100/100, zero findings)
+        run: npm run openapi:lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build

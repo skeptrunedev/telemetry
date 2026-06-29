@@ -4,6 +4,9 @@ import { and, desc, eq } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import * as schema from "../db/schema";
 import type { DashboardData, Targets } from "../shared/types";
+// Generated from the @openapi JSDoc comments by scripts/gen-openapi.mjs
+// (runs as the build's prebuild step). Served verbatim at /openapi.json.
+import openapiDoc from "./openapi.gen.json";
 
 type Bindings = {
   ASSETS: Fetcher;
@@ -87,11 +90,62 @@ async function recomputeDay(c: { env: Bindings }, email: string, date: string) {
     });
 }
 
+/**
+ * @openapi
+ * /api/health:
+ *   get:
+ *     tags: [Service]
+ *     summary: Liveness probe
+ *     description: Returns a static payload confirming the Worker is up. Unauthenticated; used for uptime checks.
+ *     operationId: getHealth
+ *     security: []
+ *     responses:
+ *       '200':
+ *         description: The service is healthy.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Health'
+ */
 app.get("/api/health", (c) => c.json({ ok: true, service: "telemetry", ts: new Date().toISOString() }));
 
+/**
+ * @openapi
+ * /api/whoami:
+ *   get:
+ *     tags: [Service]
+ *     summary: Resolve the current identity
+ *     description: Returns the Cloudflare Access-verified email backing this session.
+ *     operationId: whoami
+ *     responses:
+ *       '200':
+ *         description: The resolved identity.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WhoAmI'
+ */
 app.get("/api/whoami", (c) => c.json({ email: userEmail(c) }));
 
 // ---- weight ----------------------------------------------------------------
+/**
+ * @openapi
+ * /api/weight:
+ *   get:
+ *     tags: [Weight]
+ *     summary: List weigh-ins
+ *     description: Returns up to 365 of the caller's most recent weight readings, newest first.
+ *     operationId: listWeight
+ *     responses:
+ *       '200':
+ *         description: Weight readings, newest first.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/WeightReading'
+ */
 app.get("/api/weight", async (c) => {
   const email = userEmail(c);
   const rows = await db(c)
@@ -103,6 +157,31 @@ app.get("/api/weight", async (c) => {
   return c.json(rows.map((r) => ({ id: r.id, ts: r.ts.getTime(), weightKg: r.weightKg, bodyFatPct: r.bodyFatPct, note: r.note, source: r.source })));
 });
 
+/**
+ * @openapi
+ * /api/weight:
+ *   post:
+ *     tags: [Weight]
+ *     summary: Log a weigh-in
+ *     description: Records a manual body-weight reading for the caller.
+ *     operationId: addWeight
+ *     requestBody:
+ *       required: true
+ *       description: The weigh-in to record.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/NewWeight'
+ *     responses:
+ *       '200':
+ *         description: The reading was stored.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ok'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ */
 app.post("/api/weight", async (c) => {
   const email = userEmail(c);
   const body = await c.req.json<{ weightKg?: number; bodyFatPct?: number | null; note?: string }>();
@@ -123,6 +202,40 @@ app.post("/api/weight", async (c) => {
 });
 
 // Edit the note on any past weigh-in (scoped to the user).
+/**
+ * @openapi
+ * /api/weight/{id}:
+ *   patch:
+ *     tags: [Weight]
+ *     summary: Edit a weigh-in note
+ *     description: Updates or clears the note on one of the caller's past readings.
+ *     operationId: updateWeightNote
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: Weight-reading identifier.
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       description: The new note value, or null to clear it.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/WeightNote'
+ *     responses:
+ *       '200':
+ *         description: The note was updated.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ok'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '404':
+ *         $ref: '#/components/responses/NotFound'
+ */
 app.patch("/api/weight/:id", async (c) => {
   const email = userEmail(c);
   const id = Number(c.req.param("id"));
@@ -143,6 +256,24 @@ app.patch("/api/weight/:id", async (c) => {
 });
 
 // ---- measurements ----------------------------------------------------------
+/**
+ * @openapi
+ * /api/measurements:
+ *   get:
+ *     tags: [Measurements]
+ *     summary: List measurements
+ *     description: Returns up to 500 of the caller's measurements, newest first.
+ *     operationId: listMeasurements
+ *     responses:
+ *       '200':
+ *         description: Measurements, newest first.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Measurement'
+ */
 app.get("/api/measurements", async (c) => {
   const email = userEmail(c);
   const rows = await db(c)
@@ -154,6 +285,31 @@ app.get("/api/measurements", async (c) => {
   return c.json(rows.map((r) => ({ id: r.id, ts: r.ts.getTime(), site: r.site, valueCm: r.valueCm, source: r.source })));
 });
 
+/**
+ * @openapi
+ * /api/measurements:
+ *   post:
+ *     tags: [Measurements]
+ *     summary: Record a measurement
+ *     description: Stores a body-part circumference measurement for the caller.
+ *     operationId: addMeasurement
+ *     requestBody:
+ *       required: true
+ *       description: The measurement to record.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/NewMeasurement'
+ *     responses:
+ *       '200':
+ *         description: The measurement was stored.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ok'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ */
 app.post("/api/measurements", async (c) => {
   const email = userEmail(c);
   const body = await c.req.json<{ site?: string; valueCm?: number }>();
@@ -165,6 +321,24 @@ app.post("/api/measurements", async (c) => {
 });
 
 // ---- nutrition (per-day upsert) --------------------------------------------
+/**
+ * @openapi
+ * /api/nutrition:
+ *   get:
+ *     tags: [Nutrition]
+ *     summary: List daily totals
+ *     description: Returns up to 60 of the caller's most recent daily nutrition roll-ups, newest first.
+ *     operationId: listNutritionDays
+ *     responses:
+ *       '200':
+ *         description: Daily nutrition totals, newest first.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/NutritionDay'
+ */
 app.get("/api/nutrition", async (c) => {
   const email = userEmail(c);
   const rows = await db(c)
@@ -176,6 +350,31 @@ app.get("/api/nutrition", async (c) => {
   return c.json(rows);
 });
 
+/**
+ * @openapi
+ * /api/nutrition:
+ *   put:
+ *     tags: [Nutrition]
+ *     summary: Upsert a day's totals
+ *     description: Directly sets the calorie and protein totals for one calendar day, replacing any existing roll-up.
+ *     operationId: upsertNutritionDay
+ *     requestBody:
+ *       required: true
+ *       description: The day's totals to store.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/NutritionDayInput'
+ *     responses:
+ *       '200':
+ *         description: The day's totals were stored.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ok'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ */
 app.put("/api/nutrition", async (c) => {
   const email = userEmail(c);
   const b = await c.req.json<{ date?: string; kcal?: number | null; proteinG?: number | null; hitProtein?: boolean | null; adherence?: "under" | "on" | "over" | null }>();
@@ -207,8 +406,47 @@ async function getTargets(c: { env: Bindings }, email: string): Promise<Targets 
   };
 }
 
+/**
+ * @openapi
+ * /api/targets:
+ *   get:
+ *     tags: [Targets]
+ *     summary: Get goals
+ *     description: Returns the caller's targets, creating a default row on first access.
+ *     operationId: getTargets
+ *     responses:
+ *       '200':
+ *         description: The caller's targets.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Targets'
+ */
 app.get("/api/targets", async (c) => c.json(await getTargets(c, userEmail(c))));
 
+/**
+ * @openapi
+ * /api/targets:
+ *   put:
+ *     tags: [Targets]
+ *     summary: Update goals
+ *     description: Partially updates the caller's targets; omitted fields are left unchanged.
+ *     operationId: updateTargets
+ *     requestBody:
+ *       required: true
+ *       description: The fields to change; omitted fields are left unchanged.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/TargetsInput'
+ *     responses:
+ *       '200':
+ *         description: The targets were updated.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ok'
+ */
 app.put("/api/targets", async (c) => {
   const email = userEmail(c);
   const b = await c.req.json<Partial<Targets>>();
@@ -227,6 +465,30 @@ app.put("/api/targets", async (c) => {
 });
 
 // ---- dashboard aggregate ---------------------------------------------------
+/**
+ * @openapi
+ * /api/dashboard:
+ *   get:
+ *     tags: [Dashboard]
+ *     summary: Home-screen snapshot
+ *     description: Returns the weight summary, targets, latest measurements, shoulder-to-waist ratio, and the given day's nutrition in one response.
+ *     operationId: getDashboard
+ *     parameters:
+ *       - name: date
+ *         in: query
+ *         required: false
+ *         description: Day to report nutrition for (YYYY-MM-DD). Defaults to the server's current UTC date.
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       '200':
+ *         description: The dashboard snapshot.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DashboardData'
+ */
 app.get("/api/dashboard", async (c) => {
   const email = userEmail(c);
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
@@ -278,6 +540,37 @@ app.get("/api/dashboard", async (c) => {
 });
 
 // ---- scale ingest (token-auth; attributed to a configured user) ------------
+/**
+ * @openapi
+ * /api/ingest/weight:
+ *   post:
+ *     tags: [Ingest]
+ *     summary: Ingest a scale reading
+ *     description: Machine endpoint for the Bluetooth scale listener. Authenticated with the ingest bearer token and attributed to a configured owner rather than the Access identity.
+ *     operationId: ingestWeight
+ *     security:
+ *       - ingestToken: []
+ *     requestBody:
+ *       required: true
+ *       description: The scale reading to ingest.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/IngestWeight'
+ *     responses:
+ *       '200':
+ *         description: The scale reading was ingested and stored.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ok'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '401':
+ *         $ref: '#/components/responses/Unauthorized'
+ *       '503':
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
 app.post("/api/ingest/weight", async (c) => {
   const token = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
   if (!c.env.INGEST_TOKEN) return c.json({ error: "ingest not configured" }, 503);
@@ -299,6 +592,61 @@ app.post("/api/ingest/weight", async (c) => {
 });
 
 // ---- nutrition: photo -> Claude vision -> macros ---------------------------
+/**
+ * @openapi
+ * /api/nutrition/analyze:
+ *   post:
+ *     tags: [Nutrition]
+ *     summary: Log a meal from photos
+ *     description: Uploads 1–5 meal photos, sends them to Claude vision for per-item calorie and protein estimates, stores the photos plus a meal, and returns the analysis. In before/after mode the first photo is the full plate and the rest are leftovers, so only what was eaten is counted.
+ *     operationId: analyzeMeal
+ *     parameters:
+ *       - name: date
+ *         in: query
+ *         required: false
+ *         description: Day to log against (YYYY-MM-DD). Defaults to the server's current UTC date.
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - name: mode
+ *         in: query
+ *         required: false
+ *         description: Photo interpretation mode.
+ *         schema:
+ *           type: string
+ *           enum: [angles, beforeafter]
+ *           default: angles
+ *     requestBody:
+ *       required: true
+ *       description: The meal photos to analyze, as multipart form fields named `photos`.
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [photos]
+ *             properties:
+ *               photos:
+ *                 type: array
+ *                 description: 1–5 meal images (JPEG, PNG, WebP, or GIF; max 8MB each).
+ *                 example: ["@plate.jpg", "@leftovers.jpg"]
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                   example: "@plate.jpg"
+ *     responses:
+ *       '200':
+ *         description: The meal was analyzed and logged.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MealAnalysis'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '502':
+ *         $ref: '#/components/responses/BadGateway'
+ *       '503':
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
 app.post("/api/nutrition/analyze", async (c) => {
   const email = userEmail(c);
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "vision not configured" }, 503);
@@ -371,6 +719,43 @@ app.post("/api/nutrition/analyze", async (c) => {
 });
 
 // ---- nutrition: text description -> Claude -> macros ------------------------
+/**
+ * @openapi
+ * /api/nutrition/describe:
+ *   post:
+ *     tags: [Nutrition]
+ *     summary: Log a meal from a description
+ *     description: Sends a freeform meal description to Claude for per-item calorie and protein estimates, respecting stated portions and excluding anything the user says they skipped, then stores it as a meal.
+ *     operationId: describeMeal
+ *     parameters:
+ *       - name: date
+ *         in: query
+ *         required: false
+ *         description: Day to log the described meal against (YYYY-MM-DD). Defaults to the server's current UTC date.
+ *         schema:
+ *           type: string
+ *           format: date
+ *     requestBody:
+ *       required: true
+ *       description: The freeform meal description to analyze.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DescribeMeal'
+ *     responses:
+ *       '200':
+ *         description: The meal description was analyzed and logged.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MealAnalysis'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '502':
+ *         $ref: '#/components/responses/BadGateway'
+ *       '503':
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
 app.post("/api/nutrition/describe", async (c) => {
   const email = userEmail(c);
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "ai not configured" }, 503);
@@ -418,6 +803,32 @@ app.post("/api/nutrition/describe", async (c) => {
   });
 });
 
+/**
+ * @openapi
+ * /api/nutrition/meals:
+ *   get:
+ *     tags: [Nutrition]
+ *     summary: List meals for a day
+ *     description: Returns the caller's logged meals for a day, each with its food items, newest first.
+ *     operationId: listMeals
+ *     parameters:
+ *       - name: date
+ *         in: query
+ *         required: false
+ *         description: Day to list (YYYY-MM-DD). Defaults to the server's current UTC date.
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       '200':
+ *         description: Meals for the day, newest first.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Meal'
+ */
 app.get("/api/nutrition/meals", async (c) => {
   const email = userEmail(c);
   const date = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
@@ -441,6 +852,32 @@ app.get("/api/nutrition/meals", async (c) => {
   );
 });
 
+/**
+ * @openapi
+ * /api/nutrition/meals/{id}:
+ *   delete:
+ *     tags: [Nutrition]
+ *     summary: Delete a meal
+ *     description: Removes one of the caller's meals, its food items, and any stored photos, then recomputes the day's totals.
+ *     operationId: deleteMeal
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: Meal identifier (UUID).
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: The meal was deleted.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ok'
+ *       '404':
+ *         $ref: '#/components/responses/NotFound'
+ */
 app.delete("/api/nutrition/meals/:id", async (c) => {
   const email = userEmail(c);
   const id = c.req.param("id");
@@ -455,6 +892,33 @@ app.delete("/api/nutrition/meals/:id", async (c) => {
 });
 
 // Remove a single logged food item.
+/**
+ * @openapi
+ * /api/nutrition/items/{id}:
+ *   delete:
+ *     tags: [Nutrition]
+ *     summary: Delete a food item
+ *     description: Removes a single logged food item and recomputes the affected day's totals.
+ *     operationId: deleteItem
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: Food-item identifier.
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       '200':
+ *         description: The item was deleted.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ok'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '404':
+ *         $ref: '#/components/responses/NotFound'
+ */
 app.delete("/api/nutrition/items/:id", async (c) => {
   const email = userEmail(c);
   const id = Number(c.req.param("id"));
@@ -467,6 +931,34 @@ app.delete("/api/nutrition/items/:id", async (c) => {
 });
 
 // Serve a meal photo from R2, scoped to the requesting user's own keys.
+/**
+ * @openapi
+ * /api/nutrition/photo/{key}:
+ *   get:
+ *     tags: [Nutrition]
+ *     summary: Fetch a meal photo
+ *     description: Streams a stored meal photo from object storage. The key is owner-prefixed, so callers can only read their own photos. Note that the key contains slashes.
+ *     operationId: getMealPhoto
+ *     parameters:
+ *       - name: key
+ *         in: path
+ *         required: true
+ *         description: Owner-prefixed object key, e.g. `user@example.com/2026-06-29/<uuid>`.
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: The image bytes.
+ *         content:
+ *           image/jpeg:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       '403':
+ *         $ref: '#/components/responses/Forbidden'
+ *       '404':
+ *         description: No photo exists at that key.
+ */
 app.get("/api/nutrition/photo/*", async (c) => {
   const email = userEmail(c);
   const key = decodeURIComponent(c.req.path.replace(/^\/api\/nutrition\/photo\//, ""));
@@ -477,6 +969,30 @@ app.get("/api/nutrition/photo/*", async (c) => {
     headers: { "content-type": obj.httpMetadata?.contentType ?? "image/jpeg", "cache-control": "private, max-age=86400" },
   });
 });
+
+// ---- OpenAPI document ------------------------------------------------------
+/**
+ * @openapi
+ * /openapi.json:
+ *   get:
+ *     tags: [Spec]
+ *     summary: OpenAPI document
+ *     description: The machine-readable OpenAPI 3.1 description of this API, generated from in-code comments.
+ *     operationId: getOpenapi
+ *     security: []
+ *     responses:
+ *       '200':
+ *         description: The OpenAPI document.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               additionalProperties: true
+ *               example: { openapi: "3.1.0", info: { title: telemetry, version: "1.0.0" }, paths: {} }
+ */
+app.get("/openapi.json", (c) =>
+  c.json(openapiDoc as Record<string, unknown>, 200, { "cache-control": "public, max-age=300" }),
+);
 
 // ---- SPA fallback ----------------------------------------------------------
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
