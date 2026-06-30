@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { kgToLb } from "../shared/types";
 import type { DashboardData } from "../shared/types";
 import { api, todayLocal } from "./api";
@@ -7,6 +8,49 @@ import { AreaChart } from "./Chart";
 import { AddSheet } from "./AddSheet";
 import { BottomNav, type View } from "./BottomNav";
 import { WeightHistory } from "./WeightHistory";
+
+// We own scroll position per history entry, so stop the browser from guessing.
+if (typeof history !== "undefined" && "scrollRestoration" in history) {
+  history.scrollRestoration = "manual";
+}
+const REDUCE_MOTION =
+  typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+type HistoryState = { view: View; scroll: number };
+
+// Cross-fade a view swap with the View Transitions API; instant swap when
+// unsupported or reduced motion is requested. `apply` must mutate the DOM
+// synchronously (we flushSync inside it), so the transition captures it.
+function viewTransition(apply: () => void) {
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  if (REDUCE_MOTION || typeof doc.startViewTransition !== "function") {
+    apply();
+    return;
+  }
+  doc.startViewTransition(apply);
+}
+
+// Re-apply a target scroll across a few frames: async content (e.g. the food
+// log) can grow the page right after a view swap, so a single scrollTo would
+// clamp short. Stop once we reach it or after ~650ms.
+function restoreScroll(y: number) {
+  if (y <= 0) {
+    window.scrollTo(0, 0);
+    return;
+  }
+  let tries = 0;
+  const tick = () => {
+    window.scrollTo(0, y);
+    if (Math.abs(window.scrollY - y) > 1 && ++tries < 40) requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+function readView(): View {
+  const s = (typeof history !== "undefined" ? history.state : null) as Partial<HistoryState> | null;
+  if (s?.view === "trends" || s?.view === "today") return s.view;
+  return typeof location !== "undefined" && location.hash.includes("trends") ? "trends" : "today";
+}
 
 function Trends({ data }: { data: DashboardData }) {
   const latestLb = data.weight.latestKg != null ? kgToLb(data.weight.latestKg) : null;
@@ -35,10 +79,63 @@ export default function App() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
-  const [view, setView] = useState<View>("today");
+  const [view, setView] = useState<View>(readView);
   const [adding, setAdding] = useState(false);
   const [tick, setTick] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
+  // Cross-fade to a view and land at `scroll` (re-applying as content settles).
+  const swapView = useCallback((next: View, scroll: number) => {
+    viewTransition(() => {
+      flushSync(() => setView(next));
+      window.scrollTo(0, scroll);
+    });
+    if (scroll > 0) restoreScroll(scroll);
+  }, []);
+
+  // Navigate between views: push a history entry (so Back/Forward work),
+  // remember where we were scrolled, cross-fade, and start the new view at top.
+  const navigate = useCallback(
+    (next: View) => {
+      if (next === viewRef.current) return;
+      history.replaceState({ view: viewRef.current, scroll: window.scrollY } satisfies HistoryState, "");
+      history.pushState({ view: next, scroll: 0 } satisfies HistoryState, "", `#/${next}`);
+      swapView(next, 0);
+    },
+    [swapView],
+  );
+
+  // Back/Forward: swap to the entry's view and restore its saved scroll.
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const st = (e.state ?? null) as Partial<HistoryState> | null;
+      const next: View = st?.view === "trends" || st?.view === "today" ? st.view : readView();
+      swapView(next, st?.scroll ?? 0);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [swapView]);
+
+  // Seed the first entry, then keep its scroll up to date as the user scrolls.
+  useEffect(() => {
+    const cur = (history.state ?? null) as Partial<HistoryState> | null;
+    if (cur?.view == null) history.replaceState({ view: viewRef.current, scroll: 0 } satisfies HistoryState, "");
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const st = (history.state ?? {}) as Partial<HistoryState>;
+        history.replaceState({ view: st.view ?? viewRef.current, scroll: window.scrollY } satisfies HistoryState, "");
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
 
   const load = useCallback(() => {
     api
@@ -109,7 +206,7 @@ export default function App() {
         {data && view === "trends" && <Trends data={data} />}
       </main>
 
-      <BottomNav view={view} onChange={setView} onAdd={() => setAdding(true)} />
+      <BottomNav view={view} onChange={navigate} onAdd={() => setAdding(true)} />
 
       {adding && <AddSheet onClose={() => setAdding(false)} onChange={reloadAll} />}
     </div>

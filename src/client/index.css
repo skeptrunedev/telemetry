@@ -807,6 +807,13 @@ a {
 }
 
 /* ---- reduced motion (Emil): keep meaning, drop movement ---- */
+/* cross-fade between views (View Transitions API) */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-out);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card,
   .chart-line,
@@ -819,6 +826,11 @@ a {
     opacity: 1;
     transform: none;
     stroke-dashoffset: 0;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
   * {
     transition-duration: 0.01ms !important;
