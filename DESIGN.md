@@ -2,53 +2,51 @@
 
 ## Theme
 
-A direct Hacker News pastiche: a body-recomp tracker wearing HN's exact chrome. Orange title bar, tan canvas, Verdana, no cards, no rounded corners, no shadows. Log entries render like HN "stories": a rank number, a black title line, and a gray subtext line carrying metadata and action links. Deliberately a costume — the homage IS the design.
+A standard, calm dark dashboard. Flat graphite surfaces, a single warm amber accent, clean system type. No gradients, grain, glass, or loud color. The interface gets out of the way of the numbers.
 
 ## Color
 
-HN's literal palette.
+Dark, near-neutral, one accent (sRGB hex).
 
 | Role | Value | Use |
 | --- | --- | --- |
-| `--bg` | `#f6f6ef` | Body canvas (HN beige) |
-| `--bar` | `#ff6600` | Top bar + footer rule (HN orange) |
-| `--surface` | `#f6f6ef` | Same as bg — no cards |
-| `--inset` | `#ffffff` | Form inputs only |
-| `--line` | `#e0e0d8` | Faint divider when one is truly needed |
-| `--fg` | `#000000` | Titles / primary text |
-| `--muted` | `#828282` | HN subtext gray (dates, metadata, action links) |
-| `--barink` | `#000000` | Text on the orange bar |
-| `--barink-2` | `#1d1d1d` | Slightly softer bar text (right-side user) |
-| `--good` | `#2f7d4f` | On-track |
-| `--attention` | `#9a4a00` | Watch / over |
-| `--info` | `#3b5998` | Neutral status / visited-link feel |
-| `--alert` | `#b3261e` | Error / destructive |
+| `--bg` | `#17181a` | Page background |
+| `--surface` | `#1f2123` | Cards |
+| `--surface-2` | `#26282b` | Inset fields, avatar, tab fill |
+| `--line` | `#303236` | Borders + dividers |
+| `--fg` | `#ececec` | Primary text (~14:1 on bg) |
+| `--muted` | `#9a9ca0` | Secondary text (~6:1 on surface) |
+| `--dim` | `#6c6f73` | Least-emphasis labels |
+| `--accent` | `#f59e0b` | The one brand accent |
+| `--good` | `#46b97a` | On-track (muted, status only) |
+| `--attention` | `#e0894a` | Watch / over |
+| `--info` | `#5b9bd5` | Neutral status |
+| `--alert` | `#e35d5d` | Error / destructive |
 
-Strategy: **committed** — the orange bar is a saturated band of brand; everything below is HN beige + black + subtext gray. Orange appears only in the bar, the footer rule, and the rank/active marker.
+Strategy: **restrained** — amber appears only on the active nav item, the `+` Add, primary buttons, focus rings, links, and the weight range-bar fill / trend line. Everything else is graphite + ink + muted gray. Semantic status colors are used sparingly for genuine state, never as decoration.
 
 ## Typography
 
-HN's font stack, small sizes. No web fonts.
+System fonts only; hierarchy from size + weight.
 
-- `--sans`: `Verdana, Geneva, "DejaVu Sans", sans-serif` — everything.
-- `--mono`: `ui-monospace, Menlo, Consolas, monospace` — only where columnar numerals genuinely help.
-- Base ~13px. Titles ~13–15px (not a giant hero number; HN has no hero). Subtext ~11px gray. Bar text ~13px, site name bold.
-- Sentence case. No uppercase tracked labels, no display face.
+- `--sans`: `system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif` — body, headings, big numbers.
+- `--mono`: `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace` — labels, units, metadata.
+- No display/serif face. Big readouts are the sans at ~650 weight with `tabular-nums`. Labels are small uppercase mono.
 
 ## Layout
 
-- **Top bar (HN)**: solid `--bar` orange, ~24–28px tall, padding 2px 6px. Left: a bordered square logo box with a bold letter, then the bold site name `Telemetry`, then inline nav links separated by ` | ` — `today | body | food | photos | add`. Right (pushed): `dev@local | logout` (the account, as HN shows the user). All bar text black; active nav link bold/underlined. This is the ONLY nav.
-- **Canvas**: HN beige, content in a centered column (`max-width ~760px`, the app may use ~85% feel). No cards, no borders around sections — content sits directly on the beige.
-- **Footer**: a 2px orange horizontal rule, then small centered gray links (`openapi · cli · switch account`) and an optional disabled "Search:" box, echoing HN's footer.
-- App is a fixed shell (orange bar pinned, one scroll region for the active tab) with a footer at the end of the scroll.
+- **Standard stacked-card dashboard.** Top bar (wordmark + account monogram), a horizontal glance strip (Weight / S:W / Waist / Arm), then a single scrolling column of cards: weight hero (latest, insight line, trend chart, start→goal range bar, 7-day avg, note), shoulder:waist, measurements, nutrition vs target, food log. Trends and Photos are separate views.
+- **Navigation: one docked bottom bar.** Full-width, flat, pinned to the bottom edge with a 1px top border and the surface background — not a floating pill, no FAB. Four equal slots: **Today · Trends · `+` Add · Photos**; the centered `+` is the primary (amber) action and opens the add sheet. Active tab is amber. Content has bottom padding so the bar never overlaps the last card.
+- Centered, `max-width ~520px` column on mobile and desktop alike (a focused single-column app, not a stretched grid).
 
 ## Components
 
-- **Story item** (the core unit — weigh-ins, meals, measurements): `rank.` in gray, then a black title (e.g. `158.2 lb`, `615 kcal · 58 g protein`, `Waist 32.5 in`), then a gray subtext line below with ` | `-separated metadata and action links (`edit`, `delete`), exactly like HN's `points | user | time | comments`. Optional small triangle glyph (▲) before rank as static flavor — never a fake interactive vote.
-- **Nav / action links**: plain text links, black on bar / HN-blue-gray elsewhere; hover underline. `add` is a nav link that opens the sheet (no button chrome, no FAB).
-- **Bars** (calories/protein/range): thin 2px-radius track, orange or status fill — used sparingly; prefer a text ratio (`615 / 1850`) in HN style.
-- **Sheet** (add flow): a plain white-inset box with a 1px border, Verdana labels; bottom sheet on mobile, centered ≥900px. No glass, no rounded-pill chrome.
+- **Cards**: flat `--surface`, 1px `--line` border, ~12px radius, no shadow. Never nested.
+- **Rows**: mono muted label left, sans tabular value right, divided by `--line`.
+- **Bars** (calories / protein / range): thin `--surface-2` track, amber or muted-status fill.
+- **Add sheet**: bottom sheet on mobile, centered dialog ≥900px; plain border, no glass. Cancel (bordered) + Save (amber).
+- **Account**: monogram avatar opens a small popover with the email + "Switch account" — a deliberate two-step, never an instant logout.
 
 ## Motion
 
-Effectively none — HN doesn't animate. Instant tab switches; at most a ≤100ms link hover. `prefers-reduced-motion: reduce` is a no-op because there's nothing to reduce.
+Subtle only: a gentle ~360ms staggered card fade-in on load, ≤150ms ease-out on hover/press. No parallax, bounce, or springy effects. `prefers-reduced-motion: reduce` removes transitions and entrance animation.
