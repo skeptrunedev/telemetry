@@ -1,34 +1,44 @@
 :root {
-  /* substrate — cool graphite instrument screen, not pure black */
-  --bg: #0c0e11;
-  --surface: #13161b;
-  --surface-2: #191d24;
-  --line: #282d35;
+  /* RISOGRAPH — warm paper stock + fluorescent spot inks, lightly mis-registered */
+  --bg: #efeadd;
+  --surface: #f7f3e8;
+  --surface-2: #fffdf6;
+  --line: #ddd6c4;
 
-  /* text */
-  --fg: #e7e9ec;
-  --muted: #888f9a;
-  --dim: #565d68;
+  /* ink */
+  --fg: #1a1815;
+  --muted: #6f685a;
+  --dim: #9d9582;
 
-  /* status — muted, earthy, never neon */
-  --good: #5fd39a;
-  --attention: #e0876a;
-  --info: #6fa8dd;
-  --alert: #e25c5c;
+  /* riso spot inks (status stays semantic) */
+  --good: #1f9e6a;
+  --attention: #f0792e;
+  --info: #2b44ff;
+  --alert: #e8351e;
+  --accent: #ff3d8b; /* fluorescent pink — the brand ink */
 
-  /* type — "Telemetry" = instrument readout: a Space Mono-derived grotesque
-     for display/numerals, a precise mono for data/labels. No serif. */
-  --display: "Space Grotesk Variable", system-ui, sans-serif;
-  --sans: "Space Grotesk Variable", system-ui, -apple-system, sans-serif;
-  --mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
+  /* themed surfaces */
+  --track: #e2dccd;
+  --input-bg: #fffdf6;
+  --glass: rgba(255, 253, 246, 0.82);
+  --hero-grad: linear-gradient(160deg, #fbf8ee 0%, #f1ead9 100%);
+  --tick: rgba(26, 24, 21, 0.16);
+  --shadow: rgba(26, 24, 21, 0.14);
+  --scrim: rgba(26, 24, 21, 0.42);
+  --hover-line: #c7bfa8;
+
+  /* type — printed zine: characterful grotesque display, humanist body, typewriter mono */
+  --display: "Bricolage Grotesque Variable", system-ui, sans-serif;
+  --sans: "Hanken Grotesk Variable", system-ui, -apple-system, sans-serif;
+  --mono: "Space Mono", ui-monospace, "SF Mono", monospace;
 
   /* motion */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 
   font-family: var(--sans);
-  color-scheme: dark;
-  letter-spacing: -0.01em;
+  color-scheme: light;
+  letter-spacing: -0.005em;
 }
 
 * {
@@ -40,11 +50,21 @@ body {
   margin: 0;
   min-height: 100dvh;
   background: var(--bg);
-  background-image: radial-gradient(120% 60% at 50% -8%, #161b22 0%, var(--bg) 58%);
-  background-attachment: fixed;
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* riso grain — fine fractal noise over everything, the printed-paper signature */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 .app {
@@ -68,6 +88,7 @@ body {
   letter-spacing: 0.18em;
   font-weight: 700;
   font-size: 0.8rem;
+  color: var(--accent);
 }
 /* minimal identity: a monogram avatar that opens a confirm menu */
 .account {
@@ -111,7 +132,7 @@ body {
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 0.4rem;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+  box-shadow: 4px 4px 0 var(--shadow);
   transform-origin: top right;
   animation: menupop 170ms var(--ease-out);
 }
@@ -197,8 +218,10 @@ body {
 .card {
   border: 1px solid var(--line);
   background: var(--surface);
-  border-radius: 20px;
+  border-radius: 18px;
   padding: 1.15rem 1.25rem;
+  /* printed-card hard offset shadow (no blur) */
+  box-shadow: 3px 3px 0 var(--shadow);
   /* Emil: staggered entry */
   opacity: 0;
   transform: translateY(10px);
@@ -218,7 +241,7 @@ body {
 }
 
 .hero {
-  background: linear-gradient(158deg, #1a2027 0%, #0f1318 70%);
+  background: var(--hero-grad);
 }
 
 .card-head {
@@ -323,7 +346,7 @@ body {
 .note-edit input {
   flex: 1;
   min-width: 0;
-  background: #0e1116;
+  background: var(--input-bg);
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 0.5rem 0.6rem;
@@ -346,7 +369,7 @@ body {
   position: relative;
   height: 8px;
   border-radius: 99px;
-  background: #21262e;
+  background: var(--track);
   margin-top: 0.6rem;
   overflow: hidden;
 }
@@ -359,8 +382,8 @@ body {
     90deg,
     transparent 0,
     transparent 9px,
-    rgba(136, 143, 154, 0.28) 9px,
-    rgba(136, 143, 154, 0.28) 10px
+    var(--tick) 9px,
+    var(--tick) 10px
   );
   pointer-events: none;
 }
@@ -444,7 +467,7 @@ body {
 .crow-bar {
   height: 4px;
   border-radius: 99px;
-  background: #21262e;
+  background: var(--track);
   margin-top: 0.5rem;
   overflow: hidden;
 }
@@ -550,7 +573,7 @@ body {
   pointer-events: auto;
   display: flex;
   gap: 0.2rem;
-  background: rgba(20, 20, 24, 0.82);
+  background: var(--glass);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--line);
@@ -587,13 +610,13 @@ body {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  border: 1px solid var(--line);
-  background: var(--fg);
-  color: var(--bg);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fffdf6;
   font-size: 1.7rem;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  box-shadow: 3px 3px 0 var(--shadow);
   transition: transform 150ms var(--ease-out);
 }
 .fab:active {
@@ -613,7 +636,7 @@ body {
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(7, 9, 12, 0.6);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   display: flex;
@@ -642,7 +665,7 @@ body {
 .tabs {
   display: flex;
   gap: 0.25rem;
-  background: #0e1116;
+  background: var(--input-bg);
   border-radius: 12px;
   padding: 0.25rem;
   margin-bottom: 1rem;
@@ -685,7 +708,7 @@ body {
 }
 .field input,
 .field select {
-  background: #0e1116;
+  background: var(--input-bg);
   border: 1px solid var(--line);
   border-radius: 11px;
   padding: 0.75rem 0.85rem;
@@ -701,7 +724,7 @@ body {
 }
 .describe-input {
   width: 100%;
-  background: #0e1116;
+  background: var(--input-bg);
   border: 1px solid var(--line);
   border-radius: 11px;
   padding: 0.75rem 0.85rem;
@@ -880,7 +903,7 @@ body {
     transition: border-color 200ms var(--ease-out);
   }
   .grid > .card:hover {
-    border-color: #36363d;
+    border-color: var(--hover-line);
   }
   .nav-btn:hover,
   .tab:hover {

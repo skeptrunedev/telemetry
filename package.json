@@ -20,8 +20,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
-    "@fontsource-variable/geist-mono": "^5.2.8",
-    "@fontsource-variable/space-grotesk": "^5.2.10",
+    "@fontsource-variable/bricolage-grotesque": "^5.2.10",
+    "@fontsource-variable/hanken-grotesk": "^5.2.8",
+    "@fontsource/space-mono": "^5.2.9",
     "drizzle-orm": "^0.38.0",
     "hono": "^4.6.0",
     "react": "^19.0.0",
