@@ -33,7 +33,13 @@ export type LoginResult = { token: string };
  * the verified Access token back to our /callback. We match `state` to reject
  * anything we didn't initiate.
  */
-export function browserLogin(baseUrl: string, timeoutMs = 120_000): Promise<LoginResult> {
+export function browserLogin(
+  baseUrl: string,
+  timeoutMs = 120_000,
+  // Injectable for tests; defaults to the real cross-platform browser opener so
+  // external behavior is unchanged.
+  open: (url: string) => void = openBrowser,
+): Promise<LoginResult> {
   return new Promise((resolve, reject) => {
     const state = randomUUID();
     let settled = false;
@@ -72,7 +78,7 @@ export function browserLogin(baseUrl: string, timeoutMs = 120_000): Promise<Logi
       const { port } = server.address() as AddressInfo;
       const loginUrl = `${baseUrl.replace(/\/$/, "")}/cli-auth?port=${port}&state=${state}`;
       process.stderr.write(`Opening browser to sign in…\nIf it doesn't open, visit:\n  ${loginUrl}\n\n`);
-      openBrowser(loginUrl);
+      open(loginUrl);
     });
   });
 }

@@ -40,6 +40,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Worker API integration tests: the real Worker is bundled with esbuild
+      # and run in-process inside Miniflare with real D1/R2 bindings (same
+      # workerd runtime as @cloudflare/vitest-pool-workers; see vitest.config.ts
+      # for why we drive Miniflare directly). No secrets, no network —
+      # ANTHROPIC_API_KEY is bound empty so AI routes hit their guard-rail
+      # (503) paths instead of calling the model.
+      - name: Run integration tests
+        run: npm test
+
   cli:
     name: CLI typecheck + build
     runs-on: ubuntu-latest
@@ -63,3 +72,8 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # CLI unit tests (config/client/auth) in a plain Node environment.
+      # Mocks are loopback-only; no secrets, no external network.
+      - name: Test
+        run: npm test
