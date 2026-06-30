@@ -112,11 +112,11 @@ export default function App() {
       </header>
 
       <main className="shell">
-        {error && <p className="form-err">{error}</p>}
-        {!data && !error && <p className="meta">loading…</p>}
+        {error && <div className="scroll"><p className="form-err">{error}</p></div>}
+        {!data && !error && <div className="scroll"><p className="meta">loading…</p></div>}
         {data && view === "today" && <Dashboard data={data} refreshKey={tick} onChange={reloadAll} />}
-        {data && view === "trends" && <Trends data={data} />}
-        {view === "photos" && <Photos />}
+        {data && view === "trends" && <div className="scroll"><Trends data={data} /></div>}
+        {view === "photos" && <div className="scroll"><Photos /></div>}
       </main>
 
       <BottomNav view={view} onChange={setView} onAdd={() => setAdding(true)} />

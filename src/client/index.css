@@ -68,7 +68,8 @@ body::before {
 }
 
 .app {
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -172,9 +173,66 @@ body::before {
 .shell {
   max-width: 520px;
   margin: 0 auto;
-  padding: 0.25rem 1.1rem 7.5rem;
   width: 100%;
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* generic scroll region for non-split views (trends / photos / states) */
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.25rem 1.1rem 7.5rem;
+}
+
+/* ---- split layout: pinned hero + segmented scrollable detail ---- */
+.split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hero-fixed {
+  flex: none;
+  padding: 0.85rem 1.25rem 1.05rem;
+  background: var(--hero-grad);
+  border-bottom: 1px solid var(--line);
+}
+.segbar {
+  flex: none;
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.55rem 1rem;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.seg {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.6rem 0.4rem;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: color 150ms var(--ease-out), background 150ms var(--ease-out);
+}
+.seg.active {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 2px 2px 0 var(--shadow);
+}
+.detail {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.9rem 1.1rem 7.5rem;
 }
 
 /* ---- glance strip ---- */
@@ -832,18 +890,30 @@ body::before {
     padding: 1.6rem 1.5rem 0.8rem;
   }
   .shell {
-    padding: 0.5rem 1.5rem 8.5rem;
+    padding: 0;
   }
 
-  /* glance reads as a calm stat header rule, no horizontal scroll */
-  .glance {
-    gap: 2.6rem;
-    padding: 0.5rem 0.15rem 1.3rem;
-    border-bottom: 1px solid var(--line);
-    margin-bottom: 1.1rem;
+  /* split becomes a real two-pane console: pinned hero column + detail column */
+  .split {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    grid-template-rows: auto 1fr;
   }
-  .glance-val {
-    font-size: 1.65rem;
+  .hero-fixed {
+    grid-row: 1 / 3;
+    grid-column: 1;
+    border-right: 1px solid var(--line);
+    border-bottom: none;
+    overflow-y: auto;
+    padding: 1.6rem 1.5rem;
+  }
+  .segbar {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .detail {
+    grid-column: 2;
+    grid-row: 2;
   }
 
   /* masonry: the hero leads full-width, everything else balances into two columns */
