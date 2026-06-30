@@ -30,8 +30,8 @@ const options = {
         "`Cf-Access-Authenticated-User-Email` request header and every record is scoped to that email, " +
         "so one account can never read another's data. The scale-ingest route is the one exception — it " +
         "is authenticated with a bearer token and attributes readings to a configured owner.\n\n" +
-        "Nutrition can be logged from a photo, a before/after photo pair, or a freeform text description; " +
-        "each is sent to Claude, which returns per-item calories and protein.",
+        "Nutrition is logged from a freeform text description, which is sent to Claude, " +
+        "which returns per-item calories and protein.",
       contact: { name: "Nick Khami", url: "https://telemetry.skeptrune.com", email: "nick@mintlify.com" },
       license: { name: "MIT", url: "https://opensource.org/license/mit" },
     },

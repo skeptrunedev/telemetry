@@ -4,7 +4,7 @@
     "title": "Telemetry API",
     "version": "1.0.0",
     "summary": "Single-user body-recomposition tracking: weight, measurements, and AI nutrition logging.",
-    "description": "HTTP API behind [Telemetry](https://telemetry.skeptrune.com), a body-recomposition tracker.\n\nAll routes are gated by Cloudflare Access: the verified identity arrives as the `Cf-Access-Authenticated-User-Email` request header and every record is scoped to that email, so one account can never read another's data. The scale-ingest route is the one exception — it is authenticated with a bearer token and attributes readings to a configured owner.\n\nNutrition can be logged from a photo, a before/after photo pair, or a freeform text description; each is sent to Claude, which returns per-item calories and protein.",
+    "description": "HTTP API behind [Telemetry](https://telemetry.skeptrune.com), a body-recomposition tracker.\n\nAll routes are gated by Cloudflare Access: the verified identity arrives as the `Cf-Access-Authenticated-User-Email` request header and every record is scoped to that email, so one account can never read another's data. The scale-ingest route is the one exception — it is authenticated with a bearer token and attributes readings to a configured owner.\n\nNutrition is logged from a freeform text description, which is sent to Claude, which returns per-item calories and protein.",
     "contact": {
       "name": "Nick Khami",
       "url": "https://telemetry.skeptrune.com",
@@ -475,92 +475,6 @@
         }
       }
     },
-    "/api/nutrition/analyze": {
-      "post": {
-        "tags": [
-          "Nutrition"
-        ],
-        "summary": "Log a meal from photos",
-        "description": "Uploads 1–5 meal photos, sends them to Claude vision for per-item calorie and protein estimates, stores the photos plus a meal, and returns the analysis. In before/after mode the first photo is the full plate and the rest are leftovers, so only what was eaten is counted.",
-        "operationId": "analyzeMeal",
-        "parameters": [
-          {
-            "name": "date",
-            "in": "query",
-            "required": false,
-            "description": "Day to log against (YYYY-MM-DD). Defaults to the server's current UTC date.",
-            "schema": {
-              "type": "string",
-              "format": "date"
-            }
-          },
-          {
-            "name": "mode",
-            "in": "query",
-            "required": false,
-            "description": "Photo interpretation mode.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "angles",
-                "beforeafter"
-              ],
-              "default": "angles"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "description": "The meal photos to analyze, as multipart form fields named `photos`.",
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "photos"
-                ],
-                "properties": {
-                  "photos": {
-                    "type": "array",
-                    "description": "1–5 meal images (JPEG, PNG, WebP, or GIF; max 8MB each).",
-                    "example": [
-                      "@plate.jpg",
-                      "@leftovers.jpg"
-                    ],
-                    "items": {
-                      "type": "string",
-                      "format": "binary",
-                      "example": "@plate.jpg"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The meal was analyzed and logged.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MealAnalysis"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "502": {
-            "$ref": "#/components/responses/BadGateway"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        }
-      }
-    },
     "/api/nutrition/describe": {
       "post": {
         "tags": [
@@ -658,7 +572,7 @@
           "Nutrition"
         ],
         "summary": "Delete a meal",
-        "description": "Removes one of the caller's meals, its food items, and any stored photos, then recomputes the day's totals.",
+        "description": "Removes one of the caller's meals and its food items, then recomputes the day's totals.",
         "operationId": "deleteMeal",
         "parameters": [
           {
@@ -724,46 +638,6 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
-          }
-        }
-      }
-    },
-    "/api/nutrition/photo/{key}": {
-      "get": {
-        "tags": [
-          "Nutrition"
-        ],
-        "summary": "Fetch a meal photo",
-        "description": "Streams a stored meal photo from object storage. The key is owner-prefixed, so callers can only read their own photos. Note that the key contains slashes.",
-        "operationId": "getMealPhoto",
-        "parameters": [
-          {
-            "name": "key",
-            "in": "path",
-            "required": true,
-            "description": "Owner-prefixed object key, e.g. `user@example.com/2026-06-29/<uuid>`.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The image bytes.",
-            "content": {
-              "image/jpeg": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "description": "No photo exists at that key."
           }
         }
       }
@@ -871,16 +745,6 @@
       },
       "Unauthorized": {
         "description": "Missing or incorrect ingest bearer token.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        }
-      },
-      "Forbidden": {
-        "description": "The requested resource belongs to another user.",
         "content": {
           "application/json": {
             "schema": {
@@ -1665,7 +1529,7 @@
       },
       "MealAnalysis": {
         "type": "object",
-        "description": "Result of logging a meal from photos or a text description.",
+        "description": "Result of logging a meal from a text description.",
         "additionalProperties": false,
         "required": [
           "ok",
@@ -1673,8 +1537,7 @@
           "items",
           "totalKcal",
           "totalProteinG",
-          "note",
-          "photoKeys"
+          "note"
         ],
         "properties": {
           "ok": {
@@ -1722,17 +1585,6 @@
             "type": "string",
             "description": "The model's one-line assumptions note.",
             "example": "assumed a single chicken breast and one tablespoon of toum"
-          },
-          "photoKeys": {
-            "type": "array",
-            "description": "R2 object keys of stored photos (empty for text descriptions).",
-            "example": [
-              "nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071"
-            ],
-            "items": {
-              "type": "string",
-              "example": "nick@mintlify.com/2026-06-29/3f8b1c2a"
-            }
           }
         }
       },
@@ -1793,7 +1645,6 @@
           "id",
           "note",
           "createdAt",
-          "photoKeys",
           "items"
         ],
         "properties": {
@@ -1816,17 +1667,6 @@
             "format": "int64",
             "description": "Meal creation time as a Unix epoch in milliseconds.",
             "example": 1782000000000
-          },
-          "photoKeys": {
-            "type": "array",
-            "description": "R2 object keys of the meal's photos.",
-            "example": [
-              "nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071"
-            ],
-            "items": {
-              "type": "string",
-              "example": "nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e"
-            }
           },
           "items": {
             "type": "array",

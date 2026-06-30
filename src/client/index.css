@@ -13,8 +13,8 @@
   /* the ONE brand accent */
   --accent: #f59e0b; /* amber */
 
-  /* semantic status — muted, used sparingly */
-  --good: #46b97a;
+  /* semantic status — muted, used sparingly (positive uses the amber accent, no green) */
+  --good: #f59e0b;
   --attention: #e0894a;
   --info: #5b9bd5;
   --alert: #e35d5d;
@@ -471,14 +471,6 @@ a {
   align-items: center;
   gap: 0.7rem;
 }
-.meal-thumb {
-  width: 44px;
-  height: 44px;
-  border-radius: 9px;
-  object-fit: cover;
-  border: 1px solid var(--line);
-  flex: none;
-}
 .meal-sum {
   display: flex;
   flex-direction: column;
@@ -557,13 +549,6 @@ a {
 }
 .nav-btn.active {
   color: var(--accent);
-}
-.nav-btn.nav-add {
-  color: var(--accent);
-}
-.nav-btn.nav-add svg {
-  width: 26px;
-  height: 26px;
 }
 .nav-btn:focus-visible {
   outline: 2px solid var(--accent);
@@ -690,52 +675,6 @@ a {
   outline: none;
   border-color: var(--accent);
 }
-.photo-picks {
-  display: flex;
-  gap: 0.5rem;
-}
-.photo-picks .photo-pick {
-  flex: 1;
-}
-.thumb-clear {
-  width: 72px;
-  height: 72px;
-  border-radius: 10px;
-  border: 1px dashed var(--line);
-  background: transparent;
-  color: var(--muted);
-  font-size: 1rem;
-  cursor: pointer;
-}
-.photo-pick {
-  display: block;
-  border: 1px dashed var(--line);
-  border-radius: 12px;
-  padding: 1.2rem 1rem;
-  text-align: center;
-  color: var(--muted);
-  cursor: pointer;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  letter-spacing: 0.03em;
-  transition: border-color 160ms var(--ease-out);
-}
-.photo-pick:active {
-  border-color: var(--accent);
-}
-.thumbs {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-.thumb {
-  width: 72px;
-  height: 72px;
-  object-fit: cover;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-}
-
 .form-err {
   color: var(--alert);
   font-size: 0.85rem;
@@ -856,9 +795,6 @@ a {
   .nav-btn:hover,
   .tab:hover {
     color: var(--fg);
-  }
-  .photo-pick:hover {
-    border-color: var(--hover-line);
   }
   .btn:hover {
     filter: brightness(1.08);
