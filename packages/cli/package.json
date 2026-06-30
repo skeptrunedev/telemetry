@@ -1,6 +1,6 @@
 {
   "name": "@skeptrune/telemetry-cli",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Command-line client for the Telemetry body-recomposition API (browser SSO via Cloudflare Access, no API key).",
   "license": "MIT",
   "repository": {
