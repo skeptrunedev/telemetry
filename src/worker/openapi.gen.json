@@ -31,6 +31,10 @@
       "description": "Liveness and identity probes."
     },
     {
+      "name": "Auth",
+      "description": "Browser-based CLI login against Cloudflare Access."
+    },
+    {
       "name": "Weight",
       "description": "Body-weight readings and per-reading notes."
     },
@@ -792,6 +796,49 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/cli-auth": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "CLI login bounce",
+        "description": "Behind Cloudflare Access; after SSO it redirects the verified Access token back to the CLI's local loopback callback. Not called directly by users.",
+        "operationId": "cliAuth",
+        "parameters": [
+          {
+            "name": "port",
+            "in": "query",
+            "required": true,
+            "description": "Loopback port the CLI's one-shot callback server is listening on.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 65535
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "description": "Opaque nonce the CLI generated, echoed back so it can reject unsolicited callbacks.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to the CLI's loopback callback carrying the Access token."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           }
         }
       }

@@ -994,6 +994,65 @@ app.get("/openapi.json", (c) =>
   c.json(openapiDoc as Record<string, unknown>, 200, { "cache-control": "public, max-age=300" }),
 );
 
+// ---- CLI login bounce ------------------------------------------------------
+// The CLI opens this URL in a browser. It sits behind Cloudflare Access, so the
+// visit forces SSO; afterwards Access hands us the verified app token (the
+// CF_Authorization cookie / the Cf-Access-Jwt-Assertion header). We bounce that
+// token back to the one-shot localhost server the CLI is listening on. The CLI
+// then replays it as the `cf-access-token` header — no API key involved.
+//
+// Security: we only ever redirect to loopback (127.0.0.1:<port>), so the token
+// can never be exfiltrated to an attacker-controlled host via a crafted link.
+function accessToken(c: { req: { header: (k: string) => string | undefined } }): string | null {
+  const cookie = c.req.header("cookie") ?? "";
+  const m = cookie.match(/(?:^|;\s*)CF_Authorization=([^;]+)/);
+  if (m) return decodeURIComponent(m[1]);
+  return c.req.header("cf-access-jwt-assertion") ?? null;
+}
+
+/**
+ * @openapi
+ * /cli-auth:
+ *   get:
+ *     tags: [Auth]
+ *     summary: CLI login bounce
+ *     description: Behind Cloudflare Access; after SSO it redirects the verified Access token back to the CLI's local loopback callback. Not called directly by users.
+ *     operationId: cliAuth
+ *     parameters:
+ *       - name: port
+ *         in: query
+ *         required: true
+ *         description: Loopback port the CLI's one-shot callback server is listening on.
+ *         schema:
+ *           type: integer
+ *           minimum: 1024
+ *           maximum: 65535
+ *       - name: state
+ *         in: query
+ *         required: true
+ *         description: Opaque nonce the CLI generated, echoed back so it can reject unsolicited callbacks.
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '302':
+ *         description: Redirect to the CLI's loopback callback carrying the Access token.
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '401':
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+app.get("/cli-auth", (c) => {
+  const port = Number(c.req.query("port"));
+  const state = c.req.query("state") ?? "";
+  if (!Number.isInteger(port) || port < 1024 || port > 65535 || !state || state.length > 200) {
+    return c.json({ error: "bad port or state" }, 400);
+  }
+  const token = accessToken(c);
+  if (!token) return c.json({ error: "no access token on request" }, 401);
+  const url = `http://127.0.0.1:${port}/callback?token=${encodeURIComponent(token)}&state=${encodeURIComponent(state)}`;
+  return c.redirect(url, 302);
+});
+
 // ---- SPA fallback ----------------------------------------------------------
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
 

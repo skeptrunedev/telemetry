@@ -53,6 +53,20 @@ The generated spec is served by the Worker at **`/openapi.json`**
 fails if the committed copy drifted from the comments, and holds the vacuum
 score at 100.
 
+## CLI
+
+A terminal client lives in [`packages/cli`](./packages/cli) and ships to npm as
+**`@skeptrune/telemetry-cli`** (plus standalone binaries on each GitHub Release).
+It authenticates with browser SSO through Cloudflare Access — no API key.
+
+```bash
+npm install -g @skeptrune/telemetry-cli
+telemetry login
+telemetry status
+telemetry weight log 158.2 --note "morning, fasted"
+telemetry meal describe "chicken breast + toum, skipped the salad"
+```
+
 ## Deploy (Cloudflare)
 
 ```bash

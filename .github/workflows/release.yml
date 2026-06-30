@@ -1,0 +1,64 @@
+name: Release CLI
+
+# Auto-release the CLI on merge to main (Release Please style):
+# conventional-commit merges accumulate into a release PR; merging that PR
+# tags the version, cuts a GitHub Release, publishes to npm, and attaches
+# standalone binaries for every platform.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.rp.outputs['packages/cli--release_created'] }}
+      tag: ${{ steps.rp.outputs['packages/cli--tag_name'] }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.released == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Build standalone binaries
+        run: npm run binaries
+
+      - name: Name binaries after the CLI
+        working-directory: packages/cli/binaries
+        run: for f in index-*; do mv "$f" "telemetry-${f#index-}"; done
+
+      - name: Attach binaries to the GitHub Release
+        run: gh release upload "${{ needs.release-please.outputs.tag }}" binaries/telemetry-* --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
