@@ -1,14 +1,14 @@
 :root {
-  /* substrate */
-  --bg: #0a0a0b;
-  --surface: #141417;
-  --surface-2: #1a1a1e;
-  --line: #26262b;
+  /* substrate — cool graphite instrument screen, not pure black */
+  --bg: #0c0e11;
+  --surface: #13161b;
+  --surface-2: #191d24;
+  --line: #282d35;
 
   /* text */
-  --fg: #ececE7;
-  --muted: #8a8a90;
-  --dim: #5c5c62;
+  --fg: #e7e9ec;
+  --muted: #888f9a;
+  --dim: #565d68;
 
   /* status — muted, earthy, never neon */
   --good: #5fd39a;
@@ -16,17 +16,19 @@
   --info: #6fa8dd;
   --alert: #e25c5c;
 
-  /* type */
-  --sans: "Inter Variable", system-ui, -apple-system, sans-serif;
-  --serif: "Newsreader Variable", Georgia, "Times New Roman", serif;
-  --mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  /* type — "Telemetry" = instrument readout: a Space Mono-derived grotesque
+     for display/numerals, a precise mono for data/labels. No serif. */
+  --display: "Space Grotesk Variable", system-ui, sans-serif;
+  --sans: "Space Grotesk Variable", system-ui, -apple-system, sans-serif;
+  --mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
 
-  /* motion (Emil) */
-  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 
   font-family: var(--sans);
   color-scheme: dark;
+  letter-spacing: -0.01em;
 }
 
 * {
@@ -38,7 +40,7 @@ body {
   margin: 0;
   min-height: 100dvh;
   background: var(--bg);
-  background-image: radial-gradient(120% 60% at 50% -10%, #131318 0%, var(--bg) 55%);
+  background-image: radial-gradient(120% 60% at 50% -8%, #161b22 0%, var(--bg) 58%);
   background-attachment: fixed;
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
@@ -111,16 +113,16 @@ body {
   padding: 0.4rem;
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
   transform-origin: top right;
-  animation: menupop 150ms var(--ease-out);
+  animation: menupop 170ms var(--ease-out);
 }
 @keyframes menupop {
   from {
     opacity: 0;
-    transform: scale(0.96);
+    transform: translateY(-6px) scale(0.95);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(0) scale(1);
   }
 }
 .menu-email {
@@ -172,10 +174,11 @@ body {
   flex: none;
 }
 .glance-val {
-  font-size: 1.35rem;
-  font-weight: 300;
+  font-family: var(--display);
+  font-size: 1.4rem;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
 }
 .glance-label {
   font-family: var(--mono);
@@ -215,7 +218,7 @@ body {
 }
 
 .hero {
-  background: linear-gradient(158deg, #16191c 0%, #101013 68%);
+  background: linear-gradient(158deg, #1a2027 0%, #0f1318 70%);
 }
 
 .card-head {
@@ -242,37 +245,41 @@ body {
 .status.attention { color: var(--attention); }
 .status.info { color: var(--info); }
 
-/* serif insight headline — the Oura signature */
+/* readout headline — grotesque, not editorial serif */
 .insight {
-  font-family: var(--serif);
-  font-weight: 450;
-  font-size: 1.5rem;
-  line-height: 1.12;
-  letter-spacing: 0.005em;
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 1.4rem;
+  line-height: 1.14;
+  letter-spacing: -0.02em;
   margin: 0.1rem 0 0.6rem;
 }
 
 .hero-num {
-  font-size: clamp(3.2rem, 17vw, 4.6rem);
-  font-weight: 250;
-  line-height: 0.9;
-  letter-spacing: -0.035em;
+  font-family: var(--display);
+  font-size: clamp(3.4rem, 18vw, 5rem);
+  font-weight: 500;
+  line-height: 0.92;
+  letter-spacing: -0.04em;
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
 .hero-num .unit {
-  font-size: 1.1rem;
-  font-weight: 400;
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  font-weight: 500;
   color: var(--muted);
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .big-num {
+  font-family: var(--display);
   font-size: 2.1rem;
-  font-weight: 300;
+  font-weight: 500;
   margin: 0;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
 }
 
 .meta {
@@ -289,11 +296,11 @@ body {
   margin-top: 0.6rem;
 }
 .note-line {
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 0.9rem;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  line-height: 1.5;
   color: var(--muted);
-  margin: 0.5rem 0 0;
+  margin: 0.55rem 0 0;
 }
 .note-edit-trigger {
   display: block;
@@ -302,11 +309,10 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  padding: 0.35rem 0 0;
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 0.88rem;
-  color: var(--muted);
+  padding: 0.4rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--dim);
 }
 .note-edit {
   display: flex;
@@ -317,7 +323,7 @@ body {
 .note-edit input {
   flex: 1;
   min-width: 0;
-  background: #0f0f11;
+  background: #0e1116;
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 0.5rem 0.6rem;
@@ -338,11 +344,25 @@ body {
 /* ---- range bar (current within start→goal / value vs target) ---- */
 .rangebar {
   position: relative;
-  height: 6px;
+  height: 8px;
   border-radius: 99px;
-  background: #26262b;
-  margin-top: 0.55rem;
+  background: #21262e;
+  margin-top: 0.6rem;
   overflow: hidden;
+}
+/* gauge ticks — the readout reads as a calibrated scale, not a progress bar */
+.rangebar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent 9px,
+    rgba(136, 143, 154, 0.28) 9px,
+    rgba(136, 143, 154, 0.28) 10px
+  );
+  pointer-events: none;
 }
 .rangebar-fill {
   position: absolute;
@@ -424,7 +444,7 @@ body {
 .crow-bar {
   height: 4px;
   border-radius: 99px;
-  background: #26262b;
+  background: #21262e;
   margin-top: 0.5rem;
   overflow: hidden;
 }
@@ -593,12 +613,14 @@ body {
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(7, 9, 12, 0.6);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   display: flex;
   align-items: flex-end;
   justify-content: center;
   z-index: 30;
-  animation: backdrop 200ms var(--ease-out);
+  animation: backdrop 320ms var(--ease-out);
 }
 @keyframes backdrop { from { opacity: 0; } to { opacity: 1; } }
 .sheet {
@@ -609,14 +631,18 @@ body {
   border-bottom: none;
   border-radius: 22px 22px 0 0;
   padding: 1rem 1.2rem calc(1.3rem + env(safe-area-inset-bottom));
-  animation: sheetup 360ms var(--ease-drawer);
+  will-change: transform;
+  animation: sheetup 440ms var(--ease-drawer);
 }
-@keyframes sheetup { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes sheetup {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
 
 .tabs {
   display: flex;
   gap: 0.25rem;
-  background: #0f0f11;
+  background: #0e1116;
   border-radius: 12px;
   padding: 0.25rem;
   margin-bottom: 1rem;
@@ -659,7 +685,7 @@ body {
 }
 .field input,
 .field select {
-  background: #0f0f11;
+  background: #0e1116;
   border: 1px solid var(--line);
   border-radius: 11px;
   padding: 0.75rem 0.85rem;
@@ -675,7 +701,7 @@ body {
 }
 .describe-input {
   width: 100%;
-  background: #0f0f11;
+  background: #0e1116;
   border: 1px solid var(--line);
   border-radius: 11px;
   padding: 0.75rem 0.85rem;
