@@ -47,6 +47,7 @@ export default function App() {
   const [view, setView] = useState<View>("today");
   const [adding, setAdding] = useState(false);
   const [tick, setTick] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const load = useCallback(() => {
     api
@@ -68,20 +69,45 @@ export default function App() {
   useEffect(() => {
     api.whoami().then((w) => setEmail(w.email)).catch(() => {});
   }, []);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
 
   return (
     <div className="app">
       <header className="topbar">
         <span className="brand">TELEMETRY</span>
         {email && (
-          <a
-            className="avatar"
-            href="https://skeptrune.cloudflareaccess.com/cdn-cgi/access/logout"
-            title={`${email} · switch account`}
-            aria-label={`Signed in as ${email}. Switch account.`}
-          >
-            {email[0]}
-          </a>
+          <div className="account">
+            <button
+              className="avatar"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label={`Account: ${email}`}
+              title={email}
+            >
+              {email[0]}
+            </button>
+            {menuOpen && (
+              <>
+                <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
+                <div className="menu" role="menu">
+                  <p className="menu-email">{email}</p>
+                  <a
+                    className="menu-item"
+                    role="menuitem"
+                    href="https://skeptrune.cloudflareaccess.com/cdn-cgi/access/logout"
+                  >
+                    Switch account
+                  </a>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </header>
 

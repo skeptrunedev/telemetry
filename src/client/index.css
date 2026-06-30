@@ -67,11 +67,15 @@ body {
   font-weight: 700;
   font-size: 0.8rem;
 }
-/* minimal identity: a monogram avatar that links to switch/sign-out */
-.avatar {
+/* minimal identity: a monogram avatar that opens a confirm menu */
+.account {
+  position: relative;
   flex: none;
+}
+.avatar {
   width: 30px;
   height: 30px;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid var(--line);
   background: var(--surface-2);
@@ -83,10 +87,63 @@ body {
   display: grid;
   place-items: center;
   text-decoration: none;
+  cursor: pointer;
   transition: transform 150ms var(--ease-out), border-color 160ms var(--ease-out), color 160ms var(--ease-out);
 }
 .avatar:active {
   transform: scale(0.94);
+}
+
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 41;
+  min-width: 210px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.4rem;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+  transform-origin: top right;
+  animation: menupop 150ms var(--ease-out);
+}
+@keyframes menupop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.menu-email {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+  margin: 0;
+  padding: 0.4rem 0.55rem 0.5rem;
+  word-break: break-all;
+  border-bottom: 1px solid var(--line);
+}
+.menu-item {
+  display: block;
+  margin-top: 0.3rem;
+  padding: 0.6rem 0.55rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  color: var(--fg);
+  text-decoration: none;
+  cursor: pointer;
+}
+.menu-item:active {
+  transform: scale(0.98);
 }
 
 .shell {
@@ -823,6 +880,9 @@ body {
     border-color: var(--muted);
     color: var(--fg);
   }
+  .menu-item:hover {
+    background: var(--surface);
+  }
 }
 
 /* ---- reduced motion (Emil): keep meaning, drop movement ---- */
@@ -832,7 +892,8 @@ body {
   .chart-area,
   .chart-dot,
   .sheet,
-  .sheet-backdrop {
+  .sheet-backdrop,
+  .menu {
     animation: none;
     opacity: 1;
     transform: none;
