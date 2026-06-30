@@ -28,11 +28,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,     target: node18-linux-x64,    out: telemetry-linux-x64 }
-          - { os: ubuntu-24.04-arm,  target: node18-linux-arm64,  out: telemetry-linux-arm64 }
-          - { os: macos-13,          target: node18-macos-x64,    out: telemetry-macos-x64 }
-          - { os: macos-14,          target: node18-macos-arm64,  out: telemetry-macos-arm64 }
-          - { os: windows-latest,    target: node18-win-x64,      out: telemetry-win-x64.exe }
+          - { os: ubuntu-latest,     target: node22-linux-x64,    out: telemetry-linux-x64 }
+          - { os: ubuntu-24.04-arm,  target: node22-linux-arm64,  out: telemetry-linux-arm64 }
+          - { os: macos-13,          target: node22-macos-x64,    out: telemetry-macos-x64 }
+          - { os: macos-14,          target: node22-macos-arm64,  out: telemetry-macos-arm64 }
+          - { os: windows-latest,    target: node22-win-x64,      out: telemetry-win-x64.exe }
     steps:
       - uses: actions/checkout@v4
 
