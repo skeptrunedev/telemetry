@@ -31,15 +31,6 @@ function Trends({ data }: { data: DashboardData }) {
   );
 }
 
-function Photos() {
-  return (
-    <div className="view-empty">
-      <p className="insight">Progress photos</p>
-      <p className="meta">Photo log + side-by-side compare lands in P5.</p>
-    </div>
-  );
-}
-
 export default function App() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +107,6 @@ export default function App() {
         {!data && !error && <p className="meta">loading…</p>}
         {data && view === "today" && <Dashboard data={data} refreshKey={tick} onChange={reloadAll} />}
         {data && view === "trends" && <Trends data={data} />}
-        {view === "photos" && <Photos />}
       </main>
 
       <BottomNav view={view} onChange={setView} onAdd={() => setAdding(true)} />

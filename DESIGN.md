@@ -35,8 +35,8 @@ System fonts only; hierarchy from size + weight.
 
 ## Layout
 
-- **Standard stacked-card dashboard.** Top bar (wordmark + account monogram), a horizontal glance strip (Weight / S:W / Waist / Arm), then a single scrolling column of cards: weight hero (latest, insight line, trend chart, start→goal range bar, 7-day avg, note), shoulder:waist, measurements, nutrition vs target, food log. Trends and Photos are separate views.
-- **Navigation: one docked bottom bar.** Full-width, flat, pinned to the bottom edge with a 1px top border and the surface background — not a floating pill, no FAB. Four equal slots: **Today · Trends · `+` Add · Photos**; the centered `+` is the primary (amber) action and opens the add sheet. Active tab is amber. Content has bottom padding so the bar never overlaps the last card.
+- **Standard stacked-card dashboard.** Top bar (wordmark + account monogram), a horizontal glance strip (Weight / S:W / Waist / Arm), then a single scrolling column of cards: weight hero (latest, insight line, trend chart, start→goal range bar, 7-day avg, note), shoulder:waist, measurements, nutrition vs target, food log. Trends is a separate view.
+- **Navigation: one docked bottom bar.** Full-width, flat, pinned to the bottom edge with a 1px top border and the surface background — not a floating pill, no FAB. Three slots: **Today · Trends · `+` Add**; the `+` is the primary (amber) action and opens the add sheet. Active tab is amber. Content has bottom padding so the bar never overlaps the last card.
 - Centered, `max-width ~520px` column on mobile and desktop alike (a focused single-column app, not a stretched grid).
 
 ## Components

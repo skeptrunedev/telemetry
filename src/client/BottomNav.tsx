@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type View = "today" | "trends" | "photos";
+export type View = "today" | "trends";
 
 const TODAY_ICON = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -11,13 +11,6 @@ const TODAY_ICON = (
 const TRENDS_ICON = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 17l5-6 4 4 8-9" />
-  </svg>
-);
-const PHOTOS_ICON = (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="5" width="18" height="14" rx="2" />
-    <circle cx="9" cy="11" r="2" />
-    <path d="M21 17l-5-5-4 4" />
   </svg>
 );
 const ADD_ICON = (
@@ -52,7 +45,6 @@ export function BottomNav({
         {ADD_ICON}
         <span>Add</span>
       </button>
-      <Tab icon={PHOTOS_ICON} label="Photos" active={view === "photos"} onClick={() => onChange("photos")} />
     </nav>
   );
 }

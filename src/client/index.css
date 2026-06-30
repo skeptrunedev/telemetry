@@ -556,15 +556,6 @@ a {
   border-radius: 8px;
 }
 
-/* ---- empty / placeholder views ---- */
-.view-empty {
-  text-align: center;
-  padding: 4rem 1rem;
-}
-.view-empty .insight {
-  margin-bottom: 0.4rem;
-}
-
 /* ---- add sheet ---- */
 .sheet-backdrop {
   position: fixed;
