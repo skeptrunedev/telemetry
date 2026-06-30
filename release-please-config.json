@@ -6,7 +6,9 @@
       "release-type": "node",
       "package-name": "@skeptrune/telemetry-cli",
       "component": "cli",
-      "include-component-in-tag": true
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
     }
   }
 }

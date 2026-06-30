@@ -24,6 +24,25 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          # A PAT (not GITHUB_TOKEN) so the release PR is authored by a real
+          # user and therefore TRIGGERS CI — which is what auto-merge waits on.
+          # Falls back to GITHUB_TOKEN (PR opens, but CI won't run on it).
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # Turn on auto-merge for the release PR so it merges itself once the
+      # required CI checks (incl. integration tests) go green. Requires the repo
+      # setting "Allow auto-merge" + branch protection requiring those checks.
+      - name: Enable auto-merge on the release PR
+        if: ${{ steps.rp.outputs['packages/cli--release_created'] != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          pr=$(gh pr list --state open --label "autorelease: pending" --json number --jq '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr merge "$pr" --auto --squash && echo "auto-merge enabled on PR #$pr"
+          else
+            echo "no pending release PR"
+          fi
 
   publish:
     needs: release-please
