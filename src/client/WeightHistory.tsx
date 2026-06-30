@@ -5,7 +5,7 @@ import type { WeightReading } from "./api";
 
 const fmtDate = (ts: number) => new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
-export function WeightHistory() {
+export function WeightHistory({ refreshKey = 0 }: { refreshKey?: number }) {
   const [rows, setRows] = useState<WeightReading[] | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
@@ -14,7 +14,7 @@ export function WeightHistory() {
   const load = useCallback(() => {
     api.weightList().then(setRows).catch(() => setRows([]));
   }, []);
-  useEffect(load, [load]);
+  useEffect(load, [load, refreshKey]);
 
   async function saveNote(id: number) {
     setBusy(true);

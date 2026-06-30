@@ -1,35 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { kgToLb } from "../shared/types";
 import type { DashboardData } from "../shared/types";
 import { api, todayLocal } from "./api";
-import { Dashboard } from "./Dashboard";
-import { AreaChart } from "./Chart";
+import { Today } from "./Dashboard";
+import { Body, Food } from "./Dashboard";
 import { AddSheet } from "./AddSheet";
-import { BottomNav, type View } from "./BottomNav";
 import { WeightHistory } from "./WeightHistory";
 
-function Trends({ data }: { data: DashboardData }) {
-  const latestLb = data.weight.latestKg != null ? kgToLb(data.weight.latestKg) : null;
-  return (
-    <div className="grid">
-      <section className="card hero">
-        <p className="label">Weight / lb · all time</p>
-        <p className="hero-num">
-          {latestLb != null ? latestLb.toFixed(1) : "—"}
-          <span className="unit"> lb</span>
-        </p>
-        <AreaChart points={data.weight.trend.map((p) => kgToLb(p.kg))} height={120} />
-        <p className="meta">{data.weight.trend.length} readings logged</p>
-      </section>
-      <section className="card">
-        <p className="label">Shoulder : Waist</p>
-        <p className="big-num">{data.shoulderToWaist != null ? data.shoulderToWaist.toFixed(3) : "—"}</p>
-        <p className="meta">track this climbing as you lean out + build delts</p>
-      </section>
-      <WeightHistory />
-    </div>
-  );
-}
+type Tab = "today" | "body" | "food" | "photos";
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "body", label: "Body" },
+  { key: "food", label: "Food" },
+  { key: "photos", label: "Photos" },
+];
 
 function Photos() {
   return (
@@ -44,7 +28,7 @@ export default function App() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
-  const [view, setView] = useState<View>("today");
+  const [tab, setTab] = useState<Tab>("today");
   const [adding, setAdding] = useState(false);
   const [tick, setTick] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -59,7 +43,7 @@ export default function App() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  // refresh dashboard totals AND signal child lists (FoodLog) to refetch
+  // refresh dashboard totals AND signal child lists (FoodLog/WeightHistory) to refetch
   const reloadAll = useCallback(() => {
     load();
     setTick((t) => t + 1);
@@ -79,47 +63,82 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="brand">TELEMETRY</span>
-        {email && (
-          <div className="account">
+        <span className="brand">telemetry</span>
+        <nav className="tabs-nav" aria-label="Sections">
+          {TABS.map((t) => (
             <button
-              className="avatar"
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              aria-label={`Account: ${email}`}
-              title={email}
+              key={t.key}
+              className={`navtab ${tab === t.key ? "active" : ""}`}
+              onClick={() => setTab(t.key)}
+              aria-current={tab === t.key ? "page" : undefined}
             >
-              {email[0]}
+              {t.label}
             </button>
-            {menuOpen && (
-              <>
-                <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
-                <div className="menu" role="menu">
-                  <p className="menu-email">{email}</p>
-                  <a
-                    className="menu-item"
-                    role="menuitem"
-                    href="https://skeptrune.cloudflareaccess.com/cdn-cgi/access/logout"
-                  >
-                    Switch account
-                  </a>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+          ))}
+        </nav>
+        <div className="topbar-actions">
+          <button className="add-btn" onClick={() => setAdding(true)}>
+            + Add
+          </button>
+          {email && (
+            <div className="account">
+              <button
+                className="avatar"
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-label={`Account: ${email}`}
+                title={email}
+              >
+                {email[0]}
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
+                  <div className="menu" role="menu">
+                    <p className="menu-email">{email}</p>
+                    <a
+                      className="menu-item"
+                      role="menuitem"
+                      href="https://skeptrune.cloudflareaccess.com/cdn-cgi/access/logout"
+                    >
+                      Switch account
+                    </a>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </header>
 
       <main className="shell">
         {error && <div className="scroll"><p className="form-err">{error}</p></div>}
         {!data && !error && <div className="scroll"><p className="meta">loading…</p></div>}
-        {data && view === "today" && <Dashboard data={data} refreshKey={tick} onChange={reloadAll} />}
-        {data && view === "trends" && <div className="scroll"><Trends data={data} /></div>}
-        {view === "photos" && <div className="scroll"><Photos /></div>}
+        {data && tab === "today" && (
+          <div className="scroll">
+            <div className="grid">
+              <Today data={data} />
+              <WeightHistory refreshKey={tick} />
+            </div>
+          </div>
+        )}
+        {data && tab === "body" && (
+          <div className="scroll">
+            <div className="grid">
+              <Body data={data} />
+            </div>
+          </div>
+        )}
+        {data && tab === "food" && (
+          <div className="scroll">
+            <div className="grid">
+              <Food data={data} refreshKey={tick} onChange={reloadAll} />
+            </div>
+          </div>
+        )}
+        {tab === "photos" && <div className="scroll"><Photos /></div>}
       </main>
-
-      <BottomNav view={view} onChange={setView} onAdd={() => setAdding(true)} />
 
       {adding && <AddSheet onClose={() => setAdding(false)} onChange={reloadAll} />}
     </div>

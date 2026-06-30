@@ -1,5 +1,5 @@
-// Dependency-free gradient area chart. pathLength={1} lets CSS animate the
-// reveal with a normalized stroke-dashoffset (no runtime measurement).
+// Dependency-free flat area chart. One accent stroke, faint accent fill, no
+// gradients or reveal animation — plain and legible.
 export function AreaChart({ points, height = 76 }: { points: number[]; height?: number }) {
   if (points.length < 2) {
     return <div className="chart-empty">— not enough data yet —</div>;
@@ -18,28 +18,17 @@ export function AreaChart({ points, height = 76 }: { points: number[]; height?: 
   const lastY = y(points[n - 1]);
   return (
     <svg className="chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="trend">
-      <defs>
-        <linearGradient id="strokeGrad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="var(--info)" />
-          <stop offset="100%" stopColor="var(--good)" />
-        </linearGradient>
-        <linearGradient id="fillGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--good)" stopOpacity="0.2" />
-          <stop offset="100%" stopColor="var(--good)" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path className="chart-area" d={area} fill="url(#fillGrad)" />
+      <path className="chart-area" d={area} fill="var(--accent)" fillOpacity="0.08" />
       <path
         className="chart-line"
         d={line}
         fill="none"
-        stroke="url(#strokeGrad)"
-        strokeWidth="2.5"
+        stroke="var(--accent)"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        pathLength={1}
       />
-      <circle className="chart-dot" cx={lastX} cy={lastY} r="3.5" fill="var(--good)" />
+      <circle className="chart-dot" cx={lastX} cy={lastY} r="3" fill="var(--accent)" />
     </svg>
   );
 }
