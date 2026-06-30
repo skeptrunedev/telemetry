@@ -1,0 +1,55 @@
+name: CLI binaries
+
+# Build standalone CLI binaries on NATIVE runners (no cross-compiling — pkg
+# can't reliably cross-build other architectures) and attach them to the
+# GitHub Release. Fires when a release is published, and can be run manually
+# against any existing tag to backfill.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build + attach binaries for (e.g. cli-v0.1.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.out }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: packages/cli
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,     target: node18-linux-x64,    out: telemetry-linux-x64 }
+          - { os: ubuntu-24.04-arm,  target: node18-linux-arm64,  out: telemetry-linux-arm64 }
+          - { os: macos-13,          target: node18-macos-x64,    out: telemetry-macos-x64 }
+          - { os: macos-14,          target: node18-macos-arm64,  out: telemetry-macos-arm64 }
+          - { os: windows-latest,    target: node18-win-x64,      out: telemetry-win-x64.exe }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/cli/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Compile binary (${{ matrix.target }})
+        run: npx pkg dist/index.js -t ${{ matrix.target }} -o "${{ matrix.out }}"
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" "${{ matrix.out }}" --clobber

@@ -74,18 +74,17 @@ jobs:
         run: npm run build
 
       - name: Publish to npm
-        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Idempotent: skip if this version is already on npm, so re-runs are safe.
+        run: |
+          v=$(node -p "require('./package.json').version")
+          if npm view "@skeptrune/telemetry-cli@$v" version >/dev/null 2>&1; then
+            echo "npm already has $v — skipping publish"
+          else
+            npm publish --access public
+          fi
 
-      - name: Build standalone binaries
-        run: npm run binaries
-
-      - name: Name binaries after the CLI
-        working-directory: packages/cli/binaries
-        run: for f in index-*; do mv "$f" "telemetry-${f#index-}"; done
-
-      - name: Attach binaries to the GitHub Release
-        run: gh release upload "${{ needs.release-please.outputs.tag }}" binaries/telemetry-* --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Standalone binaries are built per-platform on native runners by
+      # .github/workflows/binaries.yml, which fires on the GitHub Release this
+      # publish creates (and can be re-run manually via workflow_dispatch).
