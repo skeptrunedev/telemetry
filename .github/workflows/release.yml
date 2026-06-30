@@ -36,6 +36,7 @@ jobs:
         if: ${{ steps.rp.outputs['packages/cli--release_created'] != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           pr=$(gh pr list --state open --label "autorelease: pending" --json number --jq '.[0].number')
           if [ -n "$pr" ]; then
