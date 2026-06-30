@@ -44,11 +44,15 @@ export function AddSheet({ onClose, onChange }: { onClose: () => void; onChange:
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="tabs">
-          {(["weight", "measure", "nutrition"] as Tab[]).map((t) => (
-            <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => { setTab(t); setErr(null); }}>
-              {t}
-            </button>
+        <p className="sheet-title">add</p>
+        <div className="subtabs">
+          {(["weight", "measure", "nutrition"] as Tab[]).map((t, i) => (
+            <span key={t}>
+              {i > 0 && <span className="subtab-sep">|</span>}
+              <button className={`subtab ${tab === t ? "active" : ""}`} onClick={() => { setTab(t); setErr(null); }}>
+                {t}
+              </button>
+            </span>
           ))}
         </div>
 
@@ -94,16 +98,16 @@ export function AddSheet({ onClose, onChange }: { onClose: () => void; onChange:
 
         <div className="sheet-actions">
           {tab === "nutrition" ? (
-            <button className="btn ghost" onClick={onClose} disabled={busy}>
-              Done
+            <button className="btn" onClick={onClose} disabled={busy}>
+              done
             </button>
           ) : (
             <>
-              <button className="btn ghost" onClick={onClose} disabled={busy}>
-                Cancel
+              <button className="btn" onClick={onClose} disabled={busy}>
+                cancel
               </button>
-              <button className="btn" onClick={save} disabled={busy}>
-                {busy ? "Saving…" : "Save"}
+              <button className="btn primary" onClick={save} disabled={busy}>
+                {busy ? "saving…" : "save"}
               </button>
             </>
           )}

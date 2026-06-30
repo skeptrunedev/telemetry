@@ -22,48 +22,41 @@ export function FoodLog({ refreshKey, onChange }: { refreshKey: number; onChange
   }
 
   if (!meals) return null;
+  if (meals.length === 0) return <p className="empty">no meals logged yet — add one from the add link</p>;
 
   return (
-    <section className="card">
-      <p className="label">Food log / today</p>
-      {meals.length === 0 ? (
-        <p className="empty">no meals logged yet — tap + → nutrition</p>
-      ) : (
-        <div className="meals">
-          {meals.map((m) => {
-            const kcal = m.items.reduce((s, i) => s + i.kcal, 0);
-            const protein = Math.round(m.items.reduce((s, i) => s + i.proteinG, 0));
-            return (
-              <div className="meal" key={m.id}>
-                <div className="meal-head">
-                  {m.photoKeys[0] && <img className="meal-thumb" src={api.photoUrl(m.photoKeys[0])} alt="" />}
-                  <div className="meal-sum">
-                    <span className="meal-total">{kcal} kcal · {protein}g</span>
-                    {m.note && <span className="meal-note">{m.note}</span>}
-                  </div>
-                  <button className="x" onClick={() => removeMeal(m.id)} aria-label="Remove whole meal">✕</button>
-                </div>
-                <div className="rows">
-                  {m.items.map((it) => (
-                    <div className="crow" key={it.id}>
-                      <div className="crow-top">
-                        <span className="crow-label">{it.name}</span>
-                        <span className="item-right">
-                          <span className="crow-val">
-                            {it.kcal}
-                            <span className="unit"> · {Math.round(it.proteinG)}g</span>
-                          </span>
-                          <button className="x sm" onClick={() => removeItem(it.id)} aria-label="Remove item">✕</button>
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+    <ol className="stories">
+      {meals.map((m, i) => {
+        const kcal = m.items.reduce((s, it) => s + it.kcal, 0);
+        const protein = Math.round(m.items.reduce((s, it) => s + it.proteinG, 0));
+        const title = m.note?.trim() ? m.note.trim() : `${kcal} kcal · ${protein} g`;
+        return (
+          <li className="story" key={m.id}>
+            <span className="story-rank">{i + 1}.</span>
+            <span className="story-body">
+              <div className="story-title">
+                {title}
+                {m.note?.trim() ? <span className="delta">{kcal} kcal · {protein} g</span> : null}
               </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
+              <div className="story-sub">
+                {m.items.map((it, j) => (
+                  <span key={it.id}>
+                    {j > 0 && " · "}
+                    {it.name.toLowerCase()} {it.kcal}
+                    <button className="linkbtn itemx" onClick={() => removeItem(it.id)} aria-label={`Remove ${it.name}`}>
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                <span className="subsep"> | </span>
+                <button className="linkbtn" onClick={() => removeMeal(m.id)} aria-label="Remove whole meal">
+                  delete
+                </button>
+              </div>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

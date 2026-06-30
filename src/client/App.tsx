@@ -9,17 +9,17 @@ import { WeightHistory } from "./WeightHistory";
 type Tab = "today" | "body" | "food" | "photos";
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: "today", label: "Today" },
-  { key: "body", label: "Body" },
-  { key: "food", label: "Food" },
-  { key: "photos", label: "Photos" },
+  { key: "today", label: "today" },
+  { key: "body", label: "body" },
+  { key: "food", label: "food" },
+  { key: "photos", label: "photos" },
 ];
 
 function Photos() {
   return (
-    <div className="view-empty">
-      <p className="insight">Progress photos</p>
-      <p className="meta">Photo log + side-by-side compare lands in P5.</p>
+    <div className="block">
+      <p className="block-title">Progress photos</p>
+      <p className="empty">Photo log + side-by-side compare lands in P5.</p>
     </div>
   );
 }
@@ -63,84 +63,105 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="brand">telemetry</span>
-        <nav className="tabs-nav" aria-label="Sections">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              className={`navtab ${tab === t.key ? "active" : ""}`}
-              onClick={() => setTab(t.key)}
-              aria-current={tab === t.key ? "page" : undefined}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-        <div className="topbar-actions">
-          <button className="add-btn" onClick={() => setAdding(true)}>
-            + Add
-          </button>
-          {email && (
-            <div className="account">
+        <span className="logo-box" aria-hidden="true">T</span>
+        <span className="brand">Telemetry</span>
+        <nav className="topbar-nav" aria-label="Sections">
+          {TABS.map((t, i) => (
+            <span key={t.key} style={{ display: "contents" }}>
+              {i > 0 && <span className="sep">|</span>}
               <button
-                className="avatar"
-                onClick={() => setMenuOpen((v) => !v)}
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                aria-label={`Account: ${email}`}
-                title={email}
+                className={`navlink ${tab === t.key ? "active" : ""}`}
+                onClick={() => setTab(t.key)}
+                aria-current={tab === t.key ? "page" : undefined}
               >
-                {email[0]}
+                {t.label}
               </button>
-              {menuOpen && (
-                <>
-                  <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
-                  <div className="menu" role="menu">
-                    <p className="menu-email">{email}</p>
-                    <a
-                      className="menu-item"
-                      role="menuitem"
-                      href="https://skeptrune.cloudflareaccess.com/cdn-cgi/access/logout"
-                    >
-                      Switch account
-                    </a>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+            </span>
+          ))}
+          <span className="sep">|</span>
+          <button className="navlink" onClick={() => setAdding(true)}>
+            add
+          </button>
+        </nav>
+        <span className="topbar-spacer" />
+        {email && (
+          <span className="account">
+            <button
+              className="navlink"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              title={email}
+            >
+              {email}
+            </button>
+            <span className="sep">|</span>
+            <button className="navlink" onClick={() => setMenuOpen((v) => !v)} aria-haspopup="menu">
+              logout
+            </button>
+            {menuOpen && (
+              <>
+                <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
+                <div className="menu" role="menu">
+                  <p className="menu-email">{email}</p>
+                  <a
+                    className="menu-item"
+                    role="menuitem"
+                    href="https://skeptrune.cloudflareaccess.com/cdn-cgi/access/logout"
+                  >
+                    Switch account
+                  </a>
+                </div>
+              </>
+            )}
+          </span>
+        )}
       </header>
 
       <main className="shell">
-        {error && <div className="scroll"><p className="form-err">{error}</p></div>}
-        {!data && !error && <div className="scroll"><p className="meta">loading…</p></div>}
-        {data && tab === "today" && (
-          <div className="scroll">
-            <div className="grid">
+        <div className="scroll">
+          {error && <p className="form-err">{error}</p>}
+          {!data && !error && <p className="empty">loading…</p>}
+
+          {data && tab === "today" && (
+            <>
               <Today data={data} />
               <WeightHistory refreshKey={tick} />
-            </div>
-          </div>
-        )}
-        {data && tab === "body" && (
-          <div className="scroll">
-            <div className="grid">
-              <Body data={data} />
-            </div>
-          </div>
-        )}
-        {data && tab === "food" && (
-          <div className="scroll">
-            <div className="grid">
-              <Food data={data} refreshKey={tick} onChange={reloadAll} />
-            </div>
-          </div>
-        )}
-        {tab === "photos" && <div className="scroll"><Photos /></div>}
+            </>
+          )}
+          {data && tab === "body" && <Body data={data} />}
+          {data && tab === "food" && <Food data={data} refreshKey={tick} onChange={reloadAll} />}
+          {tab === "photos" && <Photos />}
+
+          <Footer onSwitchAccount={() => setMenuOpen(true)} />
+        </div>
       </main>
 
       {adding && <AddSheet onClose={() => setAdding(false)} onChange={reloadAll} />}
     </div>
+  );
+}
+
+function Footer({ onSwitchAccount }: { onSwitchAccount: () => void }) {
+  return (
+    <footer className="footer">
+      <div>
+        <a href="/openapi.json">openapi</a>
+        <span className="footsep">·</span>
+        <a href="https://github.com/skeptrunedev/telemetry/releases" target="_blank" rel="noreferrer">
+          cli
+        </a>
+        <span className="footsep">·</span>
+        <button className="linkbtn" onClick={onSwitchAccount}>
+          switch account
+        </button>
+      </div>
+      <div className="footer-search">
+        <label>
+          Search:
+          <input type="text" disabled aria-label="Search (disabled)" />
+        </label>
+      </div>
+    </footer>
   );
 }

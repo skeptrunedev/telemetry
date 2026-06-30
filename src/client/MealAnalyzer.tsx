@@ -55,25 +55,25 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
   if (result) {
     return (
       <div className="form">
-        <p className="insight">
-          Logged · {result.totalKcal} kcal / {result.totalProteinG}g protein
+        <p className="analyzer-head">
+          logged · {result.totalKcal} kcal / {result.totalProteinG} g protein
         </p>
-        <div className="rows">
+        <ol className="stories">
           {result.items.map((it, i) => (
-            <div className="crow" key={i}>
-              <div className="crow-top">
-                <span className="crow-label">{it.name}</span>
-                <span className="crow-val">
-                  {it.kcal}
-                  <span className="unit"> kcal · {Math.round(it.proteinG)}g</span>
-                </span>
-              </div>
-            </div>
+            <li className="story" key={i}>
+              <span className="story-rank">{i + 1}.</span>
+              <span className="story-body">
+                <div className="story-title">
+                  {it.name} {it.kcal} kcal
+                </div>
+                <div className="story-sub">{Math.round(it.proteinG)} g protein</div>
+              </span>
+            </li>
           ))}
-        </div>
-        {result.note && <p className="meta">{result.note}</p>}
-        <button className="btn ghost" onClick={reset}>
-          Log another meal
+        </ol>
+        {result.note && <p className="empty">{result.note}</p>}
+        <button className="btn" onClick={reset}>
+          log another meal
         </button>
       </div>
     );
@@ -81,33 +81,35 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
 
   return (
     <div className="form">
-      <div className="tabs">
-        <button className={`tab ${method === "photo" ? "active" : ""}`} onClick={() => { setMethod("photo"); setErr(null); }}>
-          📷 Photo
+      <div className="subtabs">
+        <button className={`subtab ${method === "photo" ? "active" : ""}`} onClick={() => { setMethod("photo"); setErr(null); }}>
+          photo
         </button>
-        <button className={`tab ${method === "text" ? "active" : ""}`} onClick={() => { setMethod("text"); setErr(null); }}>
-          ✍️ Describe
+        <span className="subtab-sep">|</span>
+        <button className={`subtab ${method === "text" ? "active" : ""}`} onClick={() => { setMethod("text"); setErr(null); }}>
+          describe
         </button>
       </div>
 
       {method === "photo" ? (
         <>
-          <div className="tabs">
-            <button className={`tab ${mode === "angles" ? "active" : ""}`} onClick={() => setMode("angles")}>
-              One meal
+          <div className="subtabs">
+            <button className={`subtab ${mode === "angles" ? "active" : ""}`} onClick={() => setMode("angles")}>
+              one meal
             </button>
-            <button className={`tab ${mode === "beforeafter" ? "active" : ""}`} onClick={() => setMode("beforeafter")}>
-              Before / after
+            <span className="subtab-sep">|</span>
+            <button className={`subtab ${mode === "beforeafter" ? "active" : ""}`} onClick={() => setMode("beforeafter")}>
+              before / after
             </button>
           </div>
           <div className="photo-picks">
             <label className="photo-pick">
               <input type="file" accept="image/*" capture="environment" multiple onChange={pick} hidden />
-              <span>📷 Take photo</span>
+              <span>take photo</span>
             </label>
             <label className="photo-pick">
               <input type="file" accept="image/*" multiple onChange={pick} hidden />
-              <span>🖼 Camera roll</span>
+              <span>camera roll</span>
             </label>
           </div>
           {previews.length > 0 && (
@@ -122,7 +124,7 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
           )}
           {err && <p className="form-err">{err}</p>}
           <button
-            className="btn"
+            className="btn primary"
             onClick={() =>
               run(async () => {
                 const compressed = await Promise.all(files.map((f) => compressImage(f)));
@@ -131,9 +133,9 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
             }
             disabled={busy || !files.length}
           >
-            {busy ? "Analyzing…" : "Analyze with AI"}
+            {busy ? "analyzing…" : "analyze with ai"}
           </button>
-          <p className="meta">
+          <p className="empty">
             {mode === "beforeafter"
               ? "First photo = full plate, then the leftovers — AI logs only what you ate."
               : files.length
@@ -152,10 +154,10 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
             placeholder="e.g. chicken breast + salad from The Bite — ate all the chicken with a side of toum, skipped most of the salad but had the olives, feta, cucumber, and cherry tomatoes"
           />
           {err && <p className="form-err">{err}</p>}
-          <button className="btn" onClick={() => run(() => api.describeMeal(todayLocal(), text.trim()))} disabled={busy || !text.trim()}>
-            {busy ? "Analyzing…" : "Analyze description"}
+          <button className="btn primary" onClick={() => run(() => api.describeMeal(todayLocal(), text.trim()))} disabled={busy || !text.trim()}>
+            {busy ? "analyzing…" : "analyze description"}
           </button>
-          <p className="meta">Describe what you actually ate (mention what you skipped) — AI estimates calories + protein.</p>
+          <p className="empty">describe what you actually ate (mention what you skipped) — ai estimates calories + protein.</p>
         </>
       )}
     </div>
