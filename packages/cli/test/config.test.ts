@@ -50,18 +50,18 @@ describe("credentials round-trip", () => {
   let dir: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "telemetry-cli-test-"));
-    process.env.TELEMETRY_CONFIG_DIR = dir;
+    dir = mkdtempSync(join(tmpdir(), "skcal-cli-test-"));
+    process.env.SKCAL_CONFIG_DIR = dir;
   });
 
   afterEach(() => {
-    delete process.env.TELEMETRY_CONFIG_DIR;
+    delete process.env.SKCAL_CONFIG_DIR;
     rmSync(dir, { recursive: true, force: true });
   });
 
   it("save → load returns the same credentials", () => {
     expect(loadCredentials()).toBeNull();
-    const creds = { baseUrl: "https://telemetry.skeptrune.com", token: "tok123", savedAt: "2026-06-29T00:00:00Z" };
+    const creds = { baseUrl: "https://skcal.skeptrune.com", token: "tok123", savedAt: "2026-06-29T00:00:00Z" };
     saveCredentials(creds);
     expect(loadCredentials()).toEqual(creds);
   });

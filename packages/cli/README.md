@@ -1,17 +1,18 @@
-# @skeptrune/telemetry-cli
+# @skeptrune/skcal
 
-Command-line client for the [Telemetry](https://telemetry.skeptrune.com)
-body-recomposition API. Logs weigh-ins, meals, and measurements and prints your
-daily snapshot — straight from the terminal.
+Command-line client for [skcal](https://skcal.skeptrune.com), a calorie and
+body-composition tracker built for developers and AI power users. Logs
+weigh-ins, meals, and measurements and prints your daily snapshot — straight
+from the terminal, so you can wire it into scripts and your AI tooling. (Pairs
+with the typed HTTP API; an MCP server is on the roadmap.)
 
-Authentication is **browser SSO via Cloudflare Access** — no API key. `telemetry
-login` opens your browser, you sign in, and a short-lived Access token is cached
-locally and replayed as the `cf-access-token` header on every request.
+`skcal login` opens your browser, you sign in, and a short-lived token is cached
+locally and replayed on every request.
 
 ## Install
 
 ```bash
-npm install -g @skeptrune/telemetry-cli   # or: npx @skeptrune/telemetry-cli <cmd>
+npm install -g @skeptrune/skcal   # or: npx @skeptrune/skcal <cmd>
 ```
 
 Or grab a standalone binary (no Node required) for your platform from the
@@ -20,27 +21,27 @@ Or grab a standalone binary (no Node required) for your platform from the
 ## Usage
 
 ```bash
-telemetry login                      # browser SSO; caches the Access token
-telemetry whoami                     # signed-in account + token expiry
-telemetry status                     # today: weight, S:W ratio, calories/protein
+skcal login                      # browser sign-in; caches the token
+skcal whoami                     # signed-in account + token expiry
+skcal status                     # today: weight, S:W ratio, calories/protein
 
-telemetry weight log 158.2           # log a weigh-in in pounds (--kg for kilograms)
-telemetry weight log 72 --kg --bf 17 --note "morning, fasted"
-telemetry weight list -n 10          # recent weigh-ins
-telemetry weight note 42 re-weighed  # set/clear a note on reading #42
+skcal weight log 158.2           # log a weigh-in in pounds (--kg for kilograms)
+skcal weight log 72 --kg --bf 17 --note "morning, fasted"
+skcal weight list -n 10          # recent weigh-ins
+skcal weight note 42 re-weighed  # set/clear a note on reading #42
 
-telemetry meal describe "chicken breast + toum, skipped the salad"  # AI macros
-telemetry meal list                  # meals logged today (--date YYYY-MM-DD)
+skcal meal describe "chicken breast + toum, skipped the salad"  # AI macros
+skcal meal list                  # meals logged today (--date YYYY-MM-DD)
 
-telemetry measure waist 32.5         # inches (--cm for centimetres)
-telemetry targets                    # your goals
+skcal measure waist 32.5         # inches (--cm for centimetres)
+skcal targets                    # your goals
 
-telemetry logout
+skcal logout
 ```
 
-Point at a different deployment with `telemetry login --url https://example.com`.
-Credentials live in `~/.config/telemetry/credentials.json` (override with
-`TELEMETRY_CONFIG_DIR`).
+Point at a different deployment with `skcal login --url https://example.com`.
+Credentials live in `~/.config/skcal/credentials.json` (override with
+`SKCAL_CONFIG_DIR`).
 
 ## Develop
 

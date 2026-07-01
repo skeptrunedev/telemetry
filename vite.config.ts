@@ -16,9 +16,9 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
       },
       manifest: {
-        name: "Telemetry",
-        short_name: "Telemetry",
-        description: "Body recomp tracker",
+        name: "skcal",
+        short_name: "skcal",
+        description: "Calorie + body-composition tracker for developers and AI power users",
         theme_color: "#0B0B0C",
         background_color: "#0B0B0C",
         display: "standalone",

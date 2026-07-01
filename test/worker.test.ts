@@ -30,7 +30,7 @@ describe("service", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; service: string; ts: string };
     expect(body.ok).toBe(true);
-    expect(body.service).toBe("telemetry");
+    expect(body.service).toBe("skcal");
     expect(typeof body.ts).toBe("string");
   });
 

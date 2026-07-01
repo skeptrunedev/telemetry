@@ -28,7 +28,7 @@ describe("browserLogin", () => {
       const { port, state } = parseLoginUrl(loginUrl);
       void hitCallback(port, `token=T&state=${state}`);
     };
-    const result = await browserLogin("https://telemetry.skeptrune.com", 5_000, opener);
+    const result = await browserLogin("https://skcal.skeptrune.com", 5_000, opener);
     expect(result).toEqual({ token: "T" });
   });
 
@@ -39,6 +39,6 @@ describe("browserLogin", () => {
       void hitCallback(port, `token=T&state=WRONG`);
     };
     // Short timeout: a mismatched state must make browserLogin reject by timing out.
-    await expect(browserLogin("https://telemetry.skeptrune.com", 300, opener)).rejects.toThrow(/timed out/i);
+    await expect(browserLogin("https://skcal.skeptrune.com", 300, opener)).rejects.toThrow(/timed out/i);
   });
 });

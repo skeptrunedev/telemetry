@@ -98,7 +98,7 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *         service:
  *           type: string
  *           description: Service identifier.
- *           example: telemetry
+ *           example: skcal
  *         ts:
  *           type: string
  *           format: date-time

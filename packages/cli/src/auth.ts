@@ -3,11 +3,11 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { AddressInfo } from "node:net";
 
-const SUCCESS_HTML = `<!doctype html><meta charset="utf-8"><title>Telemetry CLI</title>
+const SUCCESS_HTML = `<!doctype html><meta charset="utf-8"><title>skcal CLI</title>
 <style>body{font:16px/1.5 -apple-system,system-ui,sans-serif;background:#0a0a0b;color:#ececE7;
 display:grid;place-items:center;height:100vh;margin:0}div{text-align:center}h1{font-weight:500}
 small{color:#8a8a90}</style>
-<div><h1>Signed in to Telemetry CLI</h1><small>You can close this tab and return to the terminal.</small></div>`;
+<div><h1>Signed in to skcal CLI</h1><small>You can close this tab and return to the terminal.</small></div>`;
 
 /** Open a URL in the user's default browser, cross-platform. */
 function openBrowser(url: string): void {
@@ -61,7 +61,7 @@ export function browserLogin(
     });
 
     const timer = setTimeout(() => {
-      finish(() => reject(new Error("Login timed out. Run `telemetry login` again.")));
+      finish(() => reject(new Error("Login timed out. Run `skcal login` again.")));
     }, timeoutMs);
 
     function finish(done: () => void) {

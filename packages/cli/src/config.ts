@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 
-export const DEFAULT_BASE_URL = "https://telemetry.skeptrune.com";
+export const DEFAULT_BASE_URL = "https://skcal.skeptrune.com";
 
 export type Credentials = {
   baseUrl: string;
@@ -11,9 +11,9 @@ export type Credentials = {
 };
 
 function configDir(): string {
-  if (process.env.TELEMETRY_CONFIG_DIR) return process.env.TELEMETRY_CONFIG_DIR;
+  if (process.env.SKCAL_CONFIG_DIR) return process.env.SKCAL_CONFIG_DIR;
   const xdg = process.env.XDG_CONFIG_HOME;
-  return join(xdg || join(homedir(), ".config"), "telemetry");
+  return join(xdg || join(homedir(), ".config"), "skcal");
 }
 
 function credsPath(): string {

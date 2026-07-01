@@ -163,7 +163,7 @@ app.use("/api/*", async (c, next) => {
   return next();
 });
 
-app.get("/api/health", (c) => c.json({ ok: true, service: "telemetry", ts: new Date().toISOString() }));
+app.get("/api/health", (c) => c.json({ ok: true, service: "skcal", ts: new Date().toISOString() }));
 
 /**
  * @openapi
@@ -1203,7 +1203,7 @@ app.post("/api/coach", async (c) => {
  *             schema:
  *               type: object
  *               additionalProperties: true
- *               example: { openapi: "3.1.0", info: { title: telemetry, version: "1.0.0" }, paths: {} }
+ *               example: { openapi: "3.1.0", info: { title: skcal, version: "1.0.0" }, paths: {} }
  */
 app.get("/openapi.json", (c) =>
   c.json(openapiDoc as Record<string, unknown>, 200, { "cache-control": "public, max-age=300" }),

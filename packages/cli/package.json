@@ -1,17 +1,17 @@
 {
-  "name": "@skeptrune/telemetry-cli",
+  "name": "@skeptrune/skcal",
   "version": "0.1.0",
-  "description": "Command-line client for the Telemetry body-recomposition API (browser SSO via Cloudflare Access, no API key).",
+  "description": "Command-line client for the skcal calorie + body-composition API — built for developers and AI power users.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/skeptrunedev/telemetry.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://telemetry.skeptrune.com",
+  "homepage": "https://skcal.skeptrune.com",
   "type": "commonjs",
   "bin": {
-    "telemetry": "dist/index.js"
+    "skcal": "dist/index.js"
   },
   "files": [
     "dist"
@@ -23,7 +23,7 @@
     "build": "tsup",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "binaries": "pkg dist/index.js -t host -o binaries/telemetry",
+    "binaries": "pkg dist/index.js -t host -o binaries/skcal",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

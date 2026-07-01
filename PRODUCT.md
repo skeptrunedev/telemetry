@@ -6,11 +6,11 @@ product
 
 ## Users
 
-A technical, self-directed person tracking body recomposition (currently the owner; later anyone who signs up). They open it on their phone several times a day to log a weigh-in, a meal, or a measurement in seconds, and to glance at whether the trend is going the right way. They value signal and speed over polish, run their own tools, and are annoyed by anything that gets between them and the data.
+Developers and AI power users who want calorie and body-composition tracking wired into the tooling they already live in. They log a weigh-in, a meal, or a measurement in seconds — from the phone PWA, from the `skcal` CLI in a terminal, or programmatically against the typed HTTP API — and expect the same data to be reachable from a script, an agent, or a scheduled job (an MCP server is on the roadmap). They value signal, speed, and a clean API contract over polish, run their own tools, and are annoyed by anything that gets between them and the data.
 
 ## Product Purpose
 
-A fast, private body-recomposition tracker: weight, body measurements, nutrition (calories + protein), and progress photos. It exists so logging is frictionless and the numbers are legible at a glance, without a wellness-app layer of motivation, gamification, or decoration. Success: a log takes a few taps, and the current state of every metric is readable in one screen with zero ceremony.
+A fast, private, integration-first calorie and body-composition tracker: weight, body measurements, nutrition (calories + protein), and progress photos. It exists so logging is frictionless and the numbers are legible at a glance — and so every one of those numbers is equally reachable through a CLI and a typed OpenAPI HTTP API (MCP planned), never trapped behind a UI. There is no wellness-app layer of motivation, gamification, or decoration. Success: a log takes a few taps or one command, the API contract is clean enough to script against, and the current state of every metric is readable in one screen with zero ceremony.
 
 ## Brand Personality
 
@@ -30,6 +30,7 @@ Utilitarian, terse, fast. Three words: plain, dense, honest. The interface reads
 - **Plain by default.** System type, hairline rules instead of cards-on-cards, semantic HTML. Reach for a heavier device only when function demands it.
 - **Fast and legible.** Tabular numerals, high contrast, instant interactions; motion is incidental, never load-bearing.
 - **Every element earns its place.** If a label, border, or animation isn't doing a job, it's cut.
+- **Scriptable by default.** Anything you can do in the UI you can do from the CLI or the typed HTTP API; the data is never trapped behind the interface. The OpenAPI contract is a first-class surface, not an afterthought.
 
 ## Accessibility & Inclusion
 

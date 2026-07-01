@@ -1,5 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  // Public brand is "skcal"; the worker/D1/R2 resource names below stay
+  // "telemetry*" so we don't re-provision infra or lose data — they're
+  // invisible to users.
   "name": "telemetry",
   "main": "src/worker/index.ts",
   "account_id": "2f016a113dca4bbf3eda769b3f7d12fd",

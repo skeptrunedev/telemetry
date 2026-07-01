@@ -1,6 +1,6 @@
 import { loadCredentials } from "./config";
 
-// Shapes mirror the API's OpenAPI components (telemetry.skeptrune.com/openapi.json).
+// Shapes mirror the API's OpenAPI components (skcal.skeptrune.com/openapi.json).
 export type WhoAmI = { email: string };
 export type WeightReading = {
   id: number;
@@ -40,7 +40,7 @@ export type Meal = {
 
 export class NotAuthenticatedError extends Error {
   constructor() {
-    super("Not signed in. Run `telemetry login` first.");
+    super("Not signed in. Run `skcal login` first.");
     this.name = "NotAuthenticatedError";
   }
 }

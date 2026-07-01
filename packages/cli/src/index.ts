@@ -43,8 +43,8 @@ function action(fn: (...args: never[]) => Promise<void>) {
 
 const program = new Command();
 program
-  .name("telemetry")
-  .description("Command-line client for the Telemetry body-recomposition API.")
+  .name("skcal")
+  .description("Command-line client for the skcal calorie + body-composition API — built for developers and AI power users.")
   .version(require("../package.json").version, "-v, --version");
 
 // ---- auth ------------------------------------------------------------------
@@ -81,7 +81,7 @@ program
       if (!creds) throw new NotAuthenticatedError();
       const me = await TelemetryClient.fromConfig().whoami();
       const left = secondsUntilExpiry(creds.token);
-      const exp = left == null ? "" : left <= 0 ? pc.red(" (token expired — run `telemetry login`)") : pc.dim(` (token valid ~${Math.round(left / 3600)}h)`);
+      const exp = left == null ? "" : left <= 0 ? pc.red(" (token expired — run `skcal login`)") : pc.dim(` (token valid ~${Math.round(left / 3600)}h)`);
       console.log(`${pc.bold(me.email)} @ ${creds.baseUrl}${exp}`);
     }),
   );
@@ -96,7 +96,7 @@ program
       const d = await TelemetryClient.fromConfig().dashboard(opts.date);
       const w = d.weight;
       const line = (label: string, val: string) => console.log(pc.dim(label.padEnd(14)) + val);
-      console.log(pc.bold("TELEMETRY") + pc.dim(`  ·  ${opts.date}`));
+      console.log(pc.bold("skcal") + pc.dim(`  ·  ${opts.date}`));
       line("Weight", w.latestKg != null ? `${f1(toLb(w.latestKg))} lb` : "—");
       line("7-day avg", w.weeklyAvgKg != null ? `${f1(toLb(w.weeklyAvgKg))} lb` : "—");
       if (w.note) line("Last note", pc.italic(`"${w.note}"`));

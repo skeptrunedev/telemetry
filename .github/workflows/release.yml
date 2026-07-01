@@ -79,7 +79,7 @@ jobs:
         # Idempotent: skip if this version is already on npm, so re-runs are safe.
         run: |
           v=$(node -p "require('./package.json').version")
-          if npm view "@skeptrune/telemetry-cli@$v" version >/dev/null 2>&1; then
+          if npm view "@skeptrune/skcal@$v" version >/dev/null 2>&1; then
             echo "npm already has $v — skipping publish"
           else
             npm publish --access public

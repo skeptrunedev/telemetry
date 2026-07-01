@@ -4,7 +4,7 @@
   "packages": {
     "packages/cli": {
       "release-type": "node",
-      "package-name": "@skeptrune/telemetry-cli",
+      "package-name": "@skeptrune/skcal",
       "component": "cli",
       "include-component-in-tag": true,
       "bump-minor-pre-major": true

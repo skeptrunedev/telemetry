@@ -38,15 +38,15 @@ async function sendMagicLinkEmail(env: AuthEnv, email: string, url: string): Pro
 <html>
   <body style="margin:0;background:#17181a;color:#ececec;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:32px">
     <div style="max-width:460px;margin:0 auto;background:#1f2123;border:1px solid #303236;border-radius:16px;padding:28px">
-      <p style="font-size:12px;letter-spacing:.14em;color:#9a9ca0;margin:0 0 6px;text-transform:uppercase">Telemetry</p>
-      <h1 style="font-size:20px;margin:0 0 14px;color:#ececec">Sign in to Telemetry</h1>
+      <p style="font-size:12px;letter-spacing:.14em;color:#9a9ca0;margin:0 0 6px;text-transform:uppercase">skcal</p>
+      <h1 style="font-size:20px;margin:0 0 14px;color:#ececec">Sign in to skcal</h1>
       <p style="font-size:14px;line-height:1.6;color:#9a9ca0;margin:0 0 22px">Click the button below to sign in. This link expires shortly and can only be used once.</p>
       <a href="${url}" style="display:inline-block;background:#f59e0b;color:#1a1205;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px">Sign in</a>
       <p style="font-size:12px;line-height:1.6;color:#6c6f73;margin:22px 0 0;word-break:break-all">Or paste this link into your browser:<br>${url}</p>
     </div>
   </body>
 </html>`;
-  const text = `Sign in to Telemetry\n\nClick the link below to sign in. It expires shortly and can only be used once.\n\n${url}\n`;
+  const text = `Sign in to skcal\n\nClick the link below to sign in. It expires shortly and can only be used once.\n\n${url}\n`;
 
   await WorkerMailer.send(
     {
@@ -61,7 +61,7 @@ async function sendMagicLinkEmail(env: AuthEnv, email: string, url: string): Pro
     {
       from,
       to: email,
-      subject: "Sign in to Telemetry",
+      subject: "Sign in to skcal",
       text,
       html,
     },

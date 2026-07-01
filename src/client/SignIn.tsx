@@ -40,7 +40,7 @@ export function SignIn() {
   return (
     <div className="signin">
       <div className="signin-card">
-        <p className="signin-brand">TELEMETRY</p>
+        <p className="signin-brand">skcal</p>
         <h1 className="signin-title">Sign in</h1>
         <p className="signin-sub">Body-recomposition tracking. One account, your data only.</p>
 

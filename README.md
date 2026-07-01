@@ -1,11 +1,14 @@
-# Telemetry
+# skcal
 
 [![CI](https://github.com/skeptrunedev/telemetry/actions/workflows/ci.yml/badge.svg)](https://github.com/skeptrunedev/telemetry/actions/workflows/ci.yml)
 
-A single-user, mobile-first **PWA for tracking body recomposition** — weight,
-body circumferences, progress photos, and daily nutrition adherence — with
-optional hardware auto-capture and **zero third-party cloud** in the data path.
-Built to deploy on Cloudflare.
+A calorie and body-composition tracker built for **developers and AI power
+users** — weight, body circumferences, progress photos, and daily nutrition —
+that you drive from a **CLI** and a **typed HTTP API (OpenAPI)** so you can wire
+it straight into your own tooling. (An MCP server is planned; the CLI + API are
+what's real today.) Mobile-first installable PWA, optional hardware
+auto-capture, and **zero third-party cloud** in the data path. Built to deploy
+on Cloudflare.
 
 ## Stack
 
@@ -13,7 +16,8 @@ Built to deploy on Cloudflare.
 - **Hono** API on a single **Cloudflare Worker** (serves the SPA + `/api/*`)
 - **Cloudflare D1** (SQLite) + **Drizzle ORM**
 - **Cloudflare R2** for progress photos
-- Auth via **Cloudflare Access** (the scale-ingest endpoint uses a service token)
+- Auth via **Better Auth** (Google + email magic link); the scale-ingest
+  endpoint uses a bearer token
 
 ## Optional hardware capture
 
@@ -49,22 +53,21 @@ npm run openapi:lint     # quobix vacuum, gated at a perfect 100/100 score
 ```
 
 The generated spec is served by the Worker at **`/openapi.json`**
-([live](https://telemetry.skeptrune.com/openapi.json)). CI regenerates the spec,
+([live](https://skcal.skeptrune.com/openapi.json)). CI regenerates the spec,
 fails if the committed copy drifted from the comments, and holds the vacuum
 score at 100.
 
 ## CLI
 
 A terminal client lives in [`packages/cli`](./packages/cli) and ships to npm as
-**`@skeptrune/telemetry-cli`** (plus standalone binaries on each GitHub Release).
-It authenticates with browser SSO through Cloudflare Access — no API key.
+**`@skeptrune/skcal`** (plus standalone binaries on each GitHub Release).
 
 ```bash
-npm install -g @skeptrune/telemetry-cli
-telemetry login
-telemetry status
-telemetry weight log 158.2 --note "morning, fasted"
-telemetry meal describe "chicken breast + toum, skipped the salad"
+npm install -g @skeptrune/skcal
+skcal login
+skcal status
+skcal weight log 158.2 --note "morning, fasted"
+skcal meal describe "chicken breast + toum, skipped the salad"
 ```
 
 ## Deploy (Cloudflare)
