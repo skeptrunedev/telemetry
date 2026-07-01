@@ -11,6 +11,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
+  // skcal.skeptrune.com custom domain is attached to this worker out-of-band
+  // (Cloudflare API / dashboard), so it isn't managed here.
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
