@@ -666,6 +666,60 @@ a {
   outline: none;
   border-color: var(--accent);
 }
+.meal-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 9px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  flex: none;
+}
+.photo-picks {
+  display: flex;
+  gap: 0.5rem;
+}
+.photo-picks .photo-pick {
+  flex: 1;
+}
+.photo-pick {
+  display: block;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 1.2rem 1rem;
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface-2);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  transition: border-color 160ms var(--ease-out);
+}
+.photo-pick:active {
+  border-color: var(--accent);
+}
+.thumbs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+.thumb-clear {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  border: 1px dashed var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
 .form-err {
   color: var(--alert);
   font-size: 0.85rem;
@@ -803,6 +857,10 @@ a {
   }
   .menu-item:hover {
     background: var(--surface);
+  }
+  .photo-pick:hover {
+    border-color: var(--muted);
+    color: var(--fg);
   }
 }
 

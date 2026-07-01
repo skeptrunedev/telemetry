@@ -35,6 +35,12 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *         application/json:
  *           schema:
  *             $ref: '#/components/schemas/Error'
+ *     Forbidden:
+ *       description: The requested resource belongs to another user.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Error'
  *     NotFound:
  *       description: No matching resource owned by the caller.
  *       content:
@@ -483,9 +489,9 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *           example: 53.4
  *     MealAnalysis:
  *       type: object
- *       description: Result of logging a meal from a text description.
+ *       description: Result of logging a meal from photos or a text description.
  *       additionalProperties: false
- *       required: [ok, mealId, items, totalKcal, totalProteinG, note]
+ *       required: [ok, mealId, items, totalKcal, totalProteinG, note, photoKeys]
  *       properties:
  *         ok:
  *           type: boolean
@@ -515,6 +521,13 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *           type: string
  *           description: The model's one-line assumptions note.
  *           example: assumed a single chicken breast and one tablespoon of toum
+ *         photoKeys:
+ *           type: array
+ *           description: R2 object keys of stored photos (empty for text descriptions).
+ *           example: ["nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071"]
+ *           items:
+ *             type: string
+ *             example: nick@mintlify.com/2026-06-29/3f8b1c2a
  *     DescribeMeal:
  *       type: object
  *       description: Body for logging a meal from a freeform text description.
@@ -552,7 +565,7 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *       type: object
  *       description: A logged meal with its food items.
  *       additionalProperties: false
- *       required: [id, note, createdAt, items]
+ *       required: [id, note, createdAt, photoKeys, items]
  *       properties:
  *         id:
  *           type: string
@@ -568,6 +581,13 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *           format: int64
  *           description: Meal creation time as a Unix epoch in milliseconds.
  *           example: 1782000000000
+ *         photoKeys:
+ *           type: array
+ *           description: R2 object keys of the meal's photos.
+ *           example: ["nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071"]
+ *           items:
+ *             type: string
+ *             example: nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e
  *         items:
  *           type: array
  *           description: Food items in the meal.

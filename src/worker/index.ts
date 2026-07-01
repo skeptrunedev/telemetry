@@ -30,6 +30,16 @@ const userEmail = (c: { req: { header: (k: string) => string | undefined } }): s
 const DAY_MS = 86_400_000;
 const DEFAULT_TARGETS = { goalWeightKg: 66.7, startWeightKg: 72.6, dailyKcalTarget: 1850, proteinTargetG: 160 };
 
+function bufToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
 const MACRO_SCHEMA = {
   type: "object",
   properties: {
@@ -53,6 +63,9 @@ const MACRO_SCHEMA = {
   required: ["items", "total_kcal", "total_protein_g", "note"],
   additionalProperties: false,
 };
+
+const VISION_PROMPT =
+  "The image(s) show ONE meal, possibly from multiple angles. Identify each distinct food or drink and estimate its calories (kcal) and protein (grams) for the portion actually shown. Be realistic about portion size. Sum them into total_kcal and total_protein_g. In `note`, give one short sentence on key assumptions or uncertainty.";
 
 const DESCRIBE_PROMPT =
   "The user describes a meal they ate, in their own words. Estimate each distinct food or drink they ACTUALLY ate — respect stated quantities, sides and sauces, and EXCLUDE anything they say they skipped, ignored, or left over. Give kcal and protein (grams) for each item's described portion, sum into total_kcal and total_protein_g, and in `note` state the main assumptions (portion sizes, restaurant defaults).";
@@ -575,6 +588,129 @@ app.post("/api/ingest/weight", async (c) => {
   return c.json({ ok: true });
 });
 
+// ---- nutrition: photo -> Claude vision -> macros ---------------------------
+/**
+ * @openapi
+ * /api/nutrition/analyze:
+ *   post:
+ *     tags: [Nutrition]
+ *     summary: Log a meal from photos
+ *     description: Uploads 1–5 photos of a single meal, sends them to Claude vision for per-item calorie and protein estimates, stores the photos plus a meal, and returns the analysis.
+ *     operationId: analyzeMeal
+ *     parameters:
+ *       - name: date
+ *         in: query
+ *         required: false
+ *         description: Day to log against (YYYY-MM-DD). Defaults to the server's current UTC date.
+ *         schema:
+ *           type: string
+ *           format: date
+ *     requestBody:
+ *       required: true
+ *       description: The meal photos to analyze, as multipart form fields named `photos`.
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [photos]
+ *             properties:
+ *               photos:
+ *                 type: array
+ *                 description: 1–5 photos of a single meal, possibly from multiple angles (JPEG, PNG, WebP, or GIF; max 8MB each).
+ *                 example: ["@plate.jpg", "@plate-side.jpg"]
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                   example: "@plate.jpg"
+ *     responses:
+ *       '200':
+ *         description: The meal was analyzed and logged.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MealAnalysis'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '502':
+ *         $ref: '#/components/responses/BadGateway'
+ *       '503':
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
+app.post("/api/nutrition/analyze", async (c) => {
+  const email = userEmail(c);
+  const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
+
+  const form = await c.req.formData();
+  type UploadFile = { type: string; arrayBuffer: () => Promise<ArrayBuffer> };
+  const isFile = (f: unknown): f is UploadFile =>
+    typeof f === "object" && f !== null && typeof (f as UploadFile).arrayBuffer === "function";
+  const files = (form.getAll("photos") as unknown[]).filter(isFile);
+  if (!files.length) return c.json({ error: "no photos uploaded" }, 400);
+  if (files.length > 5) return c.json({ error: "max 5 photos per meal" }, 400);
+  // Validate types/sizes before we touch R2 or the model.
+  const bufs: { mt: string; buf: ArrayBuffer }[] = [];
+  for (const file of files) {
+    const mt = file.type || "image/jpeg";
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(mt)) return c.json({ error: `unsupported image type ${mt}` }, 400);
+    const buf = await file.arrayBuffer();
+    if (buf.byteLength > 8_000_000) return c.json({ error: "image too large (max 8MB)" }, 400);
+    bufs.push({ mt, buf });
+  }
+  if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "vision not configured" }, 503);
+
+  const imageBlocks: Anthropic.ImageBlockParam[] = [];
+  const photoKeys: string[] = [];
+  for (const { mt, buf } of bufs) {
+    const key = `${email}/${today}/${crypto.randomUUID()}`;
+    await c.env.PHOTOS.put(key, buf, { httpMetadata: { contentType: mt } });
+    photoKeys.push(key);
+    imageBlocks.push({
+      type: "image",
+      source: { type: "base64", media_type: mt as "image/jpeg", data: bufToBase64(buf) },
+    });
+  }
+
+  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
+  type Macro = { items: { name: string; kcal: number; protein_g: number }[]; total_kcal: number; total_protein_g: number; note: string };
+  let parsed: Macro;
+  try {
+    const msg = await anthropic.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 1024,
+      output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
+      messages: [{ role: "user", content: [...imageBlocks, { type: "text", text: VISION_PROMPT }] }],
+    } as Anthropic.MessageCreateParamsNonStreaming);
+    const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
+    parsed = JSON.parse(out);
+  } catch (e) {
+    return c.json({ error: "analysis failed", detail: String(e) }, 502);
+  }
+
+  const mealId = crypto.randomUUID();
+  await db(c).insert(schema.meals).values({
+    id: mealId, userEmail: email, date: today, note: parsed.note ?? null, photoKeys: JSON.stringify(photoKeys),
+  });
+  const items = (parsed.items ?? []).slice(0, 30).map((it) => ({
+    userEmail: email, mealId, date: today,
+    name: String(it.name).slice(0, 120),
+    kcal: Math.max(0, Math.round(Number(it.kcal) || 0)),
+    proteinG: Math.max(0, Number(it.protein_g) || 0),
+    source: "ai" as const,
+  }));
+  if (items.length) await db(c).insert(schema.nutritionItems).values(items);
+  await recomputeDay(c, email, today);
+
+  return c.json({
+    ok: true,
+    mealId,
+    items: items.map((i) => ({ name: i.name, kcal: i.kcal, proteinG: i.proteinG })),
+    totalKcal: items.reduce((s, i) => s + i.kcal, 0),
+    totalProteinG: Math.round(items.reduce((s, i) => s + i.proteinG, 0)),
+    note: parsed.note,
+    photoKeys,
+  });
+});
+
 // ---- nutrition: text description -> Claude -> macros ------------------------
 /**
  * @openapi
@@ -702,6 +838,7 @@ app.get("/api/nutrition/meals", async (c) => {
       id: m.id,
       note: m.note,
       createdAt: m.createdAt.getTime(),
+      photoKeys: m.photoKeys ? (JSON.parse(m.photoKeys) as string[]) : [],
       items: itemRows.filter((i) => i.mealId === m.id).map((i) => ({ id: i.id, name: i.name, kcal: i.kcal, proteinG: i.proteinG })),
     })),
   );
@@ -713,7 +850,7 @@ app.get("/api/nutrition/meals", async (c) => {
  *   delete:
  *     tags: [Nutrition]
  *     summary: Delete a meal
- *     description: Removes one of the caller's meals and its food items, then recomputes the day's totals.
+ *     description: Removes one of the caller's meals, its food items, and any stored photos, then recomputes the day's totals.
  *     operationId: deleteMeal
  *     parameters:
  *       - name: id
@@ -738,6 +875,8 @@ app.delete("/api/nutrition/meals/:id", async (c) => {
   const id = c.req.param("id");
   const rows = await db(c).select().from(schema.meals).where(and(eq(schema.meals.id, id), eq(schema.meals.userEmail, email))).limit(1);
   if (!rows.length) return c.json({ error: "not found" }, 404);
+  const keys: string[] = rows[0].photoKeys ? JSON.parse(rows[0].photoKeys) : [];
+  await Promise.all(keys.map((k) => c.env.PHOTOS.delete(k).catch(() => {})));
   await db(c).delete(schema.nutritionItems).where(and(eq(schema.nutritionItems.mealId, id), eq(schema.nutritionItems.userEmail, email)));
   await db(c).delete(schema.meals).where(and(eq(schema.meals.id, id), eq(schema.meals.userEmail, email)));
   await recomputeDay(c, email, rows[0].date);
@@ -781,6 +920,46 @@ app.delete("/api/nutrition/items/:id", async (c) => {
   await db(c).delete(schema.nutritionItems).where(and(eq(schema.nutritionItems.id, id), eq(schema.nutritionItems.userEmail, email)));
   await recomputeDay(c, email, rows[0].date);
   return c.json({ ok: true });
+});
+
+// Serve a meal photo from R2, scoped to the requesting user's own keys.
+/**
+ * @openapi
+ * /api/nutrition/photo/{key}:
+ *   get:
+ *     tags: [Nutrition]
+ *     summary: Fetch a meal photo
+ *     description: Streams a stored meal photo from object storage. The key is owner-prefixed, so callers can only read their own photos. Note that the key contains slashes.
+ *     operationId: getMealPhoto
+ *     parameters:
+ *       - name: key
+ *         in: path
+ *         required: true
+ *         description: Owner-prefixed object key, e.g. `user@example.com/2026-06-29/<uuid>`.
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: The image bytes.
+ *         content:
+ *           image/jpeg:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       '403':
+ *         $ref: '#/components/responses/Forbidden'
+ *       '404':
+ *         description: No photo exists at that key.
+ */
+app.get("/api/nutrition/photo/*", async (c) => {
+  const email = userEmail(c);
+  const key = decodeURIComponent(c.req.path.replace(/^\/api\/nutrition\/photo\//, ""));
+  if (!key.startsWith(`${email}/`)) return c.json({ error: "forbidden" }, 403);
+  const obj = await c.env.PHOTOS.get(key);
+  if (!obj) return c.notFound();
+  return new Response(obj.body, {
+    headers: { "content-type": obj.httpMetadata?.contentType ?? "image/jpeg", "cache-control": "private, max-age=86400" },
+  });
 });
 
 // ---- OpenAPI document ------------------------------------------------------

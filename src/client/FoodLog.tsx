@@ -36,6 +36,7 @@ export function FoodLog({ refreshKey, onChange }: { refreshKey: number; onChange
             return (
               <div className="meal" key={m.id}>
                 <div className="meal-head">
+                  {m.photoKeys[0] && <img className="meal-thumb" src={api.photoUrl(m.photoKeys[0])} alt="" />}
                   <div className="meal-sum">
                     <span className="meal-total">{kcal} kcal · {protein}g</span>
                     {m.note && <span className="meal-note">{m.note}</span>}

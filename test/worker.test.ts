@@ -194,6 +194,51 @@ describe("AI guard rails (no model call)", () => {
     const body = await res.text();
     expect(body).toContain("ai not configured");
   });
+
+  // Encode a FormData body into { body, contentType } so the multipart boundary
+  // header travels with the request (dispatchFetch doesn't derive it for us).
+  async function multipart(fd: FormData): Promise<{ body: ArrayBuffer; contentType: string }> {
+    const req = new Request("http://x/", { method: "POST", body: fd });
+    return { body: await req.arrayBuffer(), contentType: req.headers.get("content-type") ?? "" };
+  }
+
+  it("POST /api/nutrition/analyze with no photos → 400 (never calls the model)", async () => {
+    // Empty multipart form: no `photos` fields. The file-count check runs before
+    // the missing-key guard, so this is a deterministic 400.
+    const { body, contentType } = await multipart(new FormData());
+    const res = await asUser(user, "/api/nutrition/analyze?date=2026-06-29", {
+      method: "POST",
+      headers: { "content-type": contentType },
+      body,
+    });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("no photos uploaded");
+  });
+
+  it("POST /api/nutrition/analyze with a photo but no key → 503 (never calls the model)", async () => {
+    const fd = new FormData();
+    fd.append("photos", new Blob([new Uint8Array([1, 2, 3, 4])], { type: "image/jpeg" }), "meal.jpg");
+    const { body, contentType } = await multipart(fd);
+    const res = await asUser(user, "/api/nutrition/analyze?date=2026-06-29", {
+      method: "POST",
+      headers: { "content-type": contentType },
+      body,
+    });
+    // Valid photo, but ANTHROPIC_API_KEY is empty → guard-rail, no model call.
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain("vision not configured");
+  });
+});
+
+describe("photo access control", () => {
+  it("GET /api/nutrition/photo/<other-user-key> → 403", async () => {
+    const res = await asUser(
+      "photo-caller@example.com",
+      `/api/nutrition/photo/${encodeURIComponent("other-owner@example.com/2026-06-29/some-uuid")}`,
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain("forbidden");
+  });
 });
 
 describe("/cli-auth", () => {

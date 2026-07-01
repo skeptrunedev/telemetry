@@ -40,8 +40,9 @@ export type MealAnalysis = {
   totalKcal: number;
   totalProteinG: number;
   note: string;
+  photoKeys: string[];
 };
-export type Meal = { id: string; note: string | null; createdAt: number; items: LoggedItem[] };
+export type Meal = { id: string; note: string | null; createdAt: number; photoKeys: string[]; items: LoggedItem[] };
 export type WeightReading = { id: number; ts: number; weightKg: number; bodyFatPct: number | null; note: string | null; source: string };
 
 export const api = {
@@ -55,6 +56,13 @@ export const api = {
   addMeasurement: (site: string, valueCm: number) =>
     jsend(`/api/measurements`, "POST", { site, valueCm }),
   putNutrition: (d: NutritionDay) => jsend(`/api/nutrition`, "PUT", d),
+  analyzeMeal: async (date: string, files: Blob[]): Promise<MealAnalysis> => {
+    const fd = new FormData();
+    files.forEach((f, i) => fd.append("photos", f, `meal-${i}.jpg`));
+    const r = await rawFetch(`/api/nutrition/analyze?date=${date}`, { method: "POST", body: fd });
+    if (!r.ok) throw new Error(`analyze → ${r.status}: ${await r.text().catch(() => "")}`);
+    return r.json() as Promise<MealAnalysis>;
+  },
   describeMeal: async (date: string, text: string): Promise<MealAnalysis> => {
     const r = await rawFetch(`/api/nutrition/describe?date=${date}`, {
       method: "POST",
@@ -67,6 +75,7 @@ export const api = {
   meals: (date: string) => jget<Meal[]>(`/api/nutrition/meals?date=${date}`),
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),
   deleteItem: (id: number) => jsend(`/api/nutrition/items/${id}`, "DELETE", undefined),
+  photoUrl: (key: string) => `/api/nutrition/photo/${key}`,
 };
 
 export const todayLocal = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local tz
