@@ -9,6 +9,8 @@ import { AddSheet } from "./AddSheet";
 import { BottomNav, type View } from "./BottomNav";
 import { WeightHistory } from "./WeightHistory";
 import { Coach } from "./Coach";
+import { SignIn } from "./SignIn";
+import { useSession, signOut } from "./auth-client";
 
 // We own scroll position per history entry, so stop the browser from guessing.
 if (typeof history !== "undefined" && "scrollRestoration" in history) {
@@ -80,9 +82,13 @@ function Trends({ data }: { data: DashboardData }) {
 }
 
 export default function App() {
+  // Better Auth session gates the whole app: signed out → the sign-in screen,
+  // signed in → the tracker. `isPending` is the initial session fetch.
+  const { data: session, isPending } = useSession();
+  const email = session?.user?.email ?? null;
+
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [email, setEmail] = useState<string | null>(null);
   const [view, setView] = useState<View>(readView);
   const [adding, setAdding] = useState(false);
   const [tick, setTick] = useState(0);
@@ -158,16 +164,22 @@ export default function App() {
     setTick((t) => t + 1);
   }, [load]);
 
-  useEffect(load, [load]);
+  // Only load the dashboard once we have a signed-in identity.
   useEffect(() => {
-    api.whoami().then((w) => setEmail(w.email)).catch(() => {});
-  }, []);
+    if (email) load();
+  }, [email, load]);
   useEffect(() => {
     if (!menuOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [menuOpen]);
+
+  // Initial session check: hold a blank frame rather than flashing the sign-in
+  // screen before we know whether there's a session.
+  if (isPending) return <div className="app" />;
+  // Signed out → the sign-in screen (Google + magic link).
+  if (!email) return <SignIn />;
 
   return (
     <div className="app">
@@ -190,13 +202,19 @@ export default function App() {
                 <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
                 <div className="menu" role="menu">
                   <p className="menu-email">{email}</p>
-                  <a
+                  <button
+                    type="button"
                     className="menu-item"
                     role="menuitem"
-                    href="https://skeptrune.cloudflareaccess.com/cdn-cgi/access/logout"
+                    onClick={async () => {
+                      setMenuOpen(false);
+                      await signOut();
+                      // Drop any signed-in view state and re-render the gate.
+                      window.location.reload();
+                    }}
                   >
-                    Switch account
-                  </a>
+                    Sign out
+                  </button>
                 </div>
               </>
             )}

@@ -153,11 +153,16 @@ a {
 }
 .menu-item {
   display: block;
+  width: 100%;
   margin-top: 0.3rem;
   padding: 0.6rem 0.55rem;
   border-radius: 10px;
   font-size: 0.88rem;
+  font-family: inherit;
+  text-align: left;
   color: var(--fg);
+  background: transparent;
+  border: none;
   text-decoration: none;
   cursor: pointer;
 }
@@ -979,4 +984,92 @@ a {
   flex: none;
   width: auto;
   padding: 0.7rem 1.1rem;
+}
+
+/* ---- sign-in screen (signed-out gate) ---- */
+.signin {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+.signin-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 2rem 1.75rem;
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+.signin-brand {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.28em;
+  color: var(--accent);
+  margin: 0 0 1.25rem;
+}
+.signin-title {
+  font-size: 1.6rem;
+  font-weight: 650;
+  margin: 0 0 0.35rem;
+  letter-spacing: -0.02em;
+}
+.signin-sub {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0 0 1.5rem;
+}
+.signin-google {
+  width: 100%;
+}
+.signin-or {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+  color: var(--dim);
+  font-size: 0.78rem;
+}
+.signin-or::before,
+.signin-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.signin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.signin-form input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.8rem 0.85rem;
+  color: var(--fg);
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+.signin-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.signin-sent-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+.signin-email {
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+.signin-sent .btn {
+  width: 100%;
+  margin-top: 0.5rem;
 }

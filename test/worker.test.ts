@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { workerFetch } from "./harness";
+import { workerFetch, workerFetchNoBypass } from "./harness";
 
 // End-to-end Worker API tests. We drive the REAL Worker in-process (esbuild
 // bundle running inside Miniflare with real D1/R2 — see test/harness.ts), so
@@ -257,36 +257,39 @@ describe("photo access control", () => {
   });
 });
 
-describe("/cli-auth", () => {
-  it("redirects to loopback callback using the cf-access-jwt-assertion header", async () => {
-    const res = await workerFetch(`/cli-auth?port=12345&state=abc`, {
-      headers: { "cf-access-jwt-assertion": "faketoken" },
-      redirect: "manual",
-    });
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("http://127.0.0.1:12345/callback?token=faketoken&state=abc");
-  });
-
-  it("reads the token from the CF_Authorization cookie", async () => {
-    const res = await workerFetch(`/cli-auth?port=12345&state=abc`, {
-      headers: { cookie: "CF_Authorization=cookietoken" },
-      redirect: "manual",
-    });
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("http://127.0.0.1:12345/callback?token=cookietoken&state=abc");
-  });
-
-  it("rejects a privileged port → 400", async () => {
-    const res = await workerFetch(`/cli-auth?port=80&state=abc`, {
-      headers: { "cf-access-jwt-assertion": "faketoken" },
-      redirect: "manual",
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it("401 when no token is present on the request", async () => {
-    const res = await workerFetch(`/cli-auth?port=12345&state=abc`, { redirect: "manual" });
+// Auth enforcement (Better Auth session guard). With AUTH_DEV_BYPASS OFF the
+// Worker behaves like the public production API: data routes require a session
+// and 401 without one, while /api/auth/*, /api/health, and the token-authed
+// scale ingest stay reachable.
+describe("auth enforcement (no dev bypass)", () => {
+  it("GET /api/dashboard → 401 without a session", async () => {
+    const res = await workerFetchNoBypass(`/api/dashboard`);
     expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "unauthorized" });
+  });
+
+  it("GET /api/health → 200 without a session (unauthenticated probe)", async () => {
+    const res = await workerFetchNoBypass(`/api/health`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).ok).toBe(true);
+  });
+
+  it("GET /api/auth/get-session → reachable (not gated) and returns JSON", async () => {
+    const res = await workerFetchNoBypass(`/api/auth/get-session`);
+    // No session ⇒ Better Auth answers 200 with a null session (never a crash/401).
+    expect(res.status).toBe(200);
+    expect(await res.json()).toBeNull();
+  });
+
+  it("POST /api/ingest/weight → 503 (token route stays reachable, not 401)", async () => {
+    const res = await workerFetchNoBypass(`/api/ingest/weight`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ weightKg: 72 }),
+    });
+    // INGEST_TOKEN is empty in tests ⇒ 503 "not configured"; the point is it is
+    // NOT rejected by the session guard with a 401.
+    expect(res.status).toBe(503);
   });
 });
 

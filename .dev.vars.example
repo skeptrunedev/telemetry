@@ -1,0 +1,38 @@
+# Copy to `.dev.vars` for local development (`.dev.vars` is gitignored).
+# In production, set the real values with `wrangler secret put <NAME>`.
+
+# Scale-ingest shared secret (Bearer token for /api/ingest/weight).
+INGEST_TOKEN=
+
+# Anthropic key for the vision / describe / coach routes.
+ANTHROPIC_API_KEY=
+
+# ---- Better Auth (self-hosted auth, replaces Cloudflare Access) ----
+
+# Set to "1" ONLY in local dev + tests: an unauthenticated request falls back to
+# the dev@local identity instead of getting a 401. MUST be unset in production so
+# the public API rejects unauthenticated data requests.
+AUTH_DEV_BYPASS=1
+
+# Random 32-byte secret: `openssl rand -base64 32`. Signs sessions/cookies.
+BETTER_AUTH_SECRET=
+
+# Public origin of the app, e.g. http://localhost:5173 locally or
+# https://telemetry.example.com in production. Used to build OAuth callback +
+# magic-link URLs, so it must match the real origin.
+BETTER_AUTH_URL=http://localhost:5173
+
+# Google OAuth client (Google Cloud console → OAuth 2.0 Client ID).
+# Authorized redirect URI: <BETTER_AUTH_URL>/api/auth/callback/google
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# SMTP used to send the magic-link email from the Worker (worker-mailer).
+# Port 465 ⇒ implicit TLS; 587 ⇒ STARTTLS. SMTP_FROM defaults to SMTP_USER.
+# If SMTP_HOST/SMTP_FROM are empty, the magic link is logged to the Worker
+# console instead of emailed (handy before real SMTP creds exist).
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=

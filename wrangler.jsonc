@@ -4,6 +4,8 @@
   "main": "src/worker/index.ts",
   "account_id": "2f016a113dca4bbf3eda769b3f7d12fd",
   "compatibility_date": "2026-06-01",
+  // nodejs_compat: required by better-auth (node crypto etc.) and worker-mailer.
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
   "assets": {

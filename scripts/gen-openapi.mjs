@@ -41,7 +41,6 @@ const options = {
     ],
     tags: [
       { name: "Service", description: "Liveness and identity probes." },
-      { name: "Auth", description: "Browser-based CLI login against Cloudflare Access." },
       { name: "Weight", description: "Body-weight readings and per-reading notes." },
       { name: "Measurements", description: "Body-part circumference measurements (stored in centimetres)." },
       { name: "Nutrition", description: "Per-day calorie and protein totals plus AI meal logging." },

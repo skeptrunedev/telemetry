@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { and, desc, eq } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import * as schema from "../db/schema";
+import { makeAuth } from "./auth";
 import type { DashboardData, Targets } from "../shared/types";
 // Generated from the @openapi JSDoc comments by scripts/gen-openapi.mjs
 // (runs as the build's prebuild step). Served verbatim at /openapi.json.
@@ -15,17 +16,52 @@ type Bindings = {
   INGEST_TOKEN?: string;
   INGEST_USER_EMAIL?: string;
   ANTHROPIC_API_KEY?: string;
+  // ---- Better Auth (self-hosted auth, replacing Cloudflare Access) ----
+  BETTER_AUTH_SECRET?: string;
+  BETTER_AUTH_URL?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  SMTP_HOST?: string;
+  SMTP_PORT?: string;
+  SMTP_USER?: string;
+  SMTP_PASS?: string;
+  SMTP_FROM?: string;
+  // When set (local dev + tests), unauthenticated requests fall back to a dev
+  // identity instead of being rejected. Unset in production ⇒ 401.
+  AUTH_DEV_BYPASS?: string;
 };
 
-const app = new Hono<{ Bindings: Bindings }>();
+type Variables = { email: string };
+
+const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 const db = (c: { env: Bindings }) => drizzle(c.env.DB, { schema });
 
-// Identity = the Cloudflare Access-verified email. Access sets this header on
-// every request to the gated hostname (and sanitizes any client-supplied value);
-// the *.workers.dev URL is disabled, so this is the only ingress. Local dev (no
-// Access in front) falls back to a dev identity so the app still runs.
-const userEmail = (c: { req: { header: (k: string) => string | undefined } }): string =>
-  c.req.header("cf-access-authenticated-user-email")?.toLowerCase().trim() || "dev@local";
+const DEV_EMAIL = "dev@local";
+
+// Identity = the Better Auth session's user email. Resolves the session from the
+// request cookies/headers; returns null when there is no valid session.
+//
+// AUTH_DEV_BYPASS (set in local dev + the test env) makes an absent session fall
+// back to a dev identity so the app + integration tests run unauthenticated. In
+// bypass mode a `cf-access-authenticated-user-email` header, if present, is
+// honored as the identity — the integration tests use it to exercise per-user
+// data scoping without a real session; otherwise it's `dev@local`. In production
+// the flag is unset, so a missing session yields null and the data-route guard
+// turns that into a 401.
+async function userEmail(c: {
+  env: Bindings;
+  req: { raw: Request; header: (k: string) => string | undefined };
+}): Promise<string | null> {
+  try {
+    const session = await makeAuth(c.env).api.getSession({ headers: c.req.raw.headers });
+    const email = session?.user?.email?.toLowerCase().trim();
+    if (email) return email;
+  } catch {
+    // fall through to the bypass / null path
+  }
+  if (!c.env.AUTH_DEV_BYPASS) return null;
+  return c.req.header("cf-access-authenticated-user-email")?.toLowerCase().trim() || DEV_EMAIL;
+}
 
 const DAY_MS = 86_400_000;
 const DEFAULT_TARGETS = { goalWeightKg: 66.7, startWeightKg: 72.6, dailyKcalTarget: 1850, proteinTargetG: 160 };
@@ -104,6 +140,29 @@ async function recomputeDay(c: { env: Bindings }, email: string, date: string) {
  *             schema:
  *               $ref: '#/components/schemas/Health'
  */
+// ---- Better Auth handler ---------------------------------------------------
+// Mounted BEFORE the data routes + the guard + the SPA fallback so the auth
+// endpoints (sign-in/social, magic-link, callback, get-session, sign-out, …)
+// are served directly by Better Auth and never gated by our own session guard.
+app.on(["GET", "POST"], "/api/auth/*", (c) => makeAuth(c.env).handler(c.req.raw));
+
+// ---- session guard ---------------------------------------------------------
+// Every /api/* data route (i.e. everything except /api/auth/* handled above and
+// /api/health) requires a signed-in identity. We resolve it once here, 401 when
+// there's no session (and no dev bypass), and stash the email so handlers read
+// it synchronously via c.get("email"). The scale-ingest route authenticates
+// with its own bearer token, so it's excluded from the session requirement.
+app.use("/api/*", async (c, next) => {
+  const path = c.req.path;
+  if (path === "/api/health" || path.startsWith("/api/auth/") || path === "/api/ingest/weight") {
+    return next();
+  }
+  const email = await userEmail(c);
+  if (!email) return c.json({ error: "unauthorized" }, 401);
+  c.set("email", email);
+  return next();
+});
+
 app.get("/api/health", (c) => c.json({ ok: true, service: "telemetry", ts: new Date().toISOString() }));
 
 /**
@@ -122,7 +181,7 @@ app.get("/api/health", (c) => c.json({ ok: true, service: "telemetry", ts: new D
  *             schema:
  *               $ref: '#/components/schemas/WhoAmI'
  */
-app.get("/api/whoami", (c) => c.json({ email: userEmail(c) }));
+app.get("/api/whoami", (c) => c.json({ email: c.get("email") }));
 
 // ---- weight ----------------------------------------------------------------
 /**
@@ -144,7 +203,7 @@ app.get("/api/whoami", (c) => c.json({ email: userEmail(c) }));
  *                 $ref: '#/components/schemas/WeightReading'
  */
 app.get("/api/weight", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const rows = await db(c)
     .select()
     .from(schema.weightReadings)
@@ -180,7 +239,7 @@ app.get("/api/weight", async (c) => {
  *         $ref: '#/components/responses/BadRequest'
  */
 app.post("/api/weight", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const body = await c.req.json<{ weightKg?: number; bodyFatPct?: number | null; note?: string }>();
   if (typeof body.weightKg !== "number" || !isFinite(body.weightKg) || body.weightKg < 9 || body.weightKg > 320) {
     return c.json({ error: "weightKg must be 9–320 kg" }, 400);
@@ -234,7 +293,7 @@ app.post("/api/weight", async (c) => {
  *         $ref: '#/components/responses/NotFound'
  */
 app.patch("/api/weight/:id", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const id = Number(c.req.param("id"));
   if (!Number.isFinite(id)) return c.json({ error: "bad id" }, 400);
   const b = await c.req.json<{ note?: string | null }>();
@@ -272,7 +331,7 @@ app.patch("/api/weight/:id", async (c) => {
  *                 $ref: '#/components/schemas/Measurement'
  */
 app.get("/api/measurements", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const rows = await db(c)
     .select()
     .from(schema.measurements)
@@ -308,7 +367,7 @@ app.get("/api/measurements", async (c) => {
  *         $ref: '#/components/responses/BadRequest'
  */
 app.post("/api/measurements", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const body = await c.req.json<{ site?: string; valueCm?: number }>();
   if (!body.site || typeof body.valueCm !== "number" || !isFinite(body.valueCm) || body.valueCm < 1 || body.valueCm > 300) {
     return c.json({ error: "site + valueCm (1–300 cm) required" }, 400);
@@ -337,7 +396,7 @@ app.post("/api/measurements", async (c) => {
  *                 $ref: '#/components/schemas/NutritionDay'
  */
 app.get("/api/nutrition", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const rows = await db(c)
     .select()
     .from(schema.nutritionDays)
@@ -373,7 +432,7 @@ app.get("/api/nutrition", async (c) => {
  *         $ref: '#/components/responses/BadRequest'
  */
 app.put("/api/nutrition", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const b = await c.req.json<{ date?: string; kcal?: number | null; proteinG?: number | null; hitProtein?: boolean | null; adherence?: "under" | "on" | "over" | null }>();
   if (!b.date || !/^\d{4}-\d{2}-\d{2}$/.test(b.date)) return c.json({ error: "date (YYYY-MM-DD) required" }, 400);
   if (b.kcal != null && (b.kcal < 0 || b.kcal > 20000)) return c.json({ error: "kcal must be 0–20000" }, 400);
@@ -419,7 +478,7 @@ async function getTargets(c: { env: Bindings }, email: string): Promise<Targets 
  *             schema:
  *               $ref: '#/components/schemas/Targets'
  */
-app.get("/api/targets", async (c) => c.json(await getTargets(c, userEmail(c))));
+app.get("/api/targets", async (c) => c.json(await getTargets(c, c.get("email"))));
 
 /**
  * @openapi
@@ -445,7 +504,7 @@ app.get("/api/targets", async (c) => c.json(await getTargets(c, userEmail(c))));
  *               $ref: '#/components/schemas/Ok'
  */
 app.put("/api/targets", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const b = await c.req.json<Partial<Targets>>();
   const current = await getTargets(c, email);
   await db(c)
@@ -487,7 +546,7 @@ app.put("/api/targets", async (c) => {
  *               $ref: '#/components/schemas/DashboardData'
  */
 app.get("/api/dashboard", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
 
   const weightRows = await db(c)
@@ -642,7 +701,7 @@ app.post("/api/ingest/weight", async (c) => {
  *         $ref: '#/components/responses/ServiceUnavailable'
  */
 app.post("/api/nutrition/analyze", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
 
   const form = await c.req.formData();
@@ -771,7 +830,7 @@ app.post("/api/nutrition/analyze", async (c) => {
  *         $ref: '#/components/responses/ServiceUnavailable'
  */
 app.post("/api/nutrition/describe", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "ai not configured" }, 503);
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
   const b = await c.req.json<{ text?: string }>();
@@ -843,7 +902,7 @@ app.post("/api/nutrition/describe", async (c) => {
  *                 $ref: '#/components/schemas/Meal'
  */
 app.get("/api/nutrition/meals", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const date = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
   const mealRows = await db(c)
     .select()
@@ -892,7 +951,7 @@ app.get("/api/nutrition/meals", async (c) => {
  *         $ref: '#/components/responses/NotFound'
  */
 app.delete("/api/nutrition/meals/:id", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const id = c.req.param("id");
   const rows = await db(c).select().from(schema.meals).where(and(eq(schema.meals.id, id), eq(schema.meals.userEmail, email))).limit(1);
   if (!rows.length) return c.json({ error: "not found" }, 404);
@@ -933,7 +992,7 @@ app.delete("/api/nutrition/meals/:id", async (c) => {
  *         $ref: '#/components/responses/NotFound'
  */
 app.delete("/api/nutrition/items/:id", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const id = Number(c.req.param("id"));
   if (!Number.isFinite(id)) return c.json({ error: "bad id" }, 400);
   const rows = await db(c).select().from(schema.nutritionItems).where(and(eq(schema.nutritionItems.id, id), eq(schema.nutritionItems.userEmail, email))).limit(1);
@@ -973,7 +1032,7 @@ app.delete("/api/nutrition/items/:id", async (c) => {
  *         description: No photo exists at that key.
  */
 app.get("/api/nutrition/photo/*", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const key = decodeURIComponent(c.req.path.replace(/^\/api\/nutrition\/photo\//, ""));
   if (!key.startsWith(`${email}/`)) return c.json({ error: "forbidden" }, 403);
   const obj = await c.env.PHOTOS.get(key);
@@ -1029,7 +1088,7 @@ const kgToLb = (kg: number) => kg * LB_PER_KG;
  *         $ref: '#/components/responses/ServiceUnavailable'
  */
 app.post("/api/coach", async (c) => {
-  const email = userEmail(c);
+  const email = c.get("email");
   const b = await c.req.json<{ messages?: { role?: string; content?: string }[]; date?: string }>();
   const raw = Array.isArray(b.messages) ? b.messages : [];
   if (!raw.length) return c.json({ error: "messages required" }, 400);
@@ -1150,64 +1209,9 @@ app.get("/openapi.json", (c) =>
   c.json(openapiDoc as Record<string, unknown>, 200, { "cache-control": "public, max-age=300" }),
 );
 
-// ---- CLI login bounce ------------------------------------------------------
-// The CLI opens this URL in a browser. It sits behind Cloudflare Access, so the
-// visit forces SSO; afterwards Access hands us the verified app token (the
-// CF_Authorization cookie / the Cf-Access-Jwt-Assertion header). We bounce that
-// token back to the one-shot localhost server the CLI is listening on. The CLI
-// then replays it as the `cf-access-token` header — no API key involved.
-//
-// Security: we only ever redirect to loopback (127.0.0.1:<port>), so the token
-// can never be exfiltrated to an attacker-controlled host via a crafted link.
-function accessToken(c: { req: { header: (k: string) => string | undefined } }): string | null {
-  const cookie = c.req.header("cookie") ?? "";
-  const m = cookie.match(/(?:^|;\s*)CF_Authorization=([^;]+)/);
-  if (m) return decodeURIComponent(m[1]);
-  return c.req.header("cf-access-jwt-assertion") ?? null;
-}
-
-/**
- * @openapi
- * /cli-auth:
- *   get:
- *     tags: [Auth]
- *     summary: CLI login bounce
- *     description: Behind Cloudflare Access; after SSO it redirects the verified Access token back to the CLI's local loopback callback. Not called directly by users.
- *     operationId: cliAuth
- *     parameters:
- *       - name: port
- *         in: query
- *         required: true
- *         description: Loopback port the CLI's one-shot callback server is listening on.
- *         schema:
- *           type: integer
- *           minimum: 1024
- *           maximum: 65535
- *       - name: state
- *         in: query
- *         required: true
- *         description: Opaque nonce the CLI generated, echoed back so it can reject unsolicited callbacks.
- *         schema:
- *           type: string
- *     responses:
- *       '302':
- *         description: Redirect to the CLI's loopback callback carrying the Access token.
- *       '400':
- *         $ref: '#/components/responses/BadRequest'
- *       '401':
- *         $ref: '#/components/responses/Unauthorized'
- */
-app.get("/cli-auth", (c) => {
-  const port = Number(c.req.query("port"));
-  const state = c.req.query("state") ?? "";
-  if (!Number.isInteger(port) || port < 1024 || port > 65535 || !state || state.length > 200) {
-    return c.json({ error: "bad port or state" }, 400);
-  }
-  const token = accessToken(c);
-  if (!token) return c.json({ error: "no access token on request" }, 401);
-  const url = `http://127.0.0.1:${port}/callback?token=${encodeURIComponent(token)}&state=${encodeURIComponent(state)}`;
-  return c.redirect(url, 302);
-});
+// (The Cloudflare Access `/cli-auth` bounce was removed with the Access swap to
+// Better Auth. The CLI login rebuild lands in a later pass; the CLI package is
+// left untouched for now.)
 
 // ---- SPA fallback ----------------------------------------------------------
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));

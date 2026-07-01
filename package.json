@@ -20,10 +20,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
-    "drizzle-orm": "^0.38.0",
+    "better-auth": "^1.6.23",
+    "drizzle-orm": "^0.45.2",
     "hono": "^4.6.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "worker-mailer": "^1.2.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.0.0",
@@ -33,7 +35,7 @@
     "@types/react-dom": "^19.0.0",
     "@types/swagger-jsdoc": "^6.0.4",
     "@vitejs/plugin-react": "^4.3.0",
-    "drizzle-kit": "^0.30.0",
+    "drizzle-kit": "^0.31.10",
     "esbuild": "^0.25.12",
     "miniflare": "^4.20260625.0",
     "swagger-jsdoc": "^6.3.0",
