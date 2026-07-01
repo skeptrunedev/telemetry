@@ -43,6 +43,7 @@ export type MealAnalysis = {
   photoKeys: string[];
 };
 export type Meal = { id: string; note: string | null; createdAt: number; photoKeys: string[]; items: LoggedItem[] };
+export type CoachMessage = { role: "user" | "assistant"; content: string };
 export type WeightReading = { id: number; ts: number; weightKg: number; bodyFatPct: number | null; note: string | null; source: string };
 
 export const api = {
@@ -71,6 +72,16 @@ export const api = {
     });
     if (!r.ok) throw new Error(`describe → ${r.status}: ${await r.text().catch(() => "")}`);
     return r.json() as Promise<MealAnalysis>;
+  },
+  coach: async (messages: CoachMessage[], date?: string): Promise<{ reply: string }> => {
+    const url = date ? `/api/coach?date=${date}` : `/api/coach`;
+    const r = await rawFetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages, date }),
+    });
+    if (!r.ok) throw new Error(`coach → ${r.status}: ${await r.text().catch(() => "")}`);
+    return r.json() as Promise<{ reply: string }>;
   },
   meals: (date: string) => jget<Meal[]>(`/api/nutrition/meals?date=${date}`),
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),

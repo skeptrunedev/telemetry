@@ -215,6 +215,22 @@ describe("AI guard rails (no model call)", () => {
     expect(await res.text()).toContain("no photos uploaded");
   });
 
+  it("POST /api/coach with empty messages → 400 (never calls the model)", async () => {
+    // The empty-messages check runs before the missing-key guard, so this is a
+    // deterministic 400 regardless of whether a key is present in the env.
+    const res = await jsonPost(user, "/api/coach", { messages: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /api/coach with a message but no key → 503 (never calls the model)", async () => {
+    const res = await jsonPost(user, "/api/coach", {
+      messages: [{ role: "user", content: "what do you think of a meat pie for breakfast?" }],
+    });
+    // Valid body, but ANTHROPIC_API_KEY is empty → guard-rail, no model call.
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain("coach not configured");
+  });
+
   it("POST /api/nutrition/analyze with a photo but no key → 503 (never calls the model)", async () => {
     const fd = new FormData();
     fd.append("photos", new Blob([new Uint8Array([1, 2, 3, 4])], { type: "image/jpeg" }), "meal.jpg");

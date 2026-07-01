@@ -8,6 +8,7 @@ import { AreaChart } from "./Chart";
 import { AddSheet } from "./AddSheet";
 import { BottomNav, type View } from "./BottomNav";
 import { WeightHistory } from "./WeightHistory";
+import { Coach } from "./Coach";
 
 // We own scroll position per history entry, so stop the browser from guessing.
 if (typeof history !== "undefined" && "scrollRestoration" in history) {
@@ -48,8 +49,11 @@ function restoreScroll(y: number) {
 
 function readView(): View {
   const s = (typeof history !== "undefined" ? history.state : null) as Partial<HistoryState> | null;
-  if (s?.view === "trends" || s?.view === "today") return s.view;
-  return typeof location !== "undefined" && location.hash.includes("trends") ? "trends" : "today";
+  if (s?.view === "trends" || s?.view === "today" || s?.view === "coach") return s.view;
+  const hash = typeof location !== "undefined" ? location.hash : "";
+  if (hash.includes("trends")) return "trends";
+  if (hash.includes("coach")) return "coach";
+  return "today";
 }
 
 function Trends({ data }: { data: DashboardData }) {
@@ -111,7 +115,8 @@ export default function App() {
   useEffect(() => {
     const onPop = (e: PopStateEvent) => {
       const st = (e.state ?? null) as Partial<HistoryState> | null;
-      const next: View = st?.view === "trends" || st?.view === "today" ? st.view : readView();
+      const next: View =
+        st?.view === "trends" || st?.view === "today" || st?.view === "coach" ? st.view : readView();
       swapView(next, st?.scroll ?? 0);
     };
     window.addEventListener("popstate", onPop);
@@ -204,6 +209,7 @@ export default function App() {
         {!data && !error && <p className="meta">loading…</p>}
         {data && view === "today" && <Dashboard data={data} refreshKey={tick} onChange={reloadAll} />}
         {data && view === "trends" && <Trends data={data} />}
+        {data && view === "coach" && <Coach />}
       </main>
 
       <BottomNav view={view} onChange={navigate} onAdd={() => setAdding(true)} />

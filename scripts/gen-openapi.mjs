@@ -46,6 +46,7 @@ const options = {
       { name: "Measurements", description: "Body-part circumference measurements (stored in centimetres)." },
       { name: "Nutrition", description: "Per-day calorie and protein totals plus AI meal logging." },
       { name: "Targets", description: "Per-user goals: target weight, calories, and protein." },
+      { name: "Coach", description: "AI coach chat grounded in the caller's targets, intake, and weight trend." },
       { name: "Dashboard", description: "Pre-aggregated snapshot powering the home screen." },
       { name: "Ingest", description: "Token-authenticated machine ingest from the Bluetooth scale listener." },
       { name: "Spec", description: "The OpenAPI document itself." },

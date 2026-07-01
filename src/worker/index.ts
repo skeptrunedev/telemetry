@@ -962,6 +962,149 @@ app.get("/api/nutrition/photo/*", async (c) => {
   });
 });
 
+// ---- coach: grounded chat over the caller's targets + today's intake -------
+const LB_PER_KG = 2.2046226218;
+const kgToLb = (kg: number) => kg * LB_PER_KG;
+
+/**
+ * @openapi
+ * /api/coach:
+ *   post:
+ *     tags: [Coach]
+ *     summary: Ask the AI coach
+ *     description: >-
+ *       Sends a short chat history to Claude with a system prompt grounded in the caller's own
+ *       targets, today's logged calories and protein, and their latest weight and weekly trend.
+ *       Use it before eating to get a blunt verdict on a food and how it fits the remaining budget.
+ *       The client holds the conversation history and posts the whole thing each turn.
+ *     operationId: coach
+ *     parameters:
+ *       - name: date
+ *         in: query
+ *         required: false
+ *         description: Day to ground today's intake against (YYYY-MM-DD). Defaults to the server's current UTC date.
+ *         schema:
+ *           type: string
+ *           format: date
+ *     requestBody:
+ *       required: true
+ *       description: The chat history to answer, oldest message first.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CoachRequest'
+ *     responses:
+ *       '200':
+ *         description: The coach's reply.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/CoachReply'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '502':
+ *         $ref: '#/components/responses/BadGateway'
+ *       '503':
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
+app.post("/api/coach", async (c) => {
+  const email = userEmail(c);
+  const b = await c.req.json<{ messages?: { role?: string; content?: string }[]; date?: string }>();
+  const raw = Array.isArray(b.messages) ? b.messages : [];
+  if (!raw.length) return c.json({ error: "messages required" }, 400);
+  if (raw.length > 20) return c.json({ error: "too many messages (max 20)" }, 400);
+  const messages: { role: "user" | "assistant"; content: string }[] = [];
+  for (const m of raw) {
+    if (m.role !== "user" && m.role !== "assistant") return c.json({ error: "each message needs role user or assistant" }, 400);
+    const content = typeof m.content === "string" ? m.content : "";
+    if (!content.trim()) return c.json({ error: "each message needs content" }, 400);
+    if (content.length > 2000) return c.json({ error: "message content too long (max 2000 chars)" }, 400);
+    messages.push({ role: m.role, content });
+  }
+  if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "coach not configured" }, 503);
+
+  const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
+
+  // Gather the caller's real numbers, reusing the same sources as the dashboard.
+  const targets = await getTargets(c, email);
+  const nutToday = await db(c)
+    .select()
+    .from(schema.nutritionDays)
+    .where(and(eq(schema.nutritionDays.userEmail, email), eq(schema.nutritionDays.date, today)))
+    .limit(1);
+  const kcalIn = nutToday[0]?.kcal ?? 0;
+  const proteinIn = nutToday[0]?.proteinG ?? 0;
+
+  const weightRows = await db(c)
+    .select()
+    .from(schema.weightReadings)
+    .where(eq(schema.weightReadings.userEmail, email))
+    .orderBy(desc(schema.weightReadings.ts), desc(schema.weightReadings.id))
+    .limit(120);
+  const latestKg = weightRows[0]?.weightKg ?? null;
+  const weekCut = Date.now() - 7 * DAY_MS;
+  const lastWeek = weightRows.filter((r) => r.ts.getTime() >= weekCut);
+  const weeklyAvgKg = lastWeek.length ? lastWeek.reduce((s, r) => s + r.weightKg, 0) / lastWeek.length : null;
+  const prevWeekRows = weightRows.filter((r) => {
+    const t = r.ts.getTime();
+    return t < weekCut && t >= weekCut - 7 * DAY_MS;
+  });
+  const prevWeekAvgKg = prevWeekRows.length ? prevWeekRows.reduce((s, r) => s + r.weightKg, 0) / prevWeekRows.length : null;
+
+  const kcalTarget = targets.dailyKcalTarget ?? 0;
+  const proteinTarget = targets.proteinTargetG ?? 0;
+  const kcalLeft = kcalTarget - kcalIn;
+  const proteinLeft = proteinTarget - proteinIn;
+  const fmtLb = (kg: number | null) => (kg != null ? `${kgToLb(kg).toFixed(1)} lb` : "unknown");
+  const trendLine =
+    weeklyAvgKg != null && prevWeekAvgKg != null
+      ? `week-over-week 7-day average moved ${(kgToLb(weeklyAvgKg) - kgToLb(prevWeekAvgKg)).toFixed(1)} lb (${kgToLb(prevWeekAvgKg).toFixed(1)} → ${kgToLb(weeklyAvgKg).toFixed(1)} lb)`
+      : weeklyAvgKg != null
+        ? `7-day average is ${fmtLb(weeklyAvgKg)}; not enough history yet for a week-over-week trend`
+        : "no recent weigh-ins to compute a trend";
+
+  const system = [
+    "You are the user's blunt, knowledgeable nutrition coach inside their body-recomposition tracker (a lean cut with a protein floor).",
+    "Answer using THEIR real numbers below — never invent targets or intake.",
+    "",
+    "TARGETS:",
+    `- Daily calories: ${kcalTarget || "unset"} kcal`,
+    `- Daily protein: ${proteinTarget || "unset"} g`,
+    `- Goal weight: ${fmtLb(targets.goalWeightKg)}; start weight: ${fmtLb(targets.startWeightKg)}`,
+    "",
+    "TODAY SO FAR:",
+    `- Logged: ${kcalIn} kcal, ${Math.round(proteinIn)} g protein`,
+    `- Remaining budget: ${kcalLeft} kcal, ${Math.round(proteinLeft)} g protein${kcalLeft < 0 ? " (already over on calories)" : ""}`,
+    "",
+    "WEIGHT:",
+    `- Latest weigh-in: ${fmtLb(latestKg)}`,
+    `- Trend: ${trendLine}`,
+    "",
+    "When the user asks about eating a specific food: estimate its calories and protein, say how it fits the remaining budget above, then give a short blunt verdict (eat it / fine / skip). If it's a poor fit, suggest a better alternative that protects the protein floor and calorie budget.",
+    "Be concise: 2–5 sentences, plain text, conversational. No markdown headers, no bullet-list dumps.",
+  ].join("\n");
+
+  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
+  let reply: string;
+  try {
+    const msg = await anthropic.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 600,
+      system,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    } as Anthropic.MessageCreateParamsNonStreaming);
+    reply = msg.content
+      .filter((bk) => bk.type === "text")
+      .map((bk) => (bk as Anthropic.TextBlock).text)
+      .join("")
+      .trim();
+  } catch (e) {
+    return c.json({ error: "coach failed", detail: String(e) }, 502);
+  }
+
+  return c.json({ reply });
+});
+
 // ---- OpenAPI document ------------------------------------------------------
 /**
  * @openapi

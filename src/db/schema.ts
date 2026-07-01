@@ -594,6 +594,51 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *           example: [{ id: 9012, name: grilled chicken breast, kcal: 284, proteinG: 53.4 }]
  *           items:
  *             $ref: '#/components/schemas/LoggedItem'
+ *     CoachMessage:
+ *       type: object
+ *       description: One turn in the coach conversation.
+ *       additionalProperties: false
+ *       required: [role, content]
+ *       properties:
+ *         role:
+ *           type: string
+ *           enum: [user, assistant]
+ *           description: Who authored the turn — the user or the coach.
+ *           example: user
+ *         content:
+ *           type: string
+ *           maxLength: 2000
+ *           description: The message text (truncated to 2000 characters).
+ *           example: what do you think of me eating a meat pie for breakfast?
+ *     CoachRequest:
+ *       type: object
+ *       description: Body for asking the coach; the client sends the full running history each turn.
+ *       additionalProperties: false
+ *       required: [messages]
+ *       properties:
+ *         messages:
+ *           type: array
+ *           minItems: 1
+ *           maxItems: 20
+ *           description: Conversation history, oldest message first (1–20 turns).
+ *           example: [{ role: user, content: "what do you think of me eating a meat pie for breakfast? how's that gonna impact my plan?" }]
+ *           items:
+ *             $ref: '#/components/schemas/CoachMessage'
+ *         date:
+ *           type: string
+ *           format: date
+ *           description: Optional calendar day (YYYY-MM-DD) whose logged intake grounds the reply; the server's current UTC date is used when omitted.
+ *           example: "2026-06-30"
+ *     CoachReply:
+ *       type: object
+ *       description: The coach's plain-text reply, grounded in the caller's targets, intake, and weight trend.
+ *       additionalProperties: false
+ *       required: [reply]
+ *       properties:
+ *         reply:
+ *           type: string
+ *           description: The coach's answer — an estimate, a budget fit, a blunt verdict, and a better option if it's a poor fit.
+ *           example: "A meat pie runs about 550 kcal and 15 g protein. That eats a big chunk of your 1850 kcal budget for little protein — skip it. Have three eggs and Greek yogurt instead to hit protein without blowing the day."
  */
 
 export const weightReadings = sqliteTable("weight_readings", {
