@@ -57,9 +57,10 @@ export const api = {
   addMeasurement: (site: string, valueCm: number) =>
     jsend(`/api/measurements`, "POST", { site, valueCm }),
   putNutrition: (d: NutritionDay) => jsend(`/api/nutrition`, "PUT", d),
-  analyzeMeal: async (date: string, files: Blob[]): Promise<MealAnalysis> => {
+  analyzeMeal: async (date: string, files: Blob[], note?: string): Promise<MealAnalysis> => {
     const fd = new FormData();
     files.forEach((f, i) => fd.append("photos", f, `meal-${i}.jpg`));
+    if (note?.trim()) fd.append("note", note.trim());
     const r = await rawFetch(`/api/nutrition/analyze?date=${date}`, { method: "POST", body: fd });
     if (!r.ok) throw new Error(`analyze → ${r.status}: ${await r.text().catch(() => "")}`);
     return r.json() as Promise<MealAnalysis>;

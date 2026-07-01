@@ -607,7 +607,7 @@ app.post("/api/ingest/weight", async (c) => {
  *           format: date
  *     requestBody:
  *       required: true
- *       description: The meal photos to analyze, as multipart form fields named `photos`.
+ *       description: The meal photos (multipart field `photos`), plus an optional `note` caption for context.
  *       content:
  *         multipart/form-data:
  *           schema:
@@ -622,6 +622,11 @@ app.post("/api/ingest/weight", async (c) => {
  *                   type: string
  *                   format: binary
  *                   example: "@plate.jpg"
+ *               note:
+ *                 type: string
+ *                 maxLength: 2000
+ *                 description: Optional caption to disambiguate the photo; passed to the model and stored as the meal note.
+ *                 example: the white sauce is toum, and that's a 12oz steak
  *     responses:
  *       '200':
  *         description: The meal was analyzed and logged.
@@ -647,6 +652,9 @@ app.post("/api/nutrition/analyze", async (c) => {
   const files = (form.getAll("photos") as unknown[]).filter(isFile);
   if (!files.length) return c.json({ error: "no photos uploaded" }, 400);
   if (files.length > 5) return c.json({ error: "max 5 photos per meal" }, 400);
+  // Optional caption to disambiguate the photo (e.g. the sauce, the portion).
+  const noteRaw = form.get("note");
+  const note = typeof noteRaw === "string" ? noteRaw.trim().slice(0, 2000) : "";
   // Validate types/sizes before we touch R2 or the model.
   const bufs: { mt: string; buf: ArrayBuffer }[] = [];
   for (const file of files) {
@@ -678,7 +686,20 @@ app.post("/api/nutrition/analyze", async (c) => {
       model: "claude-opus-4-8",
       max_tokens: 1024,
       output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
-      messages: [{ role: "user", content: [...imageBlocks, { type: "text", text: VISION_PROMPT }] }],
+      messages: [
+        {
+          role: "user",
+          content: [
+            ...imageBlocks,
+            {
+              type: "text",
+              text: note
+                ? `${VISION_PROMPT}\n\nContext the user gave about this meal (trust it to disambiguate what's shown): ${note}`
+                : VISION_PROMPT,
+            },
+          ],
+        },
+      ],
     } as Anthropic.MessageCreateParamsNonStreaming);
     const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
     parsed = JSON.parse(out);
@@ -688,7 +709,7 @@ app.post("/api/nutrition/analyze", async (c) => {
 
   const mealId = crypto.randomUUID();
   await db(c).insert(schema.meals).values({
-    id: mealId, userEmail: email, date: today, note: parsed.note ?? null, photoKeys: JSON.stringify(photoKeys),
+    id: mealId, userEmail: email, date: today, note: note || parsed.note || null, photoKeys: JSON.stringify(photoKeys),
   });
   const items = (parsed.items ?? []).slice(0, 30).map((it) => ({
     userEmail: email, mealId, date: today,

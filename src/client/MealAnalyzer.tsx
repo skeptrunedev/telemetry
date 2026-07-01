@@ -9,6 +9,7 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
   const [method, setMethod] = useState<Method>("photo");
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+  const [photoNote, setPhotoNote] = useState("");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -33,6 +34,7 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
 
   function reset() {
     clearPhotos();
+    setPhotoNote("");
     setText("");
     setResult(null);
     setErr(null);
@@ -111,13 +113,21 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
               </button>
             </div>
           )}
+          <textarea
+            className="describe-input"
+            value={photoNote}
+            onChange={(e) => setPhotoNote(e.target.value)}
+            rows={2}
+            maxLength={2000}
+            placeholder="Add context (optional) — e.g. the white sauce is toum, that's a 12oz steak, ignore the drink"
+          />
           {err && <p className="form-err">{err}</p>}
           <button
             className="btn"
             onClick={() =>
               run(async () => {
                 const compressed = await Promise.all(files.map((f) => compressImage(f)));
-                return api.analyzeMeal(todayLocal(), compressed);
+                return api.analyzeMeal(todayLocal(), compressed, photoNote);
               })
             }
             disabled={busy || !files.length}

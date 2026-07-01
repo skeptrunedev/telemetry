@@ -501,7 +501,7 @@
         ],
         "requestBody": {
           "required": true,
-          "description": "The meal photos to analyze, as multipart form fields named `photos`.",
+          "description": "The meal photos (multipart field `photos`), plus an optional `note` caption for context.",
           "content": {
             "multipart/form-data": {
               "schema": {
@@ -522,6 +522,12 @@
                       "format": "binary",
                       "example": "@plate.jpg"
                     }
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Optional caption to disambiguate the photo; passed to the model and stored as the meal note.",
+                    "example": "the white sauce is toum, and that's a 12oz steak"
                   }
                 }
               }
