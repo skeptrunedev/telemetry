@@ -37,11 +37,42 @@ type Variables = { email: string };
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 const db = (c: { env: Bindings }) => drizzle(c.env.DB, { schema });
 
+// A self-destructing service worker for the retired telemetry.skeptrune.com
+// origin. Old visitors have a PWA service worker registered there that serves
+// the cached app shell and swallows navigations, so they never see the 301
+// below. The browser still fetches /sw.js from the network to check for SW
+// updates (that request bypasses the SW), so serving this here lets the old
+// worker update to one that unregisters itself, drops its caches, and reloads
+// every client — after which navigations hit the network and get redirected.
+const KILL_SERVICE_WORKER = `self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
+    try { await self.registration.unregister(); } catch (e) {}
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch (e) {}
+    const clients = await self.clients.matchAll({ type: "window" });
+    for (const client of clients) client.navigate(client.url);
+  })());
+});
+`;
+
 // The app moved to skcal.skeptrune.com; permanently redirect the old brand host
 // (first middleware so it beats auth + the session guard).
 app.use("*", async (c, next) => {
   const url = new URL(c.req.url);
   if (url.hostname === "telemetry.skeptrune.com") {
+    // Don't redirect the SW script — serve the kill-switch so stale installs
+    // can tear themselves down (a redirected /sw.js just fails the update).
+    if (url.pathname === "/sw.js") {
+      return new Response(KILL_SERVICE_WORKER, {
+        headers: {
+          "content-type": "text/javascript; charset=utf-8",
+          "cache-control": "no-cache, no-store, must-revalidate",
+        },
+      });
+    }
     return c.redirect(`https://skcal.skeptrune.com${url.pathname}${url.search}`, 301);
   }
   return next();
