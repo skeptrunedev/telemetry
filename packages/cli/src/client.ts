@@ -1,4 +1,4 @@
-import { loadCredentials } from "./config";
+import { loadCredentials, DEFAULT_BASE_URL } from "./config";
 
 // Shapes mirror the API's OpenAPI components (skcal.skeptrune.com/openapi.json).
 export type WhoAmI = { email: string };
@@ -55,13 +55,17 @@ export class ApiError extends Error {
 export class TelemetryClient {
   constructor(
     private baseUrl: string,
-    private token: string,
+    private bearer: string,
   ) {}
 
+  // Resolve auth from (in order) the SKCAL_API_KEY env var, a saved API key, or
+  // a saved session token. Env-only works with no `skcal login` (handy in CI).
   static fromConfig(): TelemetryClient {
     const creds = loadCredentials();
-    if (!creds) throw new NotAuthenticatedError();
-    return new TelemetryClient(creds.baseUrl, creds.token);
+    const baseUrl = creds?.baseUrl || process.env.SKCAL_BASE_URL || DEFAULT_BASE_URL;
+    const bearer = process.env.SKCAL_API_KEY || creds?.apiKey || creds?.token;
+    if (!bearer) throw new NotAuthenticatedError();
+    return new TelemetryClient(baseUrl, bearer);
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -69,8 +73,7 @@ export class TelemetryClient {
       method,
       redirect: "manual",
       headers: {
-        // Cloudflare Access accepts the app token here in lieu of the cookie.
-        "cf-access-token": this.token,
+        authorization: `Bearer ${this.bearer}`,
         ...(body !== undefined ? { "content-type": "application/json" } : {}),
         accept: "application/json",
       },

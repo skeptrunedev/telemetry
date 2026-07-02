@@ -50,11 +50,20 @@ program
 // ---- auth ------------------------------------------------------------------
 program
   .command("login")
-  .description("Sign in via your browser (Cloudflare Access SSO)")
+  .description("Sign in via your browser (default), or with --api-key")
   .option("--url <url>", "API base URL", DEFAULT_BASE_URL)
+  .option("--api-key <key>", "authenticate with a skcal API key instead of the browser flow")
   .action(
-    action(async (opts: { url: string }) => {
+    action(async (opts: { url: string; apiKey?: string }) => {
       const baseUrl = opts.url.replace(/\/$/, "");
+      if (opts.apiKey) {
+        const apiKey = opts.apiKey.trim();
+        // Verify the key before saving so a bad key doesn't get cached.
+        const me = await new TelemetryClient(baseUrl, apiKey).whoami();
+        saveCredentials({ baseUrl, apiKey, savedAt: new Date().toISOString() });
+        console.log(pc.green("✓ ") + `Signed in as ${pc.bold(me.email)} via API key (${baseUrl})`);
+        return;
+      }
       const { token } = await browserLogin(baseUrl);
       saveCredentials({ baseUrl, token, savedAt: new Date().toISOString() });
       const client = new TelemetryClient(baseUrl, token);
@@ -74,15 +83,26 @@ program
 
 program
   .command("whoami")
-  .description("Show the signed-in account and token status")
+  .description("Show the signed-in account and how you're authenticated")
   .action(
     action(async () => {
       const creds = loadCredentials();
-      if (!creds) throw new NotAuthenticatedError();
+      const envKey = !!process.env.SKCAL_API_KEY;
+      if (!creds && !envKey) throw new NotAuthenticatedError();
       const me = await TelemetryClient.fromConfig().whoami();
-      const left = secondsUntilExpiry(creds.token);
-      const exp = left == null ? "" : left <= 0 ? pc.red(" (token expired — run `skcal login`)") : pc.dim(` (token valid ~${Math.round(left / 3600)}h)`);
-      console.log(`${pc.bold(me.email)} @ ${creds.baseUrl}${exp}`);
+      const baseUrl = creds?.baseUrl || process.env.SKCAL_BASE_URL || DEFAULT_BASE_URL;
+      let via: string;
+      if (envKey) {
+        via = pc.dim(" (API key from SKCAL_API_KEY)");
+      } else if (creds?.apiKey) {
+        via = pc.dim(" (API key)");
+      } else if (creds?.token) {
+        const left = secondsUntilExpiry(creds.token);
+        via = left == null ? "" : left <= 0 ? pc.red(" (session expired — run `skcal login`)") : pc.dim(` (session ~${Math.round(left / 3600)}h)`);
+      } else {
+        via = "";
+      }
+      console.log(`${pc.bold(me.email)} @ ${baseUrl}${via}`);
     }),
   );
 

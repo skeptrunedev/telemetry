@@ -6,8 +6,11 @@ export const DEFAULT_BASE_URL = "https://skcal.skeptrune.com";
 
 export type Credentials = {
   baseUrl: string;
-  token: string;
   savedAt: string;
+  // A `skcal_…` bearer API key (the recommended non-interactive auth), and/or a
+  // session token from the browser flow. The client sends whichever is present.
+  apiKey?: string;
+  token?: string;
 };
 
 function configDir(): string {

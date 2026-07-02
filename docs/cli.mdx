@@ -30,13 +30,25 @@ Prefer no Node? Grab a standalone binary for your platform from the
 skcal login
 ```
 
-This opens your browser to sign in (Google or magic link). A short-lived token
-is cached locally and replayed on each request.
+This opens your browser to sign in (Google or magic link) and caches the session
+locally.
+
+### Authenticate with an API key
+
+For scripts and CI, use a [bearer API key](/authentication) instead of the
+browser flow:
+
+```bash
+skcal login --api-key skcal_your_key_here      # caches the key, or…
+export SKCAL_API_KEY=skcal_your_key_here        # …use the env var (no login)
+```
+
+Create and scope keys in the app under **profile → API keys**.
 
 <Tip>
-Point the CLI at a different deployment with `skcal login --url https://example.com`.
-Credentials live in `~/.config/skcal/credentials.json` (override the directory
-with the `SKCAL_CONFIG_DIR` environment variable).
+Point the CLI at a different deployment with `skcal login --url https://example.com`
+(or `SKCAL_BASE_URL`). Credentials live in `~/.config/skcal/credentials.json`
+(override the directory with `SKCAL_CONFIG_DIR`).
 </Tip>
 
 ## Usage

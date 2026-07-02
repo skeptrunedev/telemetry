@@ -4,10 +4,13 @@ Command-line client for [skcal](https://skcal.skeptrune.com), a calorie and
 body-composition tracker built for developers and AI power users. Logs
 weigh-ins, meals, and measurements and prints your daily snapshot — straight
 from the terminal, so you can wire it into scripts and your AI tooling. (Pairs
-with the typed HTTP API; an MCP server is on the roadmap.)
+with the typed HTTP API and a remote MCP server.)
 
-`skcal login` opens your browser, you sign in, and a short-lived token is cached
-locally and replayed on every request.
+`skcal login` opens your browser, you sign in, and the session is cached locally
+and replayed on every request. For scripts and CI, authenticate with an API key
+instead — either `skcal login --api-key skcal_…` or the `SKCAL_API_KEY`
+environment variable (no login needed). Create keys in the app under
+profile → API keys.
 
 ## Install
 
@@ -21,8 +24,9 @@ Or grab a standalone binary (no Node required) for your platform from the
 ## Usage
 
 ```bash
-skcal login                      # browser sign-in; caches the token
-skcal whoami                     # signed-in account + token expiry
+skcal login                      # browser sign-in (default); caches the session
+skcal login --api-key skcal_...  # or authenticate with an API key
+skcal whoami                     # signed-in account + how you're authenticated
 skcal status                     # today: weight, S:W ratio, calories/protein
 
 skcal weight log 158.2           # log a weigh-in in pounds (--kg for kilograms)
