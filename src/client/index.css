@@ -1101,12 +1101,12 @@ a {
 /* ChatGPT-style pill: textarea + send control share one rounded container. */
 .composer {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 0.4rem;
   background: var(--input-bg);
   border: 1px solid var(--line);
   border-radius: 22px;
-  padding: 0.3rem 0.3rem 0.3rem 0.95rem;
+  padding: 0.3rem 0.4rem 0.3rem 0.95rem;
   transition: border-color 160ms ease-out;
 }
 .composer:focus-within {
@@ -1147,14 +1147,14 @@ a {
   box-sizing: border-box;
   background: transparent;
   border: 0;
-  padding: 0.5rem 0;
+  padding: 0.4rem 0;
   color: var(--fg);
   font-family: var(--sans);
   font-size: 1rem;
   line-height: 1.4;
   resize: none;
   /* One line by default; the composer auto-grows it, then it scrolls. */
-  min-height: 1.5rem;
+  min-height: 1.4rem;
   max-height: 140px;
   overflow-y: auto;
 }
