@@ -2,11 +2,20 @@ import { useState } from "react";
 import { lbToKg, inToCm, MEASUREMENT_SITES, SITE_LABELS } from "../shared/types";
 import { api } from "./api";
 import { MealAnalyzer } from "./MealAnalyzer";
+import { Select } from "./Select";
 
 type Tab = "weight" | "measure" | "nutrition";
 
-export function AddSheet({ onClose, onChange }: { onClose: () => void; onChange: () => void }) {
-  const [tab, setTab] = useState<Tab>("weight");
+export function AddSheet({
+  onClose,
+  onChange,
+  defaultTab = "weight",
+}: {
+  onClose: () => void;
+  onChange: () => void;
+  defaultTab?: Tab;
+}) {
+  const [tab, setTab] = useState<Tab>(defaultTab);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // weight
@@ -71,16 +80,15 @@ export function AddSheet({ onClose, onChange }: { onClose: () => void; onChange:
 
         {tab === "measure" && (
           <div className="form">
-            <label className="field">
+            <div className="field">
               <span>Site</span>
-              <select value={site} onChange={(e) => setSite(e.target.value)}>
-                {MEASUREMENT_SITES.map((s) => (
-                  <option key={s} value={s}>
-                    {SITE_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <Select
+                value={site}
+                onChange={setSite}
+                ariaLabel="Measurement site"
+                options={MEASUREMENT_SITES.map((s) => ({ value: s, label: SITE_LABELS[s] }))}
+              />
+            </div>
             <label className="field">
               <span>Measurement (in)</span>
               <input inputMode="decimal" value={inches} onChange={(e) => setInches(e.target.value)} placeholder="15.0" />

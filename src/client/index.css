@@ -635,8 +635,7 @@ a {
   color: var(--muted);
   text-transform: uppercase;
 }
-.field input,
-.field select {
+.field input {
   background: var(--input-bg);
   border: 1px solid var(--line);
   border-radius: 11px;
@@ -646,10 +645,106 @@ a {
   font-size: 1.1rem;
   font-variant-numeric: tabular-nums;
 }
-.field input:focus,
-.field select:focus {
+.field input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+/* ---- Custom select (fully-themed listbox, see Select.tsx) --------------- */
+.select {
+  position: relative;
+}
+.select-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 0.75rem 0.85rem;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 1.1rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease-out, transform 120ms ease-out;
+}
+.select-trigger:focus-visible,
+.select-trigger[aria-expanded="true"] {
+  outline: none;
+  border-color: var(--accent);
+}
+.select-trigger:active {
+  transform: scale(0.99);
+}
+.select-chevron {
+  flex: none;
+  color: var(--muted);
+  transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.select-trigger[aria-expanded="true"] .select-chevron {
+  transform: rotate(180deg);
+}
+.select-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  max-height: 264px;
+  overflow-y: auto;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+  transform-origin: top center;
+  animation: select-in 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@keyframes select-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 1.02rem;
+  cursor: pointer;
+}
+.select-option.active {
+  background: rgba(255, 255, 255, 0.06);
+}
+.select-option[aria-selected="true"] {
+  color: var(--accent);
+}
+.select-check {
+  flex: none;
+  color: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .select-menu {
+    animation: none;
+  }
+  .select-chevron,
+  .select-trigger {
+    transition: none;
+  }
 }
 .describe-input {
   width: 100%;
@@ -905,10 +1000,11 @@ a {
   display: flex;
   flex-direction: column;
   /* fill the space between the topbar and the docked nav */
-  min-height: calc(100dvh - 11rem);
+  height: calc(100dvh - 11rem);
 }
 .chat-list {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -946,6 +1042,35 @@ a {
   color: var(--fg);
   border: 1px solid var(--line);
   border-bottom-left-radius: 5px;
+  /* markdown renders block elements, so drop the pre-wrap used for plain text */
+  white-space: normal;
+}
+.bubble-assistant > *:first-child {
+  margin-top: 0;
+}
+.bubble-assistant > *:last-child {
+  margin-bottom: 0;
+}
+.bubble-assistant p {
+  margin: 0 0 0.5rem;
+}
+.bubble-assistant ul,
+.bubble-assistant ol {
+  margin: 0.3rem 0;
+  padding-left: 1.2rem;
+}
+.bubble-assistant li {
+  margin: 0.15rem 0;
+}
+.bubble-assistant strong {
+  font-weight: 650;
+}
+.bubble-assistant code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.05rem 0.3rem;
+  border-radius: 5px;
 }
 .bubble-thinking {
   color: var(--muted);
@@ -954,14 +1079,23 @@ a {
   letter-spacing: 0.02em;
 }
 .chat-input-row {
+  /* assistant-ui ViewportFooter: sticks to the bottom of the scroll area. */
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  padding: 0.6rem 0 0.2rem;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+.composer {
   display: flex;
   gap: 0.5rem;
   align-items: flex-end;
-  padding: 0.6rem 0 0.2rem;
-  border-top: 1px solid var(--line);
 }
 .chat-input {
   flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
   background: var(--input-bg);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -971,7 +1105,10 @@ a {
   font-size: 1rem;
   line-height: 1.4;
   resize: none;
+  /* One comfortable line by default; JS grows it to fit, then it scrolls. */
+  min-height: 2.9rem;
   max-height: 140px;
+  overflow-y: auto;
 }
 .chat-input::placeholder {
   color: var(--muted);

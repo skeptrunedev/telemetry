@@ -11,11 +11,18 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
-  // skcal.skeptrune.com custom domain is attached to this worker out-of-band
-  // (Cloudflare API / dashboard), so it isn't managed here.
+  // Both custom domains already exist (created via the CF API); listing them here
+  // gives `wrangler deploy` concrete targets so it actually promotes new versions.
+  "routes": [
+    { "pattern": "skcal.skeptrune.com", "custom_domain": true },
+    { "pattern": "telemetry.skeptrune.com", "custom_domain": true }
+  ],
   "assets": {
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // Run the Worker before serving static assets so the telemetry→skcal host
+    // redirect (and any future request logic) applies to asset routes too.
+    "run_worker_first": true
   },
   "observability": { "enabled": true },
   "d1_databases": [

@@ -49,6 +49,14 @@ function restoreScroll(y: number) {
   tick();
 }
 
+// True when the most recent weigh-in falls on today (local date). The trend is
+// raw readings in ascending time order, so the last point is the latest.
+function weightLoggedToday(data: DashboardData | null): boolean {
+  const last = data?.weight.trend.at(-1);
+  if (!last) return false;
+  return new Date(last.ts).toLocaleDateString("en-CA") === todayLocal();
+}
+
 function readView(): View {
   const s = (typeof history !== "undefined" ? history.state : null) as Partial<HistoryState> | null;
   if (s?.view === "trends" || s?.view === "today" || s?.view === "coach") return s.view;
@@ -232,7 +240,14 @@ export default function App() {
 
       <BottomNav view={view} onChange={navigate} onAdd={() => setAdding(true)} />
 
-      {adding && <AddSheet onClose={() => setAdding(false)} onChange={reloadAll} />}
+      {adding && (
+        <AddSheet
+          onClose={() => setAdding(false)}
+          onChange={reloadAll}
+          // If today's weigh-in is already logged, open straight to nutrition.
+          defaultTab={weightLoggedToday(data) ? "nutrition" : "weight"}
+        />
+      )}
     </div>
   );
 }

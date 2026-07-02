@@ -3,14 +3,10 @@ import { api, todayLocal } from "./api";
 import type { MealAnalysis } from "./api";
 import { compressImage } from "./image";
 
-type Method = "photo" | "text";
-
 export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
-  const [method, setMethod] = useState<Method>("photo");
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
-  const [photoNote, setPhotoNote] = useState("");
-  const [text, setText] = useState("");
+  const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<MealAnalysis | null>(null);
@@ -34,8 +30,7 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
 
   function reset() {
     clearPhotos();
-    setPhotoNote("");
-    setText("");
+    setDescription("");
     setResult(null);
     setErr(null);
   }
@@ -80,83 +75,65 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
     );
   }
 
+  const hasPhotos = files.length > 0;
+  const hasText = description.trim().length > 0;
+
   return (
     <div className="form">
-      <div className="tabs">
-        <button className={`tab ${method === "photo" ? "active" : ""}`} onClick={() => { setMethod("photo"); setErr(null); }}>
-          Photo
-        </button>
-        <button className={`tab ${method === "text" ? "active" : ""}`} onClick={() => { setMethod("text"); setErr(null); }}>
-          Describe
-        </button>
+      <div className="photo-picks">
+        <label className="photo-pick">
+          <input type="file" accept="image/*" capture="environment" multiple onChange={pick} hidden />
+          <span>Take photo</span>
+        </label>
+        <label className="photo-pick">
+          <input type="file" accept="image/*" multiple onChange={pick} hidden />
+          <span>Camera roll</span>
+        </label>
       </div>
-
-      {method === "photo" ? (
-        <>
-          <div className="photo-picks">
-            <label className="photo-pick">
-              <input type="file" accept="image/*" capture="environment" multiple onChange={pick} hidden />
-              <span>Take photo</span>
-            </label>
-            <label className="photo-pick">
-              <input type="file" accept="image/*" multiple onChange={pick} hidden />
-              <span>Camera roll</span>
-            </label>
-          </div>
-          {previews.length > 0 && (
-            <div className="thumbs">
-              {previews.map((src, i) => (
-                <img key={i} src={src} className="thumb" alt="" />
-              ))}
-              <button type="button" className="thumb-clear" onClick={clearPhotos} aria-label="Clear photos">
-                ✕
-              </button>
-            </div>
-          )}
-          <textarea
-            className="describe-input"
-            value={photoNote}
-            onChange={(e) => setPhotoNote(e.target.value)}
-            rows={2}
-            maxLength={2000}
-            placeholder="Add context (optional) — e.g. the white sauce is toum, that's a 12oz steak, ignore the drink"
-          />
-          {err && <p className="form-err">{err}</p>}
-          <button
-            className="btn"
-            onClick={() =>
-              run(async () => {
-                const compressed = await Promise.all(files.map((f) => compressImage(f)));
-                return api.analyzeMeal(todayLocal(), compressed, photoNote);
-              })
-            }
-            disabled={busy || !files.length}
-          >
-            {busy ? "Analyzing…" : "Analyze with AI"}
+      {previews.length > 0 && (
+        <div className="thumbs">
+          {previews.map((src, i) => (
+            <img key={i} src={src} className="thumb" alt="" />
+          ))}
+          <button type="button" className="thumb-clear" onClick={clearPhotos} aria-label="Clear photos">
+            ✕
           </button>
-          <p className="meta">
-            {files.length
-              ? `${files.length}/5 photos of one meal`
-              : "Add up to 5 photos of one meal (multiple angles) — AI estimates calories + protein."}
-          </p>
-        </>
-      ) : (
-        <>
-          <textarea
-            className="describe-input"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={4}
-            maxLength={2000}
-            placeholder="e.g. chicken breast + salad from The Bite — ate all the chicken with a side of toum, skipped most of the salad but had the olives, feta, cucumber, and cherry tomatoes"
-          />
-          {err && <p className="form-err">{err}</p>}
-          <button className="btn" onClick={() => run(() => api.describeMeal(todayLocal(), text.trim()))} disabled={busy || !text.trim()}>
-            {busy ? "Analyzing…" : "Analyze description"}
-          </button>
-          <p className="meta">Describe what you actually ate (mention what you skipped) — AI estimates calories + protein.</p>
-        </>
+        </div>
       )}
+      <textarea
+        className="describe-input"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        rows={hasPhotos ? 2 : 4}
+        maxLength={2000}
+        placeholder={
+          hasPhotos
+            ? "Add context (optional) — e.g. the white sauce is toum, that's a 12oz steak, ignore the drink"
+            : "Describe what you ate (or add a photo) — e.g. chicken breast + toum, skipped most of the salad but had the olives and feta"
+        }
+      />
+      {err && <p className="form-err">{err}</p>}
+      <button
+        className="btn"
+        onClick={() =>
+          run(async () => {
+            const text = description.trim();
+            if (hasPhotos) {
+              const compressed = await Promise.all(files.map((f) => compressImage(f)));
+              return api.analyzeMeal(todayLocal(), compressed, text);
+            }
+            return api.describeMeal(todayLocal(), text);
+          })
+        }
+        disabled={busy || (!hasPhotos && !hasText)}
+      >
+        {busy ? "Analyzing…" : "Analyze with AI"}
+      </button>
+      <p className="meta">
+        {hasPhotos
+          ? `${files.length}/5 photos of one meal — AI estimates calories + protein.`
+          : "Add a photo, a description, or both — AI estimates calories + protein."}
+      </p>
     </div>
   );
 }

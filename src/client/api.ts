@@ -84,6 +84,18 @@ export const api = {
     if (!r.ok) throw new Error(`coach → ${r.status}: ${await r.text().catch(() => "")}`);
     return r.json() as Promise<{ reply: string }>;
   },
+  // Streaming variant for the in-app chat: returns the raw Response so the
+  // caller can read the plain-text token stream off `.body`.
+  coachStream: async (messages: CoachMessage[], date: string, signal?: AbortSignal): Promise<Response> => {
+    const r = await rawFetch(`/api/coach/stream?date=${date}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages, date }),
+      signal,
+    });
+    if (!r.ok) throw new Error(`coach → ${r.status}: ${await r.text().catch(() => "")}`);
+    return r;
+  },
   meals: (date: string) => jget<Meal[]>(`/api/nutrition/meals?date=${date}`),
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),
   deleteItem: (id: number) => jsend(`/api/nutrition/items/${id}`, "DELETE", undefined),

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { and, desc, eq } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
@@ -35,6 +36,16 @@ type Variables = { email: string };
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 const db = (c: { env: Bindings }) => drizzle(c.env.DB, { schema });
+
+// The app moved to skcal.skeptrune.com; permanently redirect the old brand host
+// (first middleware so it beats auth + the session guard).
+app.use("*", async (c, next) => {
+  const url = new URL(c.req.url);
+  if (url.hostname === "telemetry.skeptrune.com") {
+    return c.redirect(`https://skcal.skeptrune.com${url.pathname}${url.search}`, 301);
+  }
+  return next();
+});
 
 const DEV_EMAIL = "dev@local";
 
@@ -1046,6 +1057,90 @@ app.get("/api/nutrition/photo/*", async (c) => {
 const LB_PER_KG = 2.2046226218;
 const kgToLb = (kg: number) => kg * LB_PER_KG;
 
+// Builds the grounded system prompt from the caller's real numbers (same
+// sources as the dashboard). Shared by the JSON and streaming coach routes.
+async function buildCoachSystem(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+  today: string,
+): Promise<string> {
+  const targets = await getTargets(c, email);
+  const nutToday = await db(c)
+    .select()
+    .from(schema.nutritionDays)
+    .where(and(eq(schema.nutritionDays.userEmail, email), eq(schema.nutritionDays.date, today)))
+    .limit(1);
+  const kcalIn = nutToday[0]?.kcal ?? 0;
+  const proteinIn = nutToday[0]?.proteinG ?? 0;
+
+  const weightRows = await db(c)
+    .select()
+    .from(schema.weightReadings)
+    .where(eq(schema.weightReadings.userEmail, email))
+    .orderBy(desc(schema.weightReadings.ts), desc(schema.weightReadings.id))
+    .limit(120);
+  const latestKg = weightRows[0]?.weightKg ?? null;
+  const weekCut = Date.now() - 7 * DAY_MS;
+  const lastWeek = weightRows.filter((r) => r.ts.getTime() >= weekCut);
+  const weeklyAvgKg = lastWeek.length ? lastWeek.reduce((s, r) => s + r.weightKg, 0) / lastWeek.length : null;
+  const prevWeekRows = weightRows.filter((r) => {
+    const t = r.ts.getTime();
+    return t < weekCut && t >= weekCut - 7 * DAY_MS;
+  });
+  const prevWeekAvgKg = prevWeekRows.length ? prevWeekRows.reduce((s, r) => s + r.weightKg, 0) / prevWeekRows.length : null;
+
+  const kcalTarget = targets.dailyKcalTarget ?? 0;
+  const proteinTarget = targets.proteinTargetG ?? 0;
+  const kcalLeft = kcalTarget - kcalIn;
+  const proteinLeft = proteinTarget - proteinIn;
+  const fmtLb = (kg: number | null) => (kg != null ? `${kgToLb(kg).toFixed(1)} lb` : "unknown");
+  const trendLine =
+    weeklyAvgKg != null && prevWeekAvgKg != null
+      ? `week-over-week 7-day average moved ${(kgToLb(weeklyAvgKg) - kgToLb(prevWeekAvgKg)).toFixed(1)} lb (${kgToLb(prevWeekAvgKg).toFixed(1)} → ${kgToLb(weeklyAvgKg).toFixed(1)} lb)`
+      : weeklyAvgKg != null
+        ? `7-day average is ${fmtLb(weeklyAvgKg)}; not enough history yet for a week-over-week trend`
+        : "no recent weigh-ins to compute a trend";
+
+  return [
+    "You are the user's blunt, knowledgeable nutrition coach inside their body-recomposition tracker (a lean cut with a protein floor).",
+    "Answer using THEIR real numbers below — never invent targets or intake.",
+    "",
+    "TARGETS:",
+    `- Daily calories: ${kcalTarget || "unset"} kcal`,
+    `- Daily protein: ${proteinTarget || "unset"} g`,
+    `- Goal weight: ${fmtLb(targets.goalWeightKg)}; start weight: ${fmtLb(targets.startWeightKg)}`,
+    "",
+    "TODAY SO FAR:",
+    `- Logged: ${kcalIn} kcal, ${Math.round(proteinIn)} g protein`,
+    `- Remaining budget: ${kcalLeft} kcal, ${Math.round(proteinLeft)} g protein${kcalLeft < 0 ? " (already over on calories)" : ""}`,
+    "",
+    "WEIGHT:",
+    `- Latest weigh-in: ${fmtLb(latestKg)}`,
+    `- Trend: ${trendLine}`,
+    "",
+    "When the user asks about eating a specific food: estimate its calories and protein, say how it fits the remaining budget above, then give a short blunt verdict (eat it / fine / skip). If it's a poor fit, suggest a better alternative that protects the protein floor and calorie budget.",
+    "Be concise: 2–5 sentences, conversational. Light markdown is fine (a **bold** verdict, an occasional short list) but keep it tight — no headers, no long bullet dumps.",
+  ].join("\n");
+}
+
+// Validates and normalizes the posted chat history for either coach route.
+function parseCoachMessages(
+  raw: unknown,
+): { messages: { role: "user" | "assistant"; content: string }[] } | { error: string } {
+  const arr = Array.isArray(raw) ? (raw as { role?: string; content?: string }[]) : [];
+  if (!arr.length) return { error: "messages required" };
+  if (arr.length > 20) return { error: "too many messages (max 20)" };
+  const messages: { role: "user" | "assistant"; content: string }[] = [];
+  for (const m of arr) {
+    if (m.role !== "user" && m.role !== "assistant") return { error: "each message needs role user or assistant" };
+    const content = typeof m.content === "string" ? m.content : "";
+    if (!content.trim()) return { error: "each message needs content" };
+    if (content.length > 2000) return { error: "message content too long (max 2000 chars)" };
+    messages.push({ role: m.role, content });
+  }
+  return { messages };
+}
+
 /**
  * @openapi
  * /api/coach:
@@ -1089,80 +1184,14 @@ const kgToLb = (kg: number) => kg * LB_PER_KG;
  */
 app.post("/api/coach", async (c) => {
   const email = c.get("email");
-  const b = await c.req.json<{ messages?: { role?: string; content?: string }[]; date?: string }>();
-  const raw = Array.isArray(b.messages) ? b.messages : [];
-  if (!raw.length) return c.json({ error: "messages required" }, 400);
-  if (raw.length > 20) return c.json({ error: "too many messages (max 20)" }, 400);
-  const messages: { role: "user" | "assistant"; content: string }[] = [];
-  for (const m of raw) {
-    if (m.role !== "user" && m.role !== "assistant") return c.json({ error: "each message needs role user or assistant" }, 400);
-    const content = typeof m.content === "string" ? m.content : "";
-    if (!content.trim()) return c.json({ error: "each message needs content" }, 400);
-    if (content.length > 2000) return c.json({ error: "message content too long (max 2000 chars)" }, 400);
-    messages.push({ role: m.role, content });
-  }
+  const b = await c.req.json<{ messages?: unknown; date?: string }>();
+  const parsed = parseCoachMessages(b.messages);
+  if ("error" in parsed) return c.json({ error: parsed.error }, 400);
+  const messages = parsed.messages;
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "coach not configured" }, 503);
 
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
-
-  // Gather the caller's real numbers, reusing the same sources as the dashboard.
-  const targets = await getTargets(c, email);
-  const nutToday = await db(c)
-    .select()
-    .from(schema.nutritionDays)
-    .where(and(eq(schema.nutritionDays.userEmail, email), eq(schema.nutritionDays.date, today)))
-    .limit(1);
-  const kcalIn = nutToday[0]?.kcal ?? 0;
-  const proteinIn = nutToday[0]?.proteinG ?? 0;
-
-  const weightRows = await db(c)
-    .select()
-    .from(schema.weightReadings)
-    .where(eq(schema.weightReadings.userEmail, email))
-    .orderBy(desc(schema.weightReadings.ts), desc(schema.weightReadings.id))
-    .limit(120);
-  const latestKg = weightRows[0]?.weightKg ?? null;
-  const weekCut = Date.now() - 7 * DAY_MS;
-  const lastWeek = weightRows.filter((r) => r.ts.getTime() >= weekCut);
-  const weeklyAvgKg = lastWeek.length ? lastWeek.reduce((s, r) => s + r.weightKg, 0) / lastWeek.length : null;
-  const prevWeekRows = weightRows.filter((r) => {
-    const t = r.ts.getTime();
-    return t < weekCut && t >= weekCut - 7 * DAY_MS;
-  });
-  const prevWeekAvgKg = prevWeekRows.length ? prevWeekRows.reduce((s, r) => s + r.weightKg, 0) / prevWeekRows.length : null;
-
-  const kcalTarget = targets.dailyKcalTarget ?? 0;
-  const proteinTarget = targets.proteinTargetG ?? 0;
-  const kcalLeft = kcalTarget - kcalIn;
-  const proteinLeft = proteinTarget - proteinIn;
-  const fmtLb = (kg: number | null) => (kg != null ? `${kgToLb(kg).toFixed(1)} lb` : "unknown");
-  const trendLine =
-    weeklyAvgKg != null && prevWeekAvgKg != null
-      ? `week-over-week 7-day average moved ${(kgToLb(weeklyAvgKg) - kgToLb(prevWeekAvgKg)).toFixed(1)} lb (${kgToLb(prevWeekAvgKg).toFixed(1)} → ${kgToLb(weeklyAvgKg).toFixed(1)} lb)`
-      : weeklyAvgKg != null
-        ? `7-day average is ${fmtLb(weeklyAvgKg)}; not enough history yet for a week-over-week trend`
-        : "no recent weigh-ins to compute a trend";
-
-  const system = [
-    "You are the user's blunt, knowledgeable nutrition coach inside their body-recomposition tracker (a lean cut with a protein floor).",
-    "Answer using THEIR real numbers below — never invent targets or intake.",
-    "",
-    "TARGETS:",
-    `- Daily calories: ${kcalTarget || "unset"} kcal`,
-    `- Daily protein: ${proteinTarget || "unset"} g`,
-    `- Goal weight: ${fmtLb(targets.goalWeightKg)}; start weight: ${fmtLb(targets.startWeightKg)}`,
-    "",
-    "TODAY SO FAR:",
-    `- Logged: ${kcalIn} kcal, ${Math.round(proteinIn)} g protein`,
-    `- Remaining budget: ${kcalLeft} kcal, ${Math.round(proteinLeft)} g protein${kcalLeft < 0 ? " (already over on calories)" : ""}`,
-    "",
-    "WEIGHT:",
-    `- Latest weigh-in: ${fmtLb(latestKg)}`,
-    `- Trend: ${trendLine}`,
-    "",
-    "When the user asks about eating a specific food: estimate its calories and protein, say how it fits the remaining budget above, then give a short blunt verdict (eat it / fine / skip). If it's a poor fit, suggest a better alternative that protects the protein floor and calorie budget.",
-    "Be concise: 2–5 sentences, plain text, conversational. No markdown headers, no bullet-list dumps.",
-  ].join("\n");
+  const system = await buildCoachSystem(c, email, today);
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   let reply: string;
@@ -1183,6 +1212,52 @@ app.post("/api/coach", async (c) => {
   }
 
   return c.json({ reply });
+});
+
+// Streaming sibling of /api/coach for the in-app chat UI (assistant-ui). Emits
+// the reply as a plain-text token stream so the coach types out live. The JSON
+// route above stays for the CLI/API/MCP surface.
+app.post("/api/coach/stream", async (c) => {
+  const email = c.get("email");
+  const b = await c.req.json<{ messages?: unknown; date?: string }>();
+  const parsed = parseCoachMessages(b.messages);
+  if ("error" in parsed) return c.json({ error: parsed.error }, 400);
+  const messages = parsed.messages;
+  if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "coach not configured" }, 503);
+
+  const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
+  const system = await buildCoachSystem(c, email, today);
+
+  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        const msgStream = anthropic.messages.stream({
+          model: "claude-opus-4-8",
+          max_tokens: 600,
+          system,
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        });
+        for await (const event of msgStream) {
+          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            controller.enqueue(encoder.encode(event.delta.text));
+          }
+        }
+        controller.close();
+      } catch (e) {
+        controller.error(e);
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    },
+  });
 });
 
 // ---- OpenAPI document ------------------------------------------------------
@@ -1214,6 +1289,33 @@ app.get("/openapi.json", (c) =>
 // left untouched for now.)
 
 // ---- SPA fallback ----------------------------------------------------------
-app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
+// Cache policy that makes redeploys take effect without a hard refresh:
+//   - the service worker + the HTML shell are always revalidated (no-cache), so
+//     the browser/edge never serve a stale `sw.js` or stale index.html that
+//     points at old JS bundles — a new deploy is picked up on the next request;
+//   - content-hashed build assets (/assets/*.[hash].js|css) are immutable, so
+//     the fresh HTML pulls the new hashed files and the old ones just fall away.
+app.all("*", async (c) => {
+  const res = await c.env.ASSETS.fetch(c.req.raw);
+  const path = new URL(c.req.url).pathname;
+  const contentType = res.headers.get("content-type") ?? "";
+  const isServiceWorker = path === "/sw.js" || path.endsWith("/sw.js");
+  const isHtml = contentType.includes("text/html");
+  const isHashedAsset = path.startsWith("/assets/");
+
+  let cacheControl: string | null = null;
+  if (isServiceWorker) {
+    cacheControl = "no-cache, no-store, must-revalidate";
+  } else if (isHtml) {
+    cacheControl = "no-cache";
+  } else if (isHashedAsset) {
+    cacheControl = "public, max-age=31536000, immutable";
+  }
+  if (!cacheControl) return res;
+
+  const next = new Response(res.body, res);
+  next.headers.set("cache-control", cacheControl);
+  return next;
+});
 
 export default app;
