@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { PanelLeft } from "lucide-react";
+import { PanelLeft, Plus } from "lucide-react";
 import type { DashboardData } from "../shared/types";
 import { api, todayLocal } from "./api";
 import { Dashboard } from "./Dashboard";
@@ -214,6 +214,11 @@ export default function App() {
             <PanelLeft />
           </button>
           <span className="topbar-title">{view === "coach" ? "Coach" : "Today"}</span>
+          {view === "today" && (
+            <button className="nav-icon-btn topbar-add" onClick={() => setAdding(true)} aria-label="Log entry">
+              <Plus />
+            </button>
+          )}
         </header>
 
         <main className={`shell ${view === "coach" ? "shell-coach" : ""}`}>
