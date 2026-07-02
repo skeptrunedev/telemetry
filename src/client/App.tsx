@@ -60,12 +60,12 @@ function readView(): View {
   const s = (typeof history !== "undefined" ? history.state : null) as Partial<HistoryState> | null;
   if (s?.view === "today" || s?.view === "coach") return s.view;
   const path = typeof location !== "undefined" ? location.pathname : "/";
-  if (path.startsWith("/coach")) return "coach";
+  if (path.startsWith("/agent")) return "coach";
   return "today";
 }
 
-// Real URL path for a view (root is Today).
-const viewPath = (v: View) => (v === "coach" ? "/coach" : "/");
+// Real URL path for a view (root is Today; the coach view is branded "agent").
+const viewPath = (v: View) => (v === "coach" ? "/agent" : "/");
 
 export default function App() {
   // Better Auth session gates the whole app: signed out → the sign-in screen,
@@ -213,7 +213,7 @@ export default function App() {
           >
             <PanelLeft />
           </button>
-          <span className="topbar-title">{view === "coach" ? "Coach" : "Today"}</span>
+          <span className="topbar-title">{view === "coach" ? "Agent" : "Today"}</span>
           {view === "today" && (
             <button className="nav-icon-btn topbar-add" onClick={() => setAdding(true)} aria-label="Log entry">
               <Plus />

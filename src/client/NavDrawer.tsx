@@ -70,7 +70,7 @@ export function NavDrawer({
 
         <nav className="nav-items">
           <NavItem icon={NAV_ICONS.today} label="Today" active={view === "today"} onClick={() => onNavigate("today")} />
-          <NavItem icon={NAV_ICONS.coach} label="Coach" active={view === "coach"} onClick={() => onNavigate("coach")} />
+          <NavItem icon={NAV_ICONS.coach} label="Agent" active={view === "coach"} onClick={() => onNavigate("coach")} />
           <NavItem icon={NAV_ICONS.add} label="Log entry" onClick={onAdd} />
         </nav>
 

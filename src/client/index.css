@@ -186,8 +186,10 @@ a {
   width: 100%;
   flex: 1;
 }
-/* Coach fills the pane and scrolls internally rather than growing the page. */
-.shell-coach {
+/* Coach fills the pane and scrolls internally rather than growing the page.
+   Compound selector so it beats the desktop `.shell` media-query padding that
+   would otherwise float the composer up off the bottom. */
+.shell.shell-coach {
   min-height: 0;
   padding-bottom: 0;
   display: flex;
@@ -1393,12 +1395,16 @@ a {
 }
 .bubble {
   max-width: 85%;
-  padding: 0.65rem 0.85rem;
+  padding: 0.45rem 0.75rem;
   border-radius: 14px;
   font-size: 0.95rem;
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+}
+/* User messages are short — keep them snug rather than chunky. */
+.bubble-user {
+  padding: 0.4rem 0.7rem;
 }
 .bubble-user {
   align-self: flex-end;

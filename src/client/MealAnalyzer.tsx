@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, todayLocal } from "./api";
 import type { MealAnalysis } from "./api";
 import { compressImage } from "./image";
@@ -11,16 +11,34 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<MealAnalysis | null>(null);
 
+  function addFiles(incoming: File[]) {
+    if (!incoming.length) return;
+    setFiles((prev) => [...prev, ...incoming].slice(0, 5));
+    setPreviews((prev) => [...prev, ...incoming.map((f) => URL.createObjectURL(f))].slice(0, 5));
+    setResult(null);
+    setErr(null);
+  }
+
   function pick(e: React.ChangeEvent<HTMLInputElement>) {
-    const incoming = Array.from(e.target.files ?? []);
-    if (incoming.length) {
-      setFiles((prev) => [...prev, ...incoming].slice(0, 5));
-      setPreviews((prev) => [...prev, ...incoming.map((f) => URL.createObjectURL(f))].slice(0, 5));
-      setResult(null);
-      setErr(null);
-    }
+    addFiles(Array.from(e.target.files ?? []));
     e.target.value = "";
   }
+
+  // Paste an image from the clipboard (screenshot, copied photo) to attach it.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const imgs = Array.from(e.clipboardData?.items ?? [])
+        .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+        .map((it) => it.getAsFile())
+        .filter((f): f is File => f != null);
+      if (imgs.length) {
+        e.preventDefault();
+        addFiles(imgs);
+      }
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
 
   function clearPhotos() {
     previews.forEach((u) => URL.revokeObjectURL(u));
@@ -132,7 +150,7 @@ export function MealAnalyzer({ onLogged }: { onLogged: () => void }) {
       <p className="meta">
         {hasPhotos
           ? `${files.length}/5 photos of one meal — AI estimates calories + protein.`
-          : "Add a photo, a description, or both — AI estimates calories + protein."}
+          : "Add a photo (or paste one), a description, or both — AI estimates calories + protein."}
       </p>
     </div>
   );
