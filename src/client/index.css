@@ -670,6 +670,21 @@ a {
   font-weight: 620;
   color: var(--fg);
 }
+.mcp-client h3 a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--fg);
+  text-decoration: none;
+}
+.mcp-client h3 a:hover {
+  color: var(--accent);
+}
+.mcp-client h3 a svg {
+  width: 0.8rem;
+  height: 0.8rem;
+  color: var(--muted);
+}
 .mcp-client .meta {
   margin: 0 0 0.4rem;
 }

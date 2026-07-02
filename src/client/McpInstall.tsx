@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, ExternalLink } from "lucide-react";
 
 const MCP_URL = `${typeof location !== "undefined" ? location.origin : "https://skcal.skeptrune.com"}/mcp`;
 
@@ -45,14 +45,22 @@ export function McpInstall({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="mcp-client">
-          <h3>Claude (desktop &amp; claude.ai)</h3>
-          <p className="meta">Settings → Connectors → Add custom connector, then paste the URL:</p>
+          <h3>
+            <a href="https://claude.ai/settings/connectors" target="_blank" rel="noreferrer">
+              Claude (desktop &amp; claude.ai) <ExternalLink />
+            </a>
+          </h3>
+          <p className="meta">Opens Connectors → Add custom connector, then paste the URL:</p>
           <CopyField value={MCP_URL} />
         </div>
 
         <div className="mcp-client">
-          <h3>ChatGPT</h3>
-          <p className="meta">Settings → Connectors (enable Developer mode) → Add, then paste the URL:</p>
+          <h3>
+            <a href="https://chatgpt.com/#settings/Connectors" target="_blank" rel="noreferrer">
+              ChatGPT <ExternalLink />
+            </a>
+          </h3>
+          <p className="meta">Opens Connectors (enable Developer mode) → Add, then paste the URL:</p>
           <CopyField value={MCP_URL} />
         </div>
 
