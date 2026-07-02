@@ -1,15 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { PanelLeft } from "lucide-react";
-import { kgToLb } from "../shared/types";
 import type { DashboardData } from "../shared/types";
 import { api, todayLocal } from "./api";
 import { Dashboard } from "./Dashboard";
-import { AreaChart } from "./Chart";
 import { AddSheet } from "./AddSheet";
 import { type View } from "./BottomNav";
 import { NavDrawer } from "./NavDrawer";
-import { WeightHistory } from "./WeightHistory";
 import { useCoachHistory, CoachThread } from "./Coach";
 import { SignIn } from "./SignIn";
 import { useSession, signOut } from "./auth-client";
@@ -61,34 +58,10 @@ function weightLoggedToday(data: DashboardData | null): boolean {
 
 function readView(): View {
   const s = (typeof history !== "undefined" ? history.state : null) as Partial<HistoryState> | null;
-  if (s?.view === "trends" || s?.view === "today" || s?.view === "coach") return s.view;
+  if (s?.view === "today" || s?.view === "coach") return s.view;
   const hash = typeof location !== "undefined" ? location.hash : "";
-  if (hash.includes("trends")) return "trends";
   if (hash.includes("coach")) return "coach";
   return "today";
-}
-
-function Trends({ data }: { data: DashboardData }) {
-  const latestLb = data.weight.latestKg != null ? kgToLb(data.weight.latestKg) : null;
-  return (
-    <div className="grid">
-      <section className="card hero">
-        <p className="label">Weight / lb · all time</p>
-        <p className="hero-num">
-          {latestLb != null ? latestLb.toFixed(1) : "—"}
-          <span className="unit"> lb</span>
-        </p>
-        <AreaChart points={data.weight.trend.map((p) => kgToLb(p.kg))} height={120} />
-        <p className="meta">{data.weight.trend.length} readings logged</p>
-      </section>
-      <section className="card">
-        <p className="label">Shoulder : Waist</p>
-        <p className="big-num">{data.shoulderToWaist != null ? data.shoulderToWaist.toFixed(3) : "—"}</p>
-        <p className="meta">track this climbing as you lean out + build delts</p>
-      </section>
-      <WeightHistory />
-    </div>
-  );
 }
 
 export default function App() {
@@ -140,7 +113,7 @@ export default function App() {
     const onPop = (e: PopStateEvent) => {
       const st = (e.state ?? null) as Partial<HistoryState> | null;
       const next: View =
-        st?.view === "trends" || st?.view === "today" || st?.view === "coach" ? st.view : readView();
+        st?.view === "today" || st?.view === "coach" ? st.view : readView();
       swapView(next, st?.scroll ?? 0);
     };
     window.addEventListener("popstate", onPop);
@@ -237,14 +210,13 @@ export default function App() {
           >
             <PanelLeft />
           </button>
-          <span className="topbar-title">{view === "coach" ? "Coach" : view === "trends" ? "Trends" : "Today"}</span>
+          <span className="topbar-title">{view === "coach" ? "Coach" : "Today"}</span>
         </header>
 
         <main className={`shell ${view === "coach" ? "shell-coach" : ""}`}>
           {error && <p className="form-err">{error}</p>}
           {!data && !error && <p className="meta">loading…</p>}
           {data && view === "today" && <Dashboard data={data} refreshKey={tick} onChange={reloadAll} />}
-          {data && view === "trends" && <Trends data={data} />}
           {data && view === "coach" && (
             <CoachThread
               key={coach.session.key}

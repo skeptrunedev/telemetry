@@ -2,6 +2,7 @@ import { kgToLb, cmToIn, SITE_LABELS, MEASUREMENT_SITES } from "../shared/types"
 import type { DashboardData } from "../shared/types";
 import { AreaChart } from "./Chart";
 import { FoodLog } from "./FoodLog";
+import { WeightHistory } from "./WeightHistory";
 
 const f1 = (n: number) => n.toFixed(1);
 const DAY = 86_400_000;
@@ -178,6 +179,8 @@ export function Dashboard({ data, refreshKey, onChange }: { data: DashboardData;
         </section>
 
         <FoodLog refreshKey={refreshKey} onChange={onChange} />
+
+        <WeightHistory />
       </div>
     </>
   );

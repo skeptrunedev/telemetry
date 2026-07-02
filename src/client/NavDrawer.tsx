@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { Sun, TrendingUp, MessageSquare, Plus, SquarePen, Search, PanelLeft, Trash2, ChevronDown } from "lucide-react";
+import { Sun, MessageSquare, Plus, SquarePen, Search, PanelLeft, Trash2, ChevronDown } from "lucide-react";
 import type { View } from "./BottomNav";
 import type { CoachHistory } from "./Coach";
 
 const NAV_ICONS: Record<View | "add", React.ReactNode> = {
   today: <Sun />,
-  trends: <TrendingUp />,
   coach: <MessageSquare />,
   add: <Plus />,
 };
@@ -71,7 +70,6 @@ export function NavDrawer({
 
         <nav className="nav-items">
           <NavItem icon={NAV_ICONS.today} label="Today" active={view === "today"} onClick={() => onNavigate("today")} />
-          <NavItem icon={NAV_ICONS.trends} label="Trends" active={view === "trends"} onClick={() => onNavigate("trends")} />
           <NavItem icon={NAV_ICONS.coach} label="Coach" active={view === "coach"} onClick={() => onNavigate("coach")} />
           <NavItem icon={NAV_ICONS.add} label="Log entry" onClick={onAdd} />
         </nav>
