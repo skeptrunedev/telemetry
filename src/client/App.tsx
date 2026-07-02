@@ -102,9 +102,15 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [tick, setTick] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Desktop: whether the persistent sidebar is collapsed (remembered).
+  const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem("skcal-nav-collapsed") === "1");
   const coach = useCoachHistory();
   const viewRef = useRef(view);
   viewRef.current = view;
+
+  useEffect(() => {
+    localStorage.setItem("skcal-nav-collapsed", navCollapsed ? "1" : "0");
+  }, [navCollapsed]);
 
   // Cross-fade to a view and land at `scroll` (re-applying as content settles).
   const swapView = useCallback((next: View, scroll: number) => {
@@ -199,7 +205,7 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className={`app ${navCollapsed ? "nav-collapsed" : ""}`}>
       <NavDrawer
         view={view}
         onNavigate={navigate}
@@ -208,7 +214,11 @@ export default function App() {
           setAdding(true);
         }}
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        // Mobile: close the drawer. Desktop: collapse the persistent sidebar.
+        onClose={() => {
+          setDrawerOpen(false);
+          setNavCollapsed(true);
+        }}
         email={email}
         onSignOut={signOutAndReload}
         coach={coach}
@@ -216,7 +226,14 @@ export default function App() {
 
       <div className="app-body">
         <header className="topbar">
-          <button className="nav-icon-btn topbar-menu" onClick={() => setDrawerOpen(true)} aria-label="Menu">
+          <button
+            className="nav-icon-btn topbar-menu"
+            onClick={() => {
+              setNavCollapsed(false);
+              setDrawerOpen(true);
+            }}
+            aria-label="Menu"
+          >
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <path d="M3 5h14M3 10h14M3 15h14" />
             </svg>

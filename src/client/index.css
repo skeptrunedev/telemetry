@@ -1033,10 +1033,12 @@ a {
   overflow: hidden;
 }
 .sidebar-head {
-  display: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.1rem 0.1rem 0.3rem;
 }
 .sidebar-close {
-  display: none;
+  display: grid;
 }
 .nav-items {
   display: flex;
@@ -1277,14 +1279,6 @@ a {
   .app-sidebar.open {
     transform: translateX(0);
   }
-  .sidebar-head {
-    display: flex;
-    justify-content: flex-end;
-    padding: 0 0.1rem 0.3rem;
-  }
-  .sidebar-close {
-    display: grid;
-  }
   .drawer-backdrop {
     display: block;
     position: fixed;
@@ -1294,9 +1288,18 @@ a {
   }
 }
 @media (min-width: 781px) {
-  /* Desktop: the sidebar owns the brand, so hide the mobile close button. */
-  .sidebar-close {
+  /* Desktop: collapsing hides the persistent sidebar and reveals a slim topbar
+     whose hamburger reopens it. */
+  .app.nav-collapsed .app-sidebar {
     display: none;
+  }
+  .app.nav-collapsed .topbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+    width: 100%;
   }
 }
 .coach {
