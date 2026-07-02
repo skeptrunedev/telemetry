@@ -14,9 +14,13 @@ export default defineConfig({
         clientsClaim: true,
         skipWaiting: true,
         cleanupOutdatedCaches: true,
-        // Don't let the SPA navigation-fallback hijack real backend routes:
-        // browser navigations to these must hit the Worker, not index.html.
-        navigateFallbackDenylist: [/^\/api\//, /^\/openapi\.json$/, /^\/privacy$/, /^\/terms$/, /^\/mcp$/],
+        // Never serve the HTML shell from the service worker: deny ALL navigations
+        // from the precache fallback so they always hit the network (the Worker
+        // serves index.html with no-cache). This is the key robustness fix — a
+        // frequently redeployed app must never show a stale cached shell that
+        // references asset hashes that have since 404'd. Hashed build assets are
+        // still precached for speed (they're immutable per hash).
+        navigateFallbackDenylist: [/./],
       },
       manifest: {
         name: "skcal",
