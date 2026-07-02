@@ -18,6 +18,14 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *         Better Auth session. Signing in (Google or email magic link) sets an
  *         HttpOnly session cookie that scopes every request to that account. The
  *         web app and CLI use this; agents use the OAuth 2.1 flow of the MCP server.
+ *     bearerApiKey:
+ *       type: http
+ *       scheme: bearer
+ *       description: >-
+ *         Personal API key sent as `Authorization: Bearer skcal_…`. Create and
+ *         scope keys in the app under your profile → API keys. Keys default to
+ *         full access; a scoped key is limited to its granted `resource:action`
+ *         permissions and cannot manage other keys.
  *     ingestToken:
  *       type: http
  *       scheme: bearer
@@ -893,4 +901,22 @@ export const oauthConsent = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (table) => [index("oauth_consent_user_idx").on(table.userId)],
+);
+
+// Bearer API keys for programmatic access to the HTTP API. We store only a
+// SHA-256 hash of the token (never the token itself) plus a display prefix and
+// the granted scopes (JSON array; ["*"] = full access).
+export const apiKeys = sqliteTable(
+  "api_keys",
+  {
+    id: text("id").primaryKey(), // uuid
+    userEmail: text("user_email").notNull(),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    prefix: text("prefix").notNull(),
+    scopes: text("scopes").notNull().default('["*"]'),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+  },
+  (t) => [index("api_keys_token_hash_idx").on(t.tokenHash), index("api_keys_user_idx").on(t.userEmail)],
 );

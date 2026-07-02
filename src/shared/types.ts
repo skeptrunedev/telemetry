@@ -61,3 +61,20 @@ export type DashboardData = {
   shoulderToWaist: number | null;
   nutritionToday: NutritionDay | null;
 };
+
+// Fine-grained API-key scopes (resource:action). An API key holding the special
+// "*" scope has full access; the UI defaults new keys to "*".
+export const API_SCOPES = [
+  "weight:read",
+  "weight:write",
+  "measurements:read",
+  "measurements:write",
+  "nutrition:read",
+  "nutrition:write",
+  "targets:read",
+  "targets:write",
+  "dashboard:read",
+  "agent:read",
+  "agent:write",
+] as const;
+export type ApiScope = (typeof API_SCOPES)[number];

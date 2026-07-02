@@ -41,6 +41,7 @@ export function NavDrawer({
   onAvatarChange,
   onSignOut,
   onInstallMcp,
+  onApiKeys,
   coach,
 }: {
   view: View;
@@ -53,6 +54,7 @@ export function NavDrawer({
   onAvatarChange: (image: string) => void;
   onSignOut: () => void;
   onInstallMcp: () => void;
+  onApiKeys: () => void;
   coach: CoachHistory;
 }) {
   const [profileMenu, setProfileMenu] = useState(false);
@@ -161,6 +163,16 @@ export function NavDrawer({
                 disabled={uploading}
               >
                 {uploading ? "Uploading…" : avatar ? "Change photo" : "Add photo"}
+              </button>
+              <button
+                className="profile-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  setProfileMenu(false);
+                  onApiKeys();
+                }}
+              >
+                API keys
               </button>
               <button
                 className="profile-menu-item"

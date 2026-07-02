@@ -52,6 +52,7 @@ export type CoachConversation = {
   messages: CoachMessage[];
 };
 export type WeightReading = { id: number; ts: number; weightKg: number; bodyFatPct: number | null; note: string | null; source: string };
+export type ApiKey = { id: string; name: string; prefix: string; scopes: string[]; createdAt: number; lastUsedAt: number | null };
 
 export const api = {
   dashboard: (date: string) => jget<DashboardData>(`/api/dashboard?date=${date}`),
@@ -121,6 +122,17 @@ export const api = {
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),
   deleteItem: (id: number) => jsend(`/api/nutrition/items/${id}`, "DELETE", undefined),
   photoUrl: (key: string) => `/api/nutrition/photo/${key}`,
+  listApiKeys: () => jget<ApiKey[]>(`/api/keys`),
+  createApiKey: async (name: string, scopes: string[]): Promise<ApiKey & { token: string }> => {
+    const r = await rawFetch(`/api/keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, scopes }),
+    });
+    if (!r.ok) throw new Error(`createApiKey → ${r.status}: ${await r.text().catch(() => "")}`);
+    return r.json() as Promise<ApiKey & { token: string }>;
+  },
+  deleteApiKey: (id: string) => jsend(`/api/keys/${id}`, "DELETE", undefined),
   setAvatar: async (file: Blob): Promise<{ image: string }> => {
     const fd = new FormData();
     fd.append("photo", file, "avatar.jpg");

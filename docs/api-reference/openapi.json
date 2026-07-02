@@ -66,6 +66,9 @@
   "security": [
     {
       "sessionCookie": []
+    },
+    {
+      "bearerApiKey": []
     }
   ],
   "paths": {
@@ -854,6 +857,11 @@
         "in": "cookie",
         "name": "__Secure-better-auth.session_token",
         "description": "Better Auth session. Signing in (Google or email magic link) sets an HttpOnly session cookie that scopes every request to that account. The web app and CLI use this; agents use the OAuth 2.1 flow of the MCP server."
+      },
+      "bearerApiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Personal API key sent as `Authorization: Bearer skcal_…`. Create and scope keys in the app under your profile → API keys. Keys default to full access; a scoped key is limited to its granted `resource:action` permissions and cannot manage other keys."
       },
       "ingestToken": {
         "type": "http",

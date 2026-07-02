@@ -17,12 +17,40 @@ carry it automatically — nothing to configure.
 `skcal login` runs the browser sign-in and caches a token locally, which the
 [CLI](/cli) replays on each request. See the CLI page for details.
 
+## API keys (programmatic access)
+
+Create bearer API keys in the app under **profile → API keys**. Send them as:
+
+```bash
+curl https://skcal.skeptrune.com/api/dashboard \
+  -H "Authorization: Bearer skcal_your_key_here"
+```
+
+Keys default to **full access**. You can limit a key to specific
+`resource:action` scopes (e.g. `weight:read`, `nutrition:write`); a request
+outside a key's scopes returns `403`. Scopes:
+
+| Resource | Scopes |
+| --- | --- |
+| weight | `weight:read`, `weight:write` |
+| measurements | `measurements:read`, `measurements:write` |
+| nutrition | `nutrition:read`, `nutrition:write` |
+| targets | `targets:read`, `targets:write` |
+| dashboard | `dashboard:read` |
+| agent | `agent:read`, `agent:write` |
+
+<Note>
+The full key is shown only once at creation — copy it then. Keys can't manage
+other keys; key management requires a signed-in session. Revoke a key any time
+from the same screen.
+</Note>
+
 ## Agents (MCP)
 
 The [MCP server](/mcp) is authorized with OAuth 2.1. Clients discover the
 endpoints, register dynamically, run the PKCE authorization-code flow against
 your skcal login, and receive a token scoped to your account. This is the
-recommended path for programmatic and agent access.
+smoothest path for AI clients specifically.
 
 ## Scale ingest
 
@@ -37,7 +65,6 @@ curl -X POST https://skcal.skeptrune.com/api/ingest/weight \
 ```
 
 <Note>
-The rest of the API is guarded by the session cookie (web app / CLI) or an MCP
-OAuth token. There is no general-purpose API key — use the MCP server or CLI for
-programmatic access.
+The rest of the API is guarded by the session cookie (web app / CLI), a bearer
+API key, or an MCP OAuth token.
 </Note>

@@ -21,6 +21,8 @@ Requests are scoped to the signed-in account. See [Authentication](/authenticati
 for the full picture — in short:
 
 - **Web app / CLI** — a Better Auth session cookie (or the CLI's cached token).
+- **API keys** — a bearer key (`Authorization: Bearer skcal_…`) with optional
+  fine-grained scopes; create them in the app under profile → API keys.
 - **Agents** — an OAuth 2.1 token from the [MCP server](/mcp).
 - **Scale ingest** — a shared bearer token for `POST /api/ingest/weight` only.
 

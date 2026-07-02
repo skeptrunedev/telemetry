@@ -8,6 +8,7 @@ import { AddSheet } from "./AddSheet";
 import { type View } from "./BottomNav";
 import { NavDrawer } from "./NavDrawer";
 import { McpInstall } from "./McpInstall";
+import { ApiKeys } from "./ApiKeys";
 import { useCoachHistory, CoachThread } from "./Coach";
 import { SignIn } from "./SignIn";
 import { useSession, signOut } from "./auth-client";
@@ -85,6 +86,7 @@ export default function App() {
   const [tick, setTick] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
   // Desktop: whether the persistent sidebar is collapsed (remembered).
   const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem("skcal-nav-collapsed") === "1");
   const coach = useCoachHistory();
@@ -210,6 +212,10 @@ export default function App() {
           setDrawerOpen(false);
           setMcpOpen(true);
         }}
+        onApiKeys={() => {
+          setDrawerOpen(false);
+          setKeysOpen(true);
+        }}
         coach={coach}
       />
 
@@ -258,6 +264,7 @@ export default function App() {
       )}
 
       {mcpOpen && <McpInstall onClose={() => setMcpOpen(false)} />}
+      {keysOpen && <ApiKeys onClose={() => setKeysOpen(false)} />}
     </div>
   );
 }

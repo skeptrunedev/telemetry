@@ -10,7 +10,7 @@ import * as schema from "../db/schema";
 import { makeAuth } from "./auth";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import type { DashboardData, Targets } from "../shared/types";
-import { lbToKg, inToCm, MEASUREMENT_SITES } from "../shared/types";
+import { lbToKg, inToCm, MEASUREMENT_SITES, API_SCOPES } from "../shared/types";
 // Generated from the @openapi JSDoc comments by scripts/gen-openapi.mjs
 // (runs as the build's prebuild step). Served verbatim at /openapi.json.
 import openapiDoc from "./openapi.gen.json";
@@ -113,6 +113,57 @@ async function userEmail(c: {
 const DAY_MS = 86_400_000;
 const DEFAULT_TARGETS = { goalWeightKg: 66.7, startWeightKg: 72.6, dailyKcalTarget: 1850, proteinTargetG: 160 };
 
+// ---- API keys --------------------------------------------------------------
+async function sha256hex(s: string): Promise<string> {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function b64url(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+// A new bearer token + its display prefix. Format: skcal_<random>.
+function generateApiKey(): { token: string; prefix: string } {
+  const token = `skcal_${b64url(crypto.getRandomValues(new Uint8Array(24)))}`;
+  return { token, prefix: `${token.slice(0, 14)}…` };
+}
+// The scope a request requires, from method + path. null = not reachable by a
+// scoped API key (only keys with "*" can hit it).
+function scopeForRequest(method: string, path: string): string | null {
+  const read = method === "GET";
+  if (path.startsWith("/api/weight")) return read ? "weight:read" : "weight:write";
+  if (path.startsWith("/api/measurements")) return read ? "measurements:read" : "measurements:write";
+  if (path.startsWith("/api/nutrition")) return read ? "nutrition:read" : "nutrition:write";
+  if (path.startsWith("/api/targets")) return read ? "targets:read" : "targets:write";
+  if (path.startsWith("/api/dashboard") || path === "/api/whoami") return "dashboard:read";
+  if (path.startsWith("/api/agent")) return read ? "agent:read" : "agent:write";
+  return null;
+}
+// Resolve a `skcal_…` bearer token to its owner + granted scopes (or null).
+async function resolveApiKey(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  token: string,
+): Promise<{ email: string; scopes: string[] } | null> {
+  const hash = await sha256hex(token);
+  const row = (await db(c).select().from(schema.apiKeys).where(eq(schema.apiKeys.tokenHash, hash)).limit(1))[0];
+  if (!row) return null;
+  try {
+    c.executionCtx.waitUntil(
+      db(c).update(schema.apiKeys).set({ lastUsedAt: new Date() }).where(eq(schema.apiKeys.id, row.id)),
+    );
+  } catch {
+    /* executionCtx not always available (e.g. tests) — skip last-used tracking */
+  }
+  let scopes: string[];
+  try {
+    scopes = JSON.parse(row.scopes);
+  } catch {
+    scopes = ["*"];
+  }
+  return { email: row.userEmail, scopes };
+}
+
 function bufToBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
   let bin = "";
@@ -204,6 +255,25 @@ app.use("/api/*", async (c, next) => {
   if (path === "/api/health" || path.startsWith("/api/auth/") || path === "/api/ingest/weight") {
     return next();
   }
+
+  // Bearer API key (skcal_…): resolve owner + scopes and enforce fine-grained
+  // access. Keys can't manage keys, and "*" grants everything.
+  const authz = c.req.header("authorization");
+  if (authz?.startsWith("Bearer skcal_")) {
+    const key = await resolveApiKey(c, authz.slice("Bearer ".length).trim());
+    if (!key) return c.json({ error: "invalid API key" }, 401);
+    if (path.startsWith("/api/keys")) return c.json({ error: "API keys cannot manage API keys" }, 403);
+    if (!key.scopes.includes("*")) {
+      const need = scopeForRequest(c.req.method, path);
+      if (!need || !key.scopes.includes(need)) {
+        return c.json({ error: need ? `insufficient scope: '${need}' required` : "insufficient scope" }, 403);
+      }
+    }
+    c.set("email", key.email);
+    return next();
+  }
+
+  // Otherwise fall back to the session cookie (or dev bypass) — full access.
   const email = await userEmail(c);
   if (!email) return c.json({ error: "unauthorized" }, 401);
   c.set("email", email);
@@ -1672,6 +1742,69 @@ app.get("/terms", () =>
 <p>Questions: <a href="mailto:me@skeptrune.com">me@skeptrune.com</a>.</p>`,
   ),
 );
+
+// ---- API keys (managed from the app; session-only per the guard) -----------
+app.get("/api/keys", async (c) => {
+  const email = c.get("email");
+  const rows = await db(c)
+    .select()
+    .from(schema.apiKeys)
+    .where(eq(schema.apiKeys.userEmail, email))
+    .orderBy(desc(schema.apiKeys.createdAt));
+  return c.json(
+    rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      prefix: r.prefix,
+      scopes: (() => {
+        try {
+          return JSON.parse(r.scopes) as string[];
+        } catch {
+          return ["*"];
+        }
+      })(),
+      createdAt: r.createdAt.getTime(),
+      lastUsedAt: r.lastUsedAt ? r.lastUsedAt.getTime() : null,
+    })),
+  );
+});
+
+app.post("/api/keys", async (c) => {
+  const email = c.get("email");
+  const b = await c.req.json<{ name?: string; scopes?: unknown }>();
+  const name = typeof b.name === "string" ? b.name.trim() : "";
+  if (!name || name.length > 80) return c.json({ error: "name required (max 80 chars)" }, 400);
+
+  let scopes: string[];
+  const requested = Array.isArray(b.scopes) ? (b.scopes as unknown[]).map(String) : null;
+  if (!requested || requested.includes("*")) {
+    scopes = ["*"];
+  } else {
+    scopes = requested.filter((s) => (API_SCOPES as readonly string[]).includes(s));
+    if (!scopes.length) return c.json({ error: "no valid scopes; omit for full access or pick from the scope list" }, 400);
+  }
+
+  const { token, prefix } = generateApiKey();
+  const id = crypto.randomUUID();
+  await db(c)
+    .insert(schema.apiKeys)
+    .values({ id, userEmail: email, name, tokenHash: await sha256hex(token), prefix, scopes: JSON.stringify(scopes) });
+  // The full token is shown exactly once, here.
+  return c.json({ id, name, prefix, scopes, token });
+});
+
+app.delete("/api/keys/:id", async (c) => {
+  const email = c.get("email");
+  const id = c.req.param("id");
+  const owned = await db(c)
+    .select({ id: schema.apiKeys.id })
+    .from(schema.apiKeys)
+    .where(and(eq(schema.apiKeys.id, id), eq(schema.apiKeys.userEmail, email)))
+    .limit(1);
+  if (!owned.length) return c.json({ error: "not found" }, 404);
+  await db(c).delete(schema.apiKeys).where(and(eq(schema.apiKeys.id, id), eq(schema.apiKeys.userEmail, email)));
+  return c.json({ ok: true });
+});
 
 // ---- MCP server (Streamable HTTP, OAuth 2.1 via Better Auth) ---------------
 // Builds a per-request MCP server bound to the authenticated user's email.
