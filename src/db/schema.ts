@@ -842,3 +842,55 @@ export const verification = sqliteTable(
   },
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
+
+// ---------------------------------------------------------------------------
+// OAuth / OIDC provider tables — required by Better Auth's `mcp` plugin so the
+// MCP server can be installed into clients over OAuth 2.1 (reusing the existing
+// Google + magic-link login). Column names mirror the snake_case convention of
+// the other Better Auth tables; model/export names match Better Auth's models.
+// ---------------------------------------------------------------------------
+export const oauthApplication = sqliteTable("oauth_application", {
+  id: text("id").primaryKey(),
+  clientId: text("client_id").notNull(),
+  clientSecret: text("client_secret"),
+  icon: text("icon"),
+  name: text("name").notNull(),
+  redirectUrls: text("redirect_urls").notNull(),
+  metadata: text("metadata"),
+  type: text("type").notNull(),
+  disabled: integer("disabled", { mode: "boolean" }),
+  userId: text("user_id"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+});
+
+export const oauthAccessToken = sqliteTable(
+  "oauth_access_token",
+  {
+    id: text("id").primaryKey(),
+    accessToken: text("access_token").notNull(),
+    refreshToken: text("refresh_token"),
+    accessTokenExpiresAt: integer("access_token_expires_at", { mode: "timestamp_ms" }),
+    refreshTokenExpiresAt: integer("refresh_token_expires_at", { mode: "timestamp_ms" }),
+    clientId: text("client_id").notNull(),
+    userId: text("user_id"),
+    scopes: text("scopes"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (table) => [index("oauth_access_token_access_token_idx").on(table.accessToken)],
+);
+
+export const oauthConsent = sqliteTable(
+  "oauth_consent",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    clientId: text("client_id").notNull(),
+    scopes: text("scopes").notNull(),
+    consentGiven: integer("consent_given", { mode: "boolean" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (table) => [index("oauth_consent_user_idx").on(table.userId)],
+);

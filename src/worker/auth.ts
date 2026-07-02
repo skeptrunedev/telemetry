@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
+import type { BetterAuthPlugin } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { magicLink } from "better-auth/plugins";
+import { magicLink, mcp } from "better-auth/plugins";
 import { drizzle } from "drizzle-orm/d1";
 import { WorkerMailer } from "worker-mailer";
 import * as schema from "../db/schema";
@@ -97,6 +98,12 @@ export function makeAuth(env: AuthEnv) {
           await sendMagicLinkEmail(env, email, url);
         },
       }),
+      // OAuth 2.1 for MCP clients: exposes discovery + token endpoints and lets
+      // clients install the skcal MCP server, authorizing via the same login.
+      // The sign-in gate lives at "/". Cast to the generic plugin type so the
+      // mcp plugin's (non-exported) options type doesn't leak into makeAuth's
+      // emitted declaration (composite build). Runtime behavior is unchanged.
+      mcp({ loginPage: "/" }) as BetterAuthPlugin,
     ],
   });
 }

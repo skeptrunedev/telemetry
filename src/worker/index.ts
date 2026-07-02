@@ -3,9 +3,14 @@ import type { Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPTransport } from "@hono/mcp";
+import { z } from "zod";
 import * as schema from "../db/schema";
 import { makeAuth } from "./auth";
+import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import type { DashboardData, Targets } from "../shared/types";
+import { lbToKg, inToCm, MEASUREMENT_SITES } from "../shared/types";
 // Generated from the @openapi JSDoc comments by scripts/gen-openapi.mjs
 // (runs as the build's prebuild step). Served verbatim at /openapi.json.
 import openapiDoc from "./openapi.gen.json";
@@ -1571,6 +1576,240 @@ app.get("/openapi.json", (c) =>
 // (The Cloudflare Access `/cli-auth` bounce was removed with the Access swap to
 // Better Auth. The CLI login rebuild lands in a later pass; the CLI package is
 // left untouched for now.)
+
+// ---- MCP server (Streamable HTTP, OAuth 2.1 via Better Auth) ---------------
+// Builds a per-request MCP server bound to the authenticated user's email.
+// Tools mirror the app's core operations so MCP clients can log + query data.
+function buildMcpServer(c: Context<{ Bindings: Bindings; Variables: Variables }>, email: string): McpServer {
+  const server = new McpServer({ name: "skcal-mcp-server", version: "1.0.0" });
+  const todayUTC = () => new Date().toISOString().slice(0, 10);
+  const ok = (data: unknown, text?: string) => ({
+    content: [{ type: "text" as const, text: text ?? JSON.stringify(data, null, 2) }],
+    structuredContent: data as Record<string, unknown>,
+  });
+
+  server.registerTool(
+    "skcal_get_status",
+    {
+      title: "Daily status",
+      description:
+        "Get the user's nutrition status for a day (calories + protein logged vs. targets and remaining budget) plus their latest weight. Defaults to today.",
+      inputSchema: { date: z.string().optional().describe("Day as YYYY-MM-DD, or 'today'/'yesterday'. Default today.") },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ date }) => {
+      const day = resolveToolDate(date ?? "today", todayUTC()) ?? todayUTC();
+      const targets = await getTargets(c, email);
+      const nut = (
+        await db(c)
+          .select()
+          .from(schema.nutritionDays)
+          .where(and(eq(schema.nutritionDays.userEmail, email), eq(schema.nutritionDays.date, day)))
+          .limit(1)
+      )[0];
+      const latest = (
+        await db(c)
+          .select()
+          .from(schema.weightReadings)
+          .where(eq(schema.weightReadings.userEmail, email))
+          .orderBy(desc(schema.weightReadings.ts))
+          .limit(1)
+      )[0];
+      const kcalIn = nut?.kcal ?? 0;
+      const proteinIn = nut?.proteinG ?? 0;
+      return ok({
+        date: day,
+        calories: { logged: kcalIn, target: targets.dailyKcalTarget, remaining: (targets.dailyKcalTarget ?? 0) - kcalIn },
+        protein: { loggedG: proteinIn, targetG: targets.proteinTargetG, remainingG: (targets.proteinTargetG ?? 0) - proteinIn },
+        latestWeightLb: latest ? Number(kgToLb(latest.weightKg).toFixed(1)) : null,
+      });
+    },
+  );
+
+  server.registerTool(
+    "skcal_get_targets",
+    {
+      title: "Get targets",
+      description: "Get the user's daily calorie + protein targets and goal/start weight.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      const t = await getTargets(c, email);
+      return ok({
+        dailyKcalTarget: t.dailyKcalTarget,
+        proteinTargetG: t.proteinTargetG,
+        goalWeightLb: t.goalWeightKg != null ? Number(kgToLb(t.goalWeightKg).toFixed(1)) : null,
+        startWeightLb: t.startWeightKg != null ? Number(kgToLb(t.startWeightKg).toFixed(1)) : null,
+      });
+    },
+  );
+
+  server.registerTool(
+    "skcal_list_weigh_ins",
+    {
+      title: "List weigh-ins",
+      description: "List the user's most recent weigh-ins (pounds), newest first.",
+      inputSchema: { limit: z.number().int().min(1).max(100).optional().describe("Max rows (default 20).") },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ limit }) => {
+      const n = limit ?? 20;
+      const rows = await db(c)
+        .select()
+        .from(schema.weightReadings)
+        .where(eq(schema.weightReadings.userEmail, email))
+        .orderBy(desc(schema.weightReadings.ts))
+        .limit(n);
+      return ok({
+        count: rows.length,
+        weighIns: rows.map((r) => ({
+          id: r.id,
+          date: new Date(r.ts).toISOString().slice(0, 10),
+          pounds: Number(kgToLb(r.weightKg).toFixed(1)),
+          bodyFatPct: r.bodyFatPct,
+          note: r.note,
+          source: r.source,
+        })),
+      });
+    },
+  );
+
+  server.registerTool(
+    "skcal_log_weight",
+    {
+      title: "Log weight",
+      description: "Record a body-weight reading in pounds. Optionally include body-fat % and a note.",
+      inputSchema: {
+        pounds: z.number().min(30).max(700).describe("Body weight in pounds."),
+        bodyFatPct: z.number().min(1).max(80).optional().describe("Body-fat %, if known."),
+        note: z.string().max(500).optional().describe("Optional note, e.g. 'morning, fasted'."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    async ({ pounds, bodyFatPct, note }) => {
+      await db(c)
+        .insert(schema.weightReadings)
+        .values({ userEmail: email, weightKg: lbToKg(pounds), bodyFatPct: bodyFatPct ?? null, note: note?.trim() || null, source: "manual" });
+      return ok({ ok: true, loggedPounds: pounds }, `Logged ${pounds} lb.`);
+    },
+  );
+
+  server.registerTool(
+    "skcal_log_measurement",
+    {
+      title: "Log measurement",
+      description: "Record a body-part circumference measurement in inches.",
+      inputSchema: {
+        site: z.enum(MEASUREMENT_SITES as unknown as [string, ...string[]]).describe("Body site."),
+        inches: z.number().min(1).max(120).describe("Circumference in inches."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    async ({ site, inches }) => {
+      await db(c).insert(schema.measurements).values({ userEmail: email, site, valueCm: inToCm(inches), source: "manual" });
+      return ok({ ok: true, site, inches }, `Logged ${site} = ${inches} in.`);
+    },
+  );
+
+  server.registerTool(
+    "skcal_log_meal",
+    {
+      title: "Log a meal",
+      description:
+        "Log a food item with its calorie + protein estimate for a day (default today). Estimate the macros yourself if the user gives a plain description.",
+      inputSchema: {
+        name: z.string().min(1).max(200).describe("Food description, e.g. '1 oz beef jerky'."),
+        kcal: z.number().int().min(0).max(10000).describe("Calories."),
+        proteinG: z.number().min(0).max(500).describe("Protein in grams."),
+        date: z.string().optional().describe("Day as YYYY-MM-DD, or 'today'/'yesterday'. Default today."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    async ({ name, kcal, proteinG, date }) => {
+      const day = resolveToolDate(date ?? "today", todayUTC()) ?? todayUTC();
+      const mealId = crypto.randomUUID();
+      await db(c).insert(schema.meals).values({ id: mealId, userEmail: email, date: day, note: name });
+      await db(c)
+        .insert(schema.nutritionItems)
+        .values({ userEmail: email, mealId, date: day, name, kcal, proteinG, source: "manual" });
+      await recomputeDay(c, email, day);
+      return ok({ ok: true, mealId, date: day, name, kcal, proteinG }, `Logged ${name} (${kcal} kcal / ${proteinG} g protein) on ${day}.`);
+    },
+  );
+
+  server.registerTool(
+    "skcal_list_meals",
+    {
+      title: "List meals",
+      description: "List the meals and food items logged on a day (default today).",
+      inputSchema: { date: z.string().optional().describe("Day as YYYY-MM-DD, or 'today'/'yesterday'. Default today.") },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ date }) => {
+      const day = resolveToolDate(date ?? "today", todayUTC()) ?? todayUTC();
+      const result = await executeCoachTool(c, email, "list_food_log", { date: day }, todayUTC());
+      return ok(result);
+    },
+  );
+
+  server.registerTool(
+    "skcal_move_food",
+    {
+      title: "Move food between days",
+      description:
+        "Move a logged meal (by mealId) or a single food item (by itemId) to a different day. Provide exactly one of mealId or itemId. Use skcal_list_meals first to find the id.",
+      inputSchema: {
+        mealId: z.string().optional().describe("Meal id to move (moves all its items)."),
+        itemId: z.number().int().optional().describe("Single item id to move."),
+        toDate: z.string().describe("Destination day as YYYY-MM-DD, or 'today'/'yesterday'."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    async ({ mealId, itemId, toDate }) => {
+      if (mealId) return ok(await executeCoachTool(c, email, "move_meal", { mealId, toDate }, todayUTC()));
+      if (itemId != null) return ok(await executeCoachTool(c, email, "move_food_item", { itemId, toDate }, todayUTC()));
+      return { isError: true, content: [{ type: "text" as const, text: "Provide either mealId or itemId." }] };
+    },
+  );
+
+  return server;
+}
+
+// OAuth 2.1 discovery so MCP clients can find the authorization + resource
+// metadata for the skcal server (served by Better Auth's mcp plugin).
+app.get("/.well-known/oauth-authorization-server", (c) =>
+  oAuthDiscoveryMetadata(makeAuth(c.env) as unknown as Parameters<typeof oAuthDiscoveryMetadata>[0])(c.req.raw),
+);
+app.get("/.well-known/oauth-protected-resource", (c) =>
+  oAuthProtectedResourceMetadata(makeAuth(c.env) as unknown as Parameters<typeof oAuthProtectedResourceMetadata>[0])(c.req.raw),
+);
+
+// The MCP endpoint itself. Requires a valid OAuth access token (resolved by the
+// Better Auth mcp plugin); unauthenticated calls get a 401 pointing clients at
+// the protected-resource metadata so they can start the OAuth flow.
+app.all("/mcp", async (c) => {
+  const auth = makeAuth(c.env);
+  const mcpApi = auth.api as unknown as {
+    getMcpSession: (args: { headers: Headers }) => Promise<{ userId: string } | null>;
+  };
+  const session = await mcpApi.getMcpSession({ headers: c.req.raw.headers });
+  if (!session) {
+    const resource = `${new URL(c.req.url).origin}/.well-known/oauth-protected-resource`;
+    return c.json({ error: "unauthorized" }, 401, {
+      "WWW-Authenticate": `Bearer resource_metadata="${resource}"`,
+    });
+  }
+  const userRow = (
+    await db(c).select({ email: schema.user.email }).from(schema.user).where(eq(schema.user.id, session.userId)).limit(1)
+  )[0];
+  if (!userRow) return c.json({ error: "unknown user" }, 401);
+
+  const server = buildMcpServer(c, userRow.email);
+  const transport = new StreamableHTTPTransport();
+  await server.connect(transport);
+  return transport.handleRequest(c);
+});
 
 // ---- SPA fallback ----------------------------------------------------------
 // Cache policy that makes redeploys take effect without a hard refresh:
