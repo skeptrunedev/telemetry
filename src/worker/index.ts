@@ -1141,6 +1141,143 @@ function parseCoachMessages(
   return { messages };
 }
 
+// ---- Coach tools: let the coach view + reorganize the food log ------------
+// Resolve a tool-supplied day to YYYY-MM-DD. Accepts an ISO date or the words
+// today/yesterday/tomorrow relative to `today` (the request's anchor day).
+function resolveToolDate(input: string, today: string): string | null {
+  const s = (input || "").trim().toLowerCase();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const shift = s === "today" ? 0 : s === "yesterday" ? -1 : s === "tomorrow" ? 1 : null;
+  if (shift == null) return null;
+  const [y, m, d] = today.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + shift));
+  return dt.toISOString().slice(0, 10);
+}
+
+const COACH_TOOLS: Anthropic.Tool[] = [
+  {
+    name: "list_food_log",
+    description:
+      "List the user's logged meals and food items for a given day. Call this first to find the meal/item to move.",
+    input_schema: {
+      type: "object",
+      properties: { date: { type: "string", description: "Day to list: YYYY-MM-DD, or 'today'/'yesterday'." } },
+      required: ["date"],
+    },
+  },
+  {
+    name: "move_meal",
+    description: "Move an entire logged meal (and all its food items) to a different day.",
+    input_schema: {
+      type: "object",
+      properties: {
+        mealId: { type: "string", description: "Meal id from list_food_log." },
+        toDate: { type: "string", description: "Destination day: YYYY-MM-DD, or 'today'/'yesterday'." },
+      },
+      required: ["mealId", "toDate"],
+    },
+  },
+  {
+    name: "move_food_item",
+    description:
+      "Move a single logged food item to a different day. If its meal has other items, the item is split into its own meal on the destination day.",
+    input_schema: {
+      type: "object",
+      properties: {
+        itemId: { type: "number", description: "Item id from list_food_log." },
+        toDate: { type: "string", description: "Destination day: YYYY-MM-DD, or 'today'/'yesterday'." },
+      },
+      required: ["itemId", "toDate"],
+    },
+  },
+];
+
+async function executeCoachTool(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+  name: string,
+  input: Record<string, unknown>,
+  today: string,
+): Promise<unknown> {
+  if (name === "list_food_log") {
+    const date = resolveToolDate(String(input.date ?? ""), today) ?? today;
+    const mealRows = await db(c)
+      .select()
+      .from(schema.meals)
+      .where(and(eq(schema.meals.userEmail, email), eq(schema.meals.date, date)))
+      .orderBy(desc(schema.meals.createdAt));
+    const itemRows = await db(c)
+      .select()
+      .from(schema.nutritionItems)
+      .where(and(eq(schema.nutritionItems.userEmail, email), eq(schema.nutritionItems.date, date)));
+    return {
+      date,
+      meals: mealRows.map((m) => ({
+        mealId: m.id,
+        note: m.note,
+        items: itemRows
+          .filter((i) => i.mealId === m.id)
+          .map((i) => ({ itemId: i.id, name: i.name, kcal: i.kcal, proteinG: i.proteinG })),
+      })),
+    };
+  }
+
+  if (name === "move_meal") {
+    const toDate = resolveToolDate(String(input.toDate ?? ""), today);
+    if (!toDate) return { error: "invalid toDate" };
+    const mealId = String(input.mealId ?? "");
+    const meal = (
+      await db(c).select().from(schema.meals).where(and(eq(schema.meals.id, mealId), eq(schema.meals.userEmail, email))).limit(1)
+    )[0];
+    if (!meal) return { error: "meal not found" };
+    const fromDate = meal.date;
+    await db(c).update(schema.meals).set({ date: toDate }).where(and(eq(schema.meals.id, mealId), eq(schema.meals.userEmail, email)));
+    await db(c)
+      .update(schema.nutritionItems)
+      .set({ date: toDate })
+      .where(and(eq(schema.nutritionItems.mealId, mealId), eq(schema.nutritionItems.userEmail, email)));
+    await recomputeDay(c, email, fromDate);
+    await recomputeDay(c, email, toDate);
+    return { ok: true, movedMealId: mealId, fromDate, toDate };
+  }
+
+  if (name === "move_food_item") {
+    const toDate = resolveToolDate(String(input.toDate ?? ""), today);
+    if (!toDate) return { error: "invalid toDate" };
+    const itemId = Number(input.itemId);
+    const item = (
+      await db(c)
+        .select()
+        .from(schema.nutritionItems)
+        .where(and(eq(schema.nutritionItems.id, itemId), eq(schema.nutritionItems.userEmail, email)))
+        .limit(1)
+    )[0];
+    if (!item) return { error: "item not found" };
+    const fromDate = item.date;
+    const siblings = item.mealId
+      ? await db(c)
+          .select()
+          .from(schema.nutritionItems)
+          .where(and(eq(schema.nutritionItems.mealId, item.mealId), eq(schema.nutritionItems.userEmail, email)))
+      : [];
+    if (item.mealId && siblings.length <= 1) {
+      // Sole item in its meal: move the whole meal so grouping stays intact.
+      await db(c).update(schema.meals).set({ date: toDate }).where(and(eq(schema.meals.id, item.mealId), eq(schema.meals.userEmail, email)));
+      await db(c).update(schema.nutritionItems).set({ date: toDate }).where(eq(schema.nutritionItems.id, itemId));
+    } else {
+      // Split the item into its own meal on the destination day.
+      const newMealId = crypto.randomUUID();
+      await db(c).insert(schema.meals).values({ id: newMealId, userEmail: email, date: toDate, note: item.name });
+      await db(c).update(schema.nutritionItems).set({ date: toDate, mealId: newMealId }).where(eq(schema.nutritionItems.id, itemId));
+    }
+    await recomputeDay(c, email, fromDate);
+    await recomputeDay(c, email, toDate);
+    return { ok: true, movedItemId: itemId, name: item.name, fromDate, toDate };
+  }
+
+  return { error: "unknown tool" };
+}
+
 /**
  * @openapi
  * /api/coach:
@@ -1226,23 +1363,41 @@ app.post("/api/coach/stream", async (c) => {
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "coach not configured" }, 503);
 
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
-  const system = await buildCoachSystem(c, email, today);
+  const system =
+    (await buildCoachSystem(c, email, today)) +
+    `\n\nTools: you can view and reorganize the food log with list_food_log, move_meal, and move_food_item. Today's date is ${today}. When the user asks to move, re-date, or fix which day something was logged on, first list_food_log for the relevant day to find the exact meal/item, then move it, then confirm in one short sentence what you changed (item + from/to day).`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
+  const convo: Anthropic.MessageParam[] = messages.map((m) => ({ role: m.role, content: m.content }));
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        const msgStream = anthropic.messages.stream({
-          model: "claude-opus-4-8",
-          max_tokens: 600,
-          system,
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
-        });
-        for await (const event of msgStream) {
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            controller.enqueue(encoder.encode(event.delta.text));
+        // Agentic loop: stream each turn's text; if the model calls tools,
+        // execute them, feed back the results, and continue until it stops.
+        for (let turn = 0; turn < 6; turn++) {
+          const msgStream = anthropic.messages.stream({
+            model: "claude-opus-4-8",
+            max_tokens: 700,
+            system,
+            messages: convo,
+            tools: COACH_TOOLS,
+          });
+          for await (const event of msgStream) {
+            if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+              controller.enqueue(encoder.encode(event.delta.text));
+            }
           }
+          const final = await msgStream.finalMessage();
+          const toolUses = final.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+          if (toolUses.length === 0) break;
+          convo.push({ role: "assistant", content: final.content });
+          const results: Anthropic.ToolResultBlockParam[] = [];
+          for (const tu of toolUses) {
+            const out = await executeCoachTool(c, email, tu.name, tu.input as Record<string, unknown>, today);
+            results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out) });
+          }
+          convo.push({ role: "user", content: results });
         }
         controller.close();
       } catch (e) {
