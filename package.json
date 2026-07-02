@@ -25,6 +25,7 @@
     "better-auth": "^1.6.23",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.6.0",
+    "lucide-react": "^1.23.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "worker-mailer": "^1.2.1"

@@ -83,7 +83,6 @@ a {
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 0.9rem;
-    border-bottom: 1px solid var(--line);
     width: 100%;
   }
 }
@@ -1122,6 +1121,24 @@ a {
 .coach-search::placeholder {
   color: var(--muted);
 }
+.coach-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.coach-search-wrap .coach-search {
+  flex: 1;
+  min-width: 0;
+  padding-left: 2.1rem;
+}
+.coach-search-icon {
+  position: absolute;
+  left: 0.65rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  color: var(--muted);
+  pointer-events: none;
+}
 .coach-recents-label {
   font-family: var(--mono);
   font-size: 0.62rem;
@@ -1298,7 +1315,6 @@ a {
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 0.9rem;
-    border-bottom: 1px solid var(--line);
     width: 100%;
   }
 }

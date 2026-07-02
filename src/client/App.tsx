@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { PanelLeft } from "lucide-react";
 import { kgToLb } from "../shared/types";
 import type { DashboardData } from "../shared/types";
 import { api, todayLocal } from "./api";
@@ -234,9 +235,7 @@ export default function App() {
             }}
             aria-label="Menu"
           >
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M3 5h14M3 10h14M3 15h14" />
-            </svg>
+            <PanelLeft />
           </button>
           <span className="topbar-title">{view === "coach" ? "Coach" : view === "trends" ? "Trends" : "Today"}</span>
         </header>

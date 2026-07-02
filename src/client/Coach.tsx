@@ -8,6 +8,7 @@ import {
   type ChatModelAdapter,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
+import { ArrowUp, Square } from "lucide-react";
 import { api, todayLocal } from "./api";
 import type { CoachMessage, CoachConversation } from "./api";
 
@@ -106,16 +107,12 @@ function Composer() {
       <ComposerPrimitive.Input className="chat-input" placeholder="What are you thinking of eating?" autoFocus />
       <ThreadPrimitive.If running={false}>
         <ComposerPrimitive.Send className="composer-send" aria-label="Send">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M10 16V5M5 10l5-5 5 5" />
-          </svg>
+          <ArrowUp />
         </ComposerPrimitive.Send>
       </ThreadPrimitive.If>
       <ThreadPrimitive.If running>
         <ComposerPrimitive.Cancel className="composer-send composer-stop" aria-label="Stop">
-          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <rect x="6" y="6" width="8" height="8" rx="1.5" />
-          </svg>
+          <Square fill="currentColor" strokeWidth={0} />
         </ComposerPrimitive.Cancel>
       </ThreadPrimitive.If>
     </ComposerPrimitive.Root>

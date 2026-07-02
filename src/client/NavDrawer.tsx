@@ -1,29 +1,13 @@
 import { useState } from "react";
+import { Sun, TrendingUp, MessageSquare, Plus, SquarePen, Search, PanelLeft, Trash2, ChevronDown } from "lucide-react";
 import type { View } from "./BottomNav";
 import type { CoachHistory } from "./Coach";
 
-const ICONS: Record<View | "add", React.ReactNode> = {
-  today: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19" />
-    </svg>
-  ),
-  trends: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 17l5-6 4 4 8-9" />
-    </svg>
-  ),
-  coach: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 5h16v11H8l-4 4V5z" />
-    </svg>
-  ),
-  add: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  ),
+const NAV_ICONS: Record<View | "add", React.ReactNode> = {
+  today: <Sun />,
+  trends: <TrendingUp />,
+  coach: <MessageSquare />,
+  add: <Plus />,
 };
 
 function NavItem({
@@ -80,36 +64,35 @@ export function NavDrawer({
       {open && <div className="drawer-backdrop" onClick={onClose} />}
       <aside className={`app-sidebar ${open ? "open" : ""}`}>
         <div className="sidebar-head">
-          <button className="nav-icon-btn sidebar-close" onClick={onClose} aria-label="Close menu">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M5 5l10 10M15 5L5 15" />
-            </svg>
+          <button className="nav-icon-btn sidebar-close" onClick={onClose} aria-label="Collapse sidebar">
+            <PanelLeft />
           </button>
         </div>
 
         <nav className="nav-items">
-          <NavItem icon={ICONS.today} label="Today" active={view === "today"} onClick={() => onNavigate("today")} />
-          <NavItem icon={ICONS.trends} label="Trends" active={view === "trends"} onClick={() => onNavigate("trends")} />
-          <NavItem icon={ICONS.coach} label="Coach" active={view === "coach"} onClick={() => onNavigate("coach")} />
-          <NavItem icon={ICONS.add} label="Log entry" onClick={onAdd} />
+          <NavItem icon={NAV_ICONS.today} label="Today" active={view === "today"} onClick={() => onNavigate("today")} />
+          <NavItem icon={NAV_ICONS.trends} label="Trends" active={view === "trends"} onClick={() => onNavigate("trends")} />
+          <NavItem icon={NAV_ICONS.coach} label="Coach" active={view === "coach"} onClick={() => onNavigate("coach")} />
+          <NavItem icon={NAV_ICONS.add} label="Log entry" onClick={onAdd} />
         </nav>
 
         <div className="sidebar-divider" />
 
-        <button className="nav-item nav-newchat" onClick={goCoachNew}>
+        <button className="nav-item" onClick={goCoachNew}>
           <span className="nav-item-icon">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M10 4v12M4 10h12" />
-            </svg>
+            <SquarePen />
           </span>
           New chat
         </button>
-        <input
-          className="coach-search"
-          placeholder="Search chats"
-          value={coach.search}
-          onChange={(e) => coach.setSearch(e.target.value)}
-        />
+        <div className="coach-search-wrap">
+          <Search className="coach-search-icon" />
+          <input
+            className="coach-search"
+            placeholder="Search chats"
+            value={coach.search}
+            onChange={(e) => coach.setSearch(e.target.value)}
+          />
+        </div>
         <div className="coach-recents-label">Recents</div>
         <nav className="coach-recents">
           {coach.conversations.length === 0 && (
@@ -125,9 +108,7 @@ export function NavDrawer({
                 onClick={() => coach.removeConversation(c.id)}
                 aria-label="Delete conversation"
               >
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M4 6h12M8 6V4h4v2M6 6l.7 10h6.6L15 6" />
-                </svg>
+                <Trash2 />
               </button>
             </div>
           ))}
@@ -158,9 +139,7 @@ export function NavDrawer({
             <span className="profile-email" title={email}>
               {email}
             </span>
-            <svg className="profile-caret" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M6 8l4 4 4-4" />
-            </svg>
+            <ChevronDown className="profile-caret" />
           </button>
         </div>
       </aside>
