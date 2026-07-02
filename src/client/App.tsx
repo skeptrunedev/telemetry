@@ -72,6 +72,10 @@ export default function App() {
   // signed in → the tracker. `isPending` is the initial session fetch.
   const { data: session, isPending } = useSession();
   const email = session?.user?.email ?? null;
+  // Session carries the profile image (Gravatar/Google/uploaded); override it
+  // locally after an upload so the new avatar shows without a session refetch.
+  const [avatarOverride, setAvatarOverride] = useState<string | null>(null);
+  const avatar = avatarOverride ?? session?.user?.image ?? null;
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -197,6 +201,8 @@ export default function App() {
           setNavCollapsed(true);
         }}
         email={email}
+        avatar={avatar}
+        onAvatarChange={setAvatarOverride}
         onSignOut={signOutAndReload}
         coach={coach}
       />

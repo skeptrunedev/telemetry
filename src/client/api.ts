@@ -121,6 +121,13 @@ export const api = {
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),
   deleteItem: (id: number) => jsend(`/api/nutrition/items/${id}`, "DELETE", undefined),
   photoUrl: (key: string) => `/api/nutrition/photo/${key}`,
+  setAvatar: async (file: Blob): Promise<{ image: string }> => {
+    const fd = new FormData();
+    fd.append("photo", file, "avatar.jpg");
+    const r = await rawFetch(`/api/profile/avatar`, { method: "POST", body: fd });
+    if (!r.ok) throw new Error(`avatar → ${r.status}`);
+    return r.json() as Promise<{ image: string }>;
+  },
 };
 
 export const todayLocal = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local tz

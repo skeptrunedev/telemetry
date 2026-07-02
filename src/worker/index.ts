@@ -1577,6 +1577,33 @@ app.get("/openapi.json", (c) =>
 // Better Auth. The CLI login rebuild lands in a later pass; the CLI package is
 // left untouched for now.)
 
+// ---- Profile avatar --------------------------------------------------------
+// Upload a custom profile picture (stored in R2) and point the user's Better
+// Auth `image` at it. Used when there's no Google/Gravatar picture.
+app.post("/api/profile/avatar", async (c) => {
+  const email = c.get("email");
+  const form = await c.req.formData();
+  const file = form.get("photo") as unknown as { type?: string; stream?: () => ReadableStream } | null;
+  if (!file || typeof file.stream !== "function" || !file.type?.startsWith("image/"))
+    return c.json({ error: "image file required" }, 400);
+  const id = crypto.randomUUID();
+  await c.env.PHOTOS.put(`avatars/${id}`, file.stream(), { httpMetadata: { contentType: file.type } });
+  const image = `/api/profile/avatar/${id}`;
+  await db(c).update(schema.user).set({ image, updatedAt: new Date() }).where(eq(schema.user.email, email));
+  return c.json({ image });
+});
+
+app.get("/api/profile/avatar/:id", async (c) => {
+  const obj = await c.env.PHOTOS.get(`avatars/${c.req.param("id")}`);
+  if (!obj) return c.notFound();
+  return new Response(obj.body, {
+    headers: {
+      "content-type": obj.httpMetadata?.contentType ?? "image/jpeg",
+      "cache-control": "private, max-age=86400",
+    },
+  });
+});
+
 // ---- MCP server (Streamable HTTP, OAuth 2.1 via Better Auth) ---------------
 // Builds a per-request MCP server bound to the authenticated user's email.
 // Tools mirror the app's core operations so MCP clients can log + query data.

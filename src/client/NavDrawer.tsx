@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Sun, MessageSquare, Plus, SquarePen, Search, PanelLeft, Trash2, ChevronDown } from "lucide-react";
 import type { View } from "./BottomNav";
 import type { CoachHistory } from "./Coach";
+import { api } from "./api";
+import { compressImage } from "./image";
 
 const NAV_ICONS: Record<View | "add", React.ReactNode> = {
   today: <Sun />,
@@ -35,6 +37,8 @@ export function NavDrawer({
   open,
   onClose,
   email,
+  avatar,
+  onAvatarChange,
   onSignOut,
   coach,
 }: {
@@ -44,11 +48,31 @@ export function NavDrawer({
   open: boolean;
   onClose: () => void;
   email: string;
+  avatar: string | null;
+  onAvatarChange: (image: string) => void;
   onSignOut: () => void;
   coach: CoachHistory;
 }) {
   const [profileMenu, setProfileMenu] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const footRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function onPickAvatar(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      const { image } = await api.setAvatar(await compressImage(file));
+      onAvatarChange(image);
+      setProfileMenu(false);
+    } catch {
+      /* ignore — keep the current avatar */
+    } finally {
+      setUploading(false);
+    }
+  }
 
   // Close the profile menu when clicking/tapping anywhere outside it.
   useEffect(() => {
@@ -124,8 +148,17 @@ export function NavDrawer({
         </nav>
 
         <div className="sidebar-foot" ref={footRef}>
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPickAvatar} />
           {profileMenu && (
             <div className="profile-menu" role="menu">
+              <button
+                className="profile-menu-item"
+                role="menuitem"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+              >
+                {uploading ? "Uploading…" : avatar ? "Change photo" : "Add photo"}
+              </button>
               <button
                 className="profile-menu-item"
                 role="menuitem"
@@ -144,7 +177,9 @@ export function NavDrawer({
             aria-haspopup="menu"
             aria-expanded={profileMenu}
           >
-            <span className="profile-avatar">{email[0]?.toUpperCase()}</span>
+            <span className="profile-avatar">
+              {avatar ? <img src={avatar} alt="" /> : email[0]?.toUpperCase()}
+            </span>
             <span className="profile-email" title={email}>
               {email}
             </span>

@@ -72,6 +72,21 @@ async function sendMagicLinkEmail(env: AuthEnv, email: string, url: string): Pro
   );
 }
 
+// If the email has a Gravatar, return its URL, else null. Gravatar accepts a
+// SHA-256 hex of the normalized email as the identifier; `d=404` makes it 404
+// when the user has no avatar, which is how we detect "has one".
+async function gravatarUrl(email: string): Promise<string | null> {
+  try {
+    const normalized = email.trim().toLowerCase();
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
+    const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const res = await fetch(`https://www.gravatar.com/avatar/${hash}?d=404`);
+    return res.ok ? `https://www.gravatar.com/avatar/${hash}?s=200` : null;
+  } catch {
+    return null;
+  }
+}
+
 // Build a Better Auth instance bound to this request's env. Cheap to construct
 // per request (no I/O until an endpoint is hit), which suits Workers' isolate
 // model where `env` only exists inside a request.
@@ -90,6 +105,19 @@ export function makeAuth(env: AuthEnv) {
       google: {
         clientId: env.GOOGLE_CLIENT_ID ?? "",
         clientSecret: env.GOOGLE_CLIENT_SECRET ?? "",
+      },
+    },
+    databaseHooks: {
+      user: {
+        create: {
+          // On sign-up, backfill the profile picture from Gravatar when the
+          // email has one (Google sign-ups already arrive with an image).
+          before: async (user) => {
+            if (user.image) return { data: user };
+            const image = await gravatarUrl(user.email);
+            return { data: image ? { ...user, image } : user };
+          },
+        },
       },
     },
     plugins: [
