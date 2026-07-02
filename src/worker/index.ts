@@ -273,6 +273,22 @@ app.use("/api/*", async (c, next) => {
     return next();
   }
 
+  // OAuth 2.1 access token (from the CLI / other OAuth clients, issued by the
+  // MCP OAuth server). Resolve it to the owner and grant full access.
+  if (authz?.startsWith("Bearer ")) {
+    const mcpApi = makeAuth(c.env).api as unknown as {
+      getMcpSession: (a: { headers: Headers }) => Promise<{ userId: string } | null>;
+    };
+    const session = await mcpApi.getMcpSession({ headers: c.req.raw.headers }).catch(() => null);
+    if (!session) return c.json({ error: "invalid token" }, 401);
+    const row = (
+      await db(c).select({ email: schema.user.email }).from(schema.user).where(eq(schema.user.id, session.userId)).limit(1)
+    )[0];
+    if (!row) return c.json({ error: "unknown user" }, 401);
+    c.set("email", row.email);
+    return next();
+  }
+
   // Otherwise fall back to the session cookie (or dev bypass) — full access.
   const email = await userEmail(c);
   if (!email) return c.json({ error: "unauthorized" }, 401);

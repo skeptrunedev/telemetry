@@ -4,12 +4,21 @@ import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node
 
 export const DEFAULT_BASE_URL = "https://skcal.skeptrune.com";
 
+export type OAuthCreds = {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number; // epoch ms
+  clientId: string;
+  tokenEndpoint: string;
+};
+
 export type Credentials = {
   baseUrl: string;
   savedAt: string;
-  // A `skcal_…` bearer API key (the recommended non-interactive auth), and/or a
-  // session token from the browser flow. The client sends whichever is present.
+  // Auth is one of: a `skcal_…` API key (non-interactive), OAuth tokens from the
+  // browser flow, or a legacy token. The client sends whichever is present.
   apiKey?: string;
+  oauth?: OAuthCreds;
   token?: string;
 };
 

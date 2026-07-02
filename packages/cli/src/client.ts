@@ -1,4 +1,6 @@
-import { loadCredentials, DEFAULT_BASE_URL } from "./config";
+import { loadCredentials, saveCredentials, DEFAULT_BASE_URL } from "./config";
+import type { OAuthCreds } from "./config";
+import { refreshAccessToken } from "./auth";
 
 // Shapes mirror the API's OpenAPI components (skcal.skeptrune.com/openapi.json).
 export type WhoAmI = { email: string };
@@ -56,20 +58,25 @@ export class TelemetryClient {
   constructor(
     private baseUrl: string,
     private bearer: string,
+    // Present when authed via the browser OAuth flow — enables refresh-on-401.
+    private oauth?: OAuthCreds,
   ) {}
 
-  // Resolve auth from (in order) the SKCAL_API_KEY env var, a saved API key, or
-  // a saved session token. Env-only works with no `skcal login` (handy in CI).
+  // Resolve auth from (in order) the SKCAL_API_KEY env var, a saved API key,
+  // saved OAuth tokens (browser flow), or a legacy token. Env-only works with
+  // no `skcal login` (handy in CI).
   static fromConfig(): TelemetryClient {
     const creds = loadCredentials();
     const baseUrl = creds?.baseUrl || process.env.SKCAL_BASE_URL || DEFAULT_BASE_URL;
-    const bearer = process.env.SKCAL_API_KEY || creds?.apiKey || creds?.token;
-    if (!bearer) throw new NotAuthenticatedError();
-    return new TelemetryClient(baseUrl, bearer);
+    if (process.env.SKCAL_API_KEY) return new TelemetryClient(baseUrl, process.env.SKCAL_API_KEY);
+    if (creds?.apiKey) return new TelemetryClient(baseUrl, creds.apiKey);
+    if (creds?.oauth) return new TelemetryClient(baseUrl, creds.oauth.accessToken, creds.oauth);
+    if (creds?.token) return new TelemetryClient(baseUrl, creds.token);
+    throw new NotAuthenticatedError();
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
+  private send(method: string, path: string, body?: unknown): Promise<Response> {
+    return fetch(`${this.baseUrl}${path}`, {
       method,
       redirect: "manual",
       headers: {
@@ -79,9 +86,32 @@ export class TelemetryClient {
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
+  }
 
-    // An Access login redirect (status 0/3xx) means the token expired/was rejected.
-    if (res.status === 0 || (res.status >= 300 && res.status < 400) || res.status === 401 || res.status === 403) {
+  // Try to swap the OAuth refresh token for a fresh access token, persisting it.
+  private async tryRefresh(): Promise<boolean> {
+    const rt = this.oauth?.refreshToken;
+    if (!this.oauth || !rt) return false;
+    try {
+      const r = await refreshAccessToken({ refreshToken: rt, clientId: this.oauth.clientId, tokenEndpoint: this.oauth.tokenEndpoint });
+      this.bearer = r.accessToken;
+      this.oauth = { ...this.oauth, accessToken: r.accessToken, refreshToken: r.refreshToken ?? this.oauth.refreshToken, expiresAt: r.expiresAt };
+      const creds = loadCredentials();
+      if (creds?.oauth) saveCredentials({ ...creds, oauth: this.oauth });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    let res = await this.send(method, path, body);
+    // A 401 with OAuth creds may just be an expired access token — refresh once.
+    if (res.status === 401 && (await this.tryRefresh())) {
+      res = await this.send(method, path, body);
+    }
+    // Session-redirect (opaqueredirect/0/3xx) or an unrecoverable 401 → re-login.
+    if (res.status === 0 || (res.status >= 300 && res.status < 400) || res.status === 401) {
       throw new NotAuthenticatedError();
     }
     const text = await res.text();

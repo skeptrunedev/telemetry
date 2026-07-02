@@ -3,25 +3,13 @@ import { Command } from "commander";
 import pc from "picocolors";
 import { browserLogin } from "./auth";
 import { TelemetryClient, NotAuthenticatedError, ApiError } from "./client";
-import {
-  DEFAULT_BASE_URL,
-  loadCredentials,
-  saveCredentials,
-  clearCredentials,
-  decodeJwt,
-  secondsUntilExpiry,
-} from "./config";
+import { DEFAULT_BASE_URL, loadCredentials, saveCredentials, clearCredentials, secondsUntilExpiry } from "./config";
 
 const LB_PER_KG = 2.2046226218;
 const toKg = (lb: number) => lb / LB_PER_KG;
 const toLb = (kg: number) => kg * LB_PER_KG;
 const f1 = (n: number) => n.toFixed(1);
 const today = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD local
-
-function emailOf(token: string): string {
-  const c = decodeJwt(token);
-  return c && typeof c.email === "string" ? c.email : "unknown";
-}
 
 /** Wrap a command body with consistent error handling + exit codes. */
 function action(fn: (...args: never[]) => Promise<void>) {
@@ -64,10 +52,9 @@ program
         console.log(pc.green("✓ ") + `Signed in as ${pc.bold(me.email)} via API key (${baseUrl})`);
         return;
       }
-      const { token } = await browserLogin(baseUrl);
-      saveCredentials({ baseUrl, token, savedAt: new Date().toISOString() });
-      const client = new TelemetryClient(baseUrl, token);
-      const me = await client.whoami().catch(() => ({ email: emailOf(token) }));
+      const oauth = await browserLogin(baseUrl);
+      saveCredentials({ baseUrl, oauth, savedAt: new Date().toISOString() });
+      const me = await new TelemetryClient(baseUrl, oauth.accessToken, oauth).whoami().catch(() => ({ email: "your account" }));
       console.log(pc.green("✓ ") + `Signed in as ${pc.bold(me.email)} (${baseUrl})`);
     }),
   );
@@ -96,6 +83,9 @@ program
         via = pc.dim(" (API key from SKCAL_API_KEY)");
       } else if (creds?.apiKey) {
         via = pc.dim(" (API key)");
+      } else if (creds?.oauth) {
+        const h = creds.oauth.expiresAt ? Math.round((creds.oauth.expiresAt - Date.now()) / 3_600_000) : null;
+        via = pc.dim(h == null ? " (browser sign-in)" : ` (browser sign-in, token ~${h}h)`);
       } else if (creds?.token) {
         const left = secondsUntilExpiry(creds.token);
         via = left == null ? "" : left <= 0 ? pc.red(" (session expired — run `skcal login`)") : pc.dim(` (session ~${Math.round(left / 3600)}h)`);
