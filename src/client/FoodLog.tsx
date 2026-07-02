@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api, todayLocal } from "./api";
 import type { Meal } from "./api";
+
+const REDUCE_MOTION =
+  typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 // Shift a local YYYY-MM-DD string by whole days (noon-safe, DST-safe).
 function shiftDay(dateStr: string, delta: number): string {
@@ -15,20 +18,51 @@ function shiftDay(dateStr: string, delta: number): string {
 export function FoodLog({ refreshKey, onChange }: { refreshKey: number; onChange: () => void }) {
   const [date, setDate] = useState(() => todayLocal());
   const [meals, setMeals] = useState<Meal[] | null>(null);
+  const dateRef = useRef(date);
+  dateRef.current = date;
 
-  const load = useCallback(() => {
-    api.meals(date).then(setMeals).catch(() => setMeals([]));
-  }, [date]);
-  useEffect(load, [load, refreshKey]);
+  const fetchDay = useCallback(
+    (d: string) =>
+      api
+        .meals(d)
+        .then((m) => {
+          setMeals(m);
+          return m;
+        })
+        .catch(() => {
+          setMeals([]);
+          return [] as Meal[];
+        }),
+    [],
+  );
+
+  // Initial load + refresh after logging (re-fetch whichever day is showing).
+  useEffect(() => {
+    fetchDay(dateRef.current);
+  }, [fetchDay, refreshKey]);
+
+  // Prefetch the target day, then swap date + content in one View Transition so
+  // the card's resize morphs smoothly instead of snapping empty → full.
+  async function goToDay(delta: number) {
+    const nd = shiftDay(dateRef.current, delta);
+    const next = await api.meals(nd).catch(() => [] as Meal[]);
+    const apply = () => {
+      setDate(nd);
+      setMeals(next);
+    };
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+    if (!REDUCE_MOTION && typeof doc.startViewTransition === "function") doc.startViewTransition(apply);
+    else apply();
+  }
 
   async function removeItem(id: number) {
     await api.deleteItem(id);
-    load();
+    fetchDay(dateRef.current);
     onChange();
   }
   async function removeMeal(id: string) {
     await api.deleteMeal(id);
-    load();
+    fetchDay(dateRef.current);
     onChange();
   }
 
@@ -39,20 +73,15 @@ export function FoodLog({ refreshKey, onChange }: { refreshKey: number; onChange
     : new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
   return (
-    <section className="card">
+    <section className="card foodlog-card">
       <div className="foodlog-head">
         <p className="label">Food log</p>
         <div className="daynav">
-          <button className="daynav-btn" onClick={() => setDate((d) => shiftDay(d, -1))} aria-label="Previous day">
+          <button className="daynav-btn" onClick={() => goToDay(-1)} aria-label="Previous day">
             <ChevronLeft />
           </button>
           <span className="daynav-label">{label}</span>
-          <button
-            className="daynav-btn"
-            onClick={() => setDate((d) => shiftDay(d, 1))}
-            disabled={isToday}
-            aria-label="Next day"
-          >
+          <button className="daynav-btn" onClick={() => goToDay(1)} disabled={isToday} aria-label="Next day">
             <ChevronRight />
           </button>
         </div>

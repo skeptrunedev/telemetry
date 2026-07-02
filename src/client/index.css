@@ -255,6 +255,10 @@ a {
   text-transform: uppercase;
   margin: 0;
 }
+.foodlog-card {
+  /* dedicated transition group so the card's resize morphs smoothly on day change */
+  view-transition-name: foodlog;
+}
 .foodlog-head {
   display: flex;
   align-items: center;

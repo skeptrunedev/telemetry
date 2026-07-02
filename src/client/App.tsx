@@ -59,10 +59,13 @@ function weightLoggedToday(data: DashboardData | null): boolean {
 function readView(): View {
   const s = (typeof history !== "undefined" ? history.state : null) as Partial<HistoryState> | null;
   if (s?.view === "today" || s?.view === "coach") return s.view;
-  const hash = typeof location !== "undefined" ? location.hash : "";
-  if (hash.includes("coach")) return "coach";
+  const path = typeof location !== "undefined" ? location.pathname : "/";
+  if (path.startsWith("/coach")) return "coach";
   return "today";
 }
+
+// Real URL path for a view (root is Today).
+const viewPath = (v: View) => (v === "coach" ? "/coach" : "/");
 
 export default function App() {
   // Better Auth session gates the whole app: signed out → the sign-in screen,
@@ -102,7 +105,7 @@ export default function App() {
       setDrawerOpen(false);
       if (next === viewRef.current) return;
       history.replaceState({ view: viewRef.current, scroll: window.scrollY } satisfies HistoryState, "");
-      history.pushState({ view: next, scroll: 0 } satisfies HistoryState, "", `#/${next}`);
+      history.pushState({ view: next, scroll: 0 } satisfies HistoryState, "", viewPath(next));
       swapView(next, 0);
     },
     [swapView],
