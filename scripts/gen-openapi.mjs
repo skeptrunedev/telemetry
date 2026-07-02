@@ -51,7 +51,7 @@ const options = {
       { name: "Ingest", description: "Token-authenticated machine ingest from the Bluetooth scale listener." },
       { name: "Spec", description: "The OpenAPI document itself." },
     ],
-    security: [{ cloudflareAccess: [] }],
+    security: [{ sessionCookie: [] }],
   },
   apis: [resolve(root, "src/worker/index.ts"), resolve(root, "src/db/schema.ts")],
 };

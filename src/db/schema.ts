@@ -10,14 +10,14 @@ const nowMs = sql`(unixepoch() * 1000)`;
  * @openapi
  * components:
  *   securitySchemes:
- *     cloudflareAccess:
+ *     sessionCookie:
  *       type: apiKey
  *       in: cookie
- *       name: CF_Authorization
+ *       name: __Secure-better-auth.session_token
  *       description: >-
- *         Cloudflare Access session. Access verifies the user via SSO at the edge,
- *         sets the `CF_Authorization` cookie, and injects the trusted
- *         `Cf-Access-Authenticated-User-Email` header that the API uses as identity.
+ *         Better Auth session. Signing in (Google or email magic link) sets an
+ *         HttpOnly session cookie that scopes every request to that account. The
+ *         web app and CLI use this; agents use the OAuth 2.1 flow of the MCP server.
  *     ingestToken:
  *       type: http
  *       scheme: bearer
@@ -106,7 +106,7 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *           example: "2026-06-29T12:00:00.000Z"
  *     WhoAmI:
  *       type: object
- *       description: The Cloudflare Access identity resolved for this request.
+ *       description: The signed-in identity resolved for this request.
  *       additionalProperties: false
  *       required: [email]
  *       properties:

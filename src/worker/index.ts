@@ -218,7 +218,7 @@ app.get("/api/health", (c) => c.json({ ok: true, service: "skcal", ts: new Date(
  *   get:
  *     tags: [Service]
  *     summary: Resolve the current identity
- *     description: Returns the Cloudflare Access-verified email backing this session.
+ *     description: Returns the signed-in account email backing this session.
  *     operationId: whoami
  *     responses:
  *       '200':
