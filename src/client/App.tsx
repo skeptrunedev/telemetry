@@ -7,6 +7,7 @@ import { Dashboard } from "./Dashboard";
 import { AddSheet } from "./AddSheet";
 import { type View } from "./BottomNav";
 import { NavDrawer } from "./NavDrawer";
+import { McpInstall } from "./McpInstall";
 import { useCoachHistory, CoachThread } from "./Coach";
 import { SignIn } from "./SignIn";
 import { useSession, signOut } from "./auth-client";
@@ -83,6 +84,7 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [tick, setTick] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
   // Desktop: whether the persistent sidebar is collapsed (remembered).
   const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem("skcal-nav-collapsed") === "1");
   const coach = useCoachHistory();
@@ -204,6 +206,10 @@ export default function App() {
         avatar={avatar}
         onAvatarChange={setAvatarOverride}
         onSignOut={signOutAndReload}
+        onInstallMcp={() => {
+          setDrawerOpen(false);
+          setMcpOpen(true);
+        }}
         coach={coach}
       />
 
@@ -250,6 +256,8 @@ export default function App() {
           defaultTab={weightLoggedToday(data) ? "nutrition" : "weight"}
         />
       )}
+
+      {mcpOpen && <McpInstall onClose={() => setMcpOpen(false)} />}
     </div>
   );
 }

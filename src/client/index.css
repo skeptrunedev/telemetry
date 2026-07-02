@@ -650,6 +650,47 @@ a {
   will-change: transform;
   animation: sheetup 440ms var(--ease-drawer);
 }
+/* ---- Install-MCP modal ---- */
+.mcp-sheet {
+  max-height: 85dvh;
+  overflow-y: auto;
+}
+.mcp-title {
+  margin: 0 0 0.3rem;
+  font-size: 1.15rem;
+  font-weight: 650;
+  color: var(--fg);
+}
+.mcp-client {
+  margin-top: 1.1rem;
+}
+.mcp-client h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 620;
+  color: var(--fg);
+}
+.mcp-client .meta {
+  margin: 0 0 0.4rem;
+}
+.mcp-copy {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.4rem 0.4rem 0.4rem 0.7rem;
+}
+.mcp-copy code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--fg);
+}
 @keyframes sheetup {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }

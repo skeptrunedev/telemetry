@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Sun, MessageSquare, Plus, SquarePen, Search, PanelLeft, Trash2, ChevronDown } from "lucide-react";
+import { Sun, MessageSquare, Plus, SquarePen, Search, PanelLeft, Trash2, ChevronDown, Plug } from "lucide-react";
 import type { View } from "./BottomNav";
 import type { CoachHistory } from "./Coach";
 import { api } from "./api";
@@ -40,6 +40,7 @@ export function NavDrawer({
   avatar,
   onAvatarChange,
   onSignOut,
+  onInstallMcp,
   coach,
 }: {
   view: View;
@@ -51,6 +52,7 @@ export function NavDrawer({
   avatar: string | null;
   onAvatarChange: (image: string) => void;
   onSignOut: () => void;
+  onInstallMcp: () => void;
   coach: CoachHistory;
 }) {
   const [profileMenu, setProfileMenu] = useState(false);
@@ -107,6 +109,7 @@ export function NavDrawer({
           <NavItem icon={NAV_ICONS.today} label="Today" active={view === "today"} onClick={() => onNavigate("today")} />
           <NavItem icon={NAV_ICONS.coach} label="Agent" active={view === "coach"} onClick={() => onNavigate("coach")} />
           <NavItem icon={NAV_ICONS.add} label="Log entry" onClick={onAdd} />
+          <NavItem icon={<Plug />} label="Install MCP" onClick={onInstallMcp} />
         </nav>
 
         <div className="sidebar-divider" />
