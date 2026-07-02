@@ -727,6 +727,32 @@ export const ingestTokens = sqliteTable("ingest_tokens", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
 });
 
+// Saved AI-coach conversations (one row per thread) + their messages, so the
+// user can browse and locally search past chats. Scoped by user_email.
+export const coachConversations = sqliteTable(
+  "coach_conversations",
+  {
+    id: text("id").primaryKey(), // uuid
+    userEmail: text("user_email").notNull().default(""),
+    title: text("title").notNull().default("New chat"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => ({ userIdx: index("coach_conversations_user_idx").on(t.userEmail) }),
+);
+
+export const coachMessages = sqliteTable(
+  "coach_messages",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    conversationId: text("conversation_id").notNull(),
+    role: text("role", { enum: ["user", "assistant"] }).notNull(),
+    content: text("content").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => ({ convIdx: index("coach_messages_conversation_idx").on(t.conversationId) }),
+);
+
 // ---------------------------------------------------------------------------
 // Better Auth core tables (self-hosted auth, replacing Cloudflare Access).
 //

@@ -44,6 +44,13 @@ export type MealAnalysis = {
 };
 export type Meal = { id: string; note: string | null; createdAt: number; photoKeys: string[]; items: LoggedItem[] };
 export type CoachMessage = { role: "user" | "assistant"; content: string };
+export type CoachConversation = {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: CoachMessage[];
+};
 export type WeightReading = { id: number; ts: number; weightKg: number; bodyFatPct: number | null; note: string | null; source: string };
 
 export const api = {
@@ -96,6 +103,20 @@ export const api = {
     if (!r.ok) throw new Error(`coach → ${r.status}: ${await r.text().catch(() => "")}`);
     return r;
   },
+  // ---- Coach conversation history ----
+  listConversations: () => jget<CoachConversation[]>(`/api/coach/conversations`),
+  createConversation: async (title: string, messages: CoachMessage[]): Promise<{ id: string; title: string }> => {
+    const r = await rawFetch(`/api/coach/conversations`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title, messages }),
+    });
+    if (!r.ok) throw new Error(`createConversation → ${r.status}`);
+    return r.json() as Promise<{ id: string; title: string }>;
+  },
+  appendMessages: (id: string, messages: CoachMessage[]) =>
+    jsend(`/api/coach/conversations/${id}/messages`, "POST", { messages }),
+  deleteConversation: (id: string) => jsend(`/api/coach/conversations/${id}`, "DELETE", undefined),
   meals: (date: string) => jget<Meal[]>(`/api/nutrition/meals?date=${date}`),
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),
   deleteItem: (id: number) => jsend(`/api/nutrition/items/${id}`, "DELETE", undefined),

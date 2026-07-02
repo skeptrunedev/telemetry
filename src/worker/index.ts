@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import * as schema from "../db/schema";
 import { makeAuth } from "./auth";
@@ -1258,6 +1258,99 @@ app.post("/api/coach/stream", async (c) => {
       "x-content-type-options": "nosniff",
     },
   });
+});
+
+// A short thread title from the first user message (ChatGPT-style).
+function deriveConversationTitle(messages: { role: string; content: string }[]): string {
+  const first = messages.find((m) => m.role === "user")?.content ?? "";
+  const t = first.trim().replace(/\s+/g, " ");
+  if (!t) return "New chat";
+  return t.length > 60 ? `${t.slice(0, 57)}…` : t;
+}
+
+// ---- Coach conversation history (saved threads + local-search source) ------
+// List the caller's conversations, newest first, each with its full message
+// list so the client can render history and search it locally.
+app.get("/api/coach/conversations", async (c) => {
+  const email = c.get("email");
+  const convs = await db(c)
+    .select()
+    .from(schema.coachConversations)
+    .where(eq(schema.coachConversations.userEmail, email))
+    .orderBy(desc(schema.coachConversations.updatedAt));
+  const ids = convs.map((x) => x.id);
+  const rows = ids.length
+    ? await db(c)
+        .select()
+        .from(schema.coachMessages)
+        .where(inArray(schema.coachMessages.conversationId, ids))
+        .orderBy(asc(schema.coachMessages.id))
+    : [];
+  const byConv = new Map<string, { role: string; content: string }[]>();
+  for (const m of rows) {
+    const arr = byConv.get(m.conversationId) ?? [];
+    arr.push({ role: m.role, content: m.content });
+    byConv.set(m.conversationId, arr);
+  }
+  return c.json(
+    convs.map((x) => ({
+      id: x.id,
+      title: x.title,
+      createdAt: x.createdAt.getTime(),
+      updatedAt: x.updatedAt.getTime(),
+      messages: byConv.get(x.id) ?? [],
+    })),
+  );
+});
+
+// Create a conversation seeded with its first turn.
+app.post("/api/coach/conversations", async (c) => {
+  const email = c.get("email");
+  const b = await c.req.json<{ title?: string; messages?: unknown }>();
+  const parsed = parseCoachMessages(b.messages);
+  if ("error" in parsed) return c.json({ error: parsed.error }, 400);
+  const id = crypto.randomUUID();
+  const title = (typeof b.title === "string" && b.title.trim() ? b.title.trim() : deriveConversationTitle(parsed.messages)).slice(0, 120);
+  await db(c).insert(schema.coachConversations).values({ id, userEmail: email, title });
+  await db(c)
+    .insert(schema.coachMessages)
+    .values(parsed.messages.map((m) => ({ conversationId: id, role: m.role, content: m.content })));
+  return c.json({ id, title });
+});
+
+// Append a turn (user + assistant) to an existing conversation.
+app.post("/api/coach/conversations/:id/messages", async (c) => {
+  const email = c.get("email");
+  const id = c.req.param("id");
+  const b = await c.req.json<{ messages?: unknown }>();
+  const parsed = parseCoachMessages(b.messages);
+  if ("error" in parsed) return c.json({ error: parsed.error }, 400);
+  const owned = await db(c)
+    .select({ id: schema.coachConversations.id })
+    .from(schema.coachConversations)
+    .where(and(eq(schema.coachConversations.id, id), eq(schema.coachConversations.userEmail, email)))
+    .limit(1);
+  if (!owned.length) return c.json({ error: "not found" }, 404);
+  await db(c)
+    .insert(schema.coachMessages)
+    .values(parsed.messages.map((m) => ({ conversationId: id, role: m.role, content: m.content })));
+  await db(c).update(schema.coachConversations).set({ updatedAt: new Date() }).where(eq(schema.coachConversations.id, id));
+  return c.json({ ok: true });
+});
+
+// Delete a conversation and its messages.
+app.delete("/api/coach/conversations/:id", async (c) => {
+  const email = c.get("email");
+  const id = c.req.param("id");
+  const owned = await db(c)
+    .select({ id: schema.coachConversations.id })
+    .from(schema.coachConversations)
+    .where(and(eq(schema.coachConversations.id, id), eq(schema.coachConversations.userEmail, email)))
+    .limit(1);
+  if (!owned.length) return c.json({ error: "not found" }, 404);
+  await db(c).delete(schema.coachMessages).where(eq(schema.coachMessages.conversationId, id));
+  await db(c).delete(schema.coachConversations).where(eq(schema.coachConversations.id, id));
+  return c.json({ ok: true });
 });
 
 // ---- OpenAPI document ------------------------------------------------------

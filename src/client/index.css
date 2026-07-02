@@ -996,11 +996,212 @@ a {
 }
 
 /* ---- coach chat ---- */
-.coach {
+/* ---- Coach layout: sidebar (desktop) / drawer (mobile) + chat pane -------- */
+.coach-shell {
+  position: relative;
   display: flex;
-  flex-direction: column;
   /* fill the space between the topbar and the docked nav */
   height: calc(100dvh - 11rem);
+}
+.coach-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.coach {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.coach-sidebar {
+  flex: none;
+  width: 250px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.4rem 0.55rem;
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+}
+.coach-sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.coach-newchat {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color 160ms ease-out;
+}
+.coach-newchat:hover {
+  border-color: var(--accent);
+}
+.coach-newchat svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+.coach-icon-btn {
+  flex: none;
+  width: 2.1rem;
+  height: 2.1rem;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.coach-icon-btn:hover {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.06);
+}
+.coach-icon-btn svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+.coach-search {
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 0.9rem;
+}
+.coach-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.coach-search::placeholder {
+  color: var(--muted);
+}
+.coach-recents-label {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0.2rem 0.2rem 0;
+}
+.coach-recents {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.coach-empty-list {
+  padding: 0.4rem 0.2rem;
+}
+.coach-recent {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+.coach-recent:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.coach-recent.active {
+  background: rgba(255, 255, 255, 0.08);
+}
+.coach-recent-title {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 0.88rem;
+  padding: 0.5rem 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.coach-recent-del {
+  width: 1.9rem;
+  height: 1.9rem;
+  opacity: 0;
+}
+.coach-recent:hover .coach-recent-del,
+.coach-recent.active .coach-recent-del {
+  opacity: 1;
+}
+.coach-recent-del svg {
+  width: 1rem;
+  height: 1rem;
+}
+.coach-backdrop {
+  display: none;
+}
+/* Desktop: sidebar is persistent; the mobile topbar + close button are hidden. */
+.coach-topbar {
+  display: none;
+}
+.coach-close {
+  display: none;
+}
+@media (max-width: 780px) {
+  .coach-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 60;
+    width: 84vw;
+    max-width: 320px;
+    background: var(--bg);
+    padding-top: 0.8rem;
+    transform: translateX(-100%);
+    transition: transform 240ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .coach-sidebar.open {
+    transform: translateX(0);
+  }
+  .coach-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, 0.5);
+  }
+  .coach-close {
+    display: grid;
+  }
+  .coach-topbar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 0 0.3rem;
+  }
+  .coach-topbar-title {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 .chat-list {
   flex: 1;
