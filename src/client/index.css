@@ -1083,30 +1083,78 @@ a {
   position: sticky;
   bottom: 0;
   margin-top: auto;
-  padding: 0.6rem 0 0.2rem;
+  padding: 0.6rem 0 0.4rem;
   background: var(--bg);
-  border-top: 1px solid var(--line);
 }
+/* Empty thread: greeting + composer centered in the viewport (ChatGPT landing). */
+.chat-welcome {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 0;
+}
+.chat-welcome .chat-empty {
+  margin: 0;
+  padding: 0 0.2rem;
+}
+/* ChatGPT-style pill: textarea + send control share one rounded container. */
 .composer {
   display: flex;
-  gap: 0.5rem;
   align-items: flex-end;
+  gap: 0.4rem;
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 0.3rem 0.3rem 0.3rem 0.95rem;
+  transition: border-color 160ms ease-out;
+}
+.composer:focus-within {
+  border-color: var(--accent);
+}
+.composer-send {
+  flex: none;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #1a1205;
+  border: 0;
+  cursor: pointer;
+  transition: transform 120ms ease-out, opacity 160ms ease-out, background 160ms ease-out;
+}
+.composer-send:active {
+  transform: scale(0.94);
+}
+.composer-send:disabled {
+  background: var(--line);
+  color: var(--muted);
+  cursor: default;
+}
+.composer-send svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.composer-stop {
+  background: var(--fg);
+  color: var(--bg);
 }
 .chat-input {
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
-  background: var(--input-bg);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 0.7rem 0.85rem;
+  background: transparent;
+  border: 0;
+  padding: 0.5rem 0;
   color: var(--fg);
   font-family: var(--sans);
   font-size: 1rem;
   line-height: 1.4;
   resize: none;
-  /* One comfortable line by default; JS grows it to fit, then it scrolls. */
-  min-height: 2.9rem;
+  /* One line by default; the composer auto-grows it, then it scrolls. */
+  min-height: 1.5rem;
   max-height: 140px;
   overflow-y: auto;
 }
@@ -1115,7 +1163,6 @@ a {
 }
 .chat-input:focus {
   outline: none;
-  border-color: var(--accent);
 }
 .chat-send {
   flex: none;

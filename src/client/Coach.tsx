@@ -58,19 +58,51 @@ function AssistantMessage() {
   );
 }
 
+// ChatGPT-style single pill: the textarea and the send/stop control live inside
+// one rounded, bordered container. Send arrow when idle; stop square mid-stream.
+function Composer() {
+  return (
+    <ComposerPrimitive.Root className="composer">
+      <ComposerPrimitive.Input
+        className="chat-input"
+        placeholder="What are you thinking of eating?"
+        autoFocus
+      />
+      <ThreadPrimitive.If running={false}>
+        <ComposerPrimitive.Send className="composer-send" aria-label="Send">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M10 16V5M5 10l5-5 5 5" />
+          </svg>
+        </ComposerPrimitive.Send>
+      </ThreadPrimitive.If>
+      <ThreadPrimitive.If running>
+        <ComposerPrimitive.Cancel className="composer-send composer-stop" aria-label="Stop">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="6" width="8" height="8" rx="1.5" />
+          </svg>
+        </ComposerPrimitive.Cancel>
+      </ThreadPrimitive.If>
+    </ComposerPrimitive.Root>
+  );
+}
+
 export function Coach() {
   const runtime = useLocalRuntime(coachAdapter);
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="coach">
         <ThreadPrimitive.Viewport className="chat-list" autoScroll>
+          {/* Empty thread: greeting + composer, centered (ChatGPT landing style). */}
           <ThreadPrimitive.Empty>
-            <div className="chat-empty">
-              <p className="chat-empty-title">Ask before you eat.</p>
-              <p className="meta">
-                I know your targets, what you've logged today, and your weight trend. Tell me what
-                you're thinking of eating and I'll give you a straight read.
-              </p>
+            <div className="chat-welcome">
+              <div className="chat-empty">
+                <p className="chat-empty-title">Ask before you eat.</p>
+                <p className="meta">
+                  I know your targets, what you've logged today, and your weight trend. Tell me what
+                  you're thinking of eating and I'll give you a straight read.
+                </p>
+              </div>
+              <Composer />
             </div>
           </ThreadPrimitive.Empty>
 
@@ -78,15 +110,11 @@ export function Coach() {
             {({ message }) => (message.role === "user" ? <UserMessage /> : <AssistantMessage />)}
           </ThreadPrimitive.Messages>
 
+          {/* Once the thread has messages, the composer docks to the bottom. */}
           <ThreadPrimitive.ViewportFooter className="chat-input-row">
-            <ComposerPrimitive.Root className="composer">
-              <ComposerPrimitive.Input
-                className="chat-input"
-                placeholder="What are you thinking of eating?"
-                autoFocus
-              />
-              <ComposerPrimitive.Send className="btn chat-send">Send</ComposerPrimitive.Send>
-            </ComposerPrimitive.Root>
+            <ThreadPrimitive.If empty={false}>
+              <Composer />
+            </ThreadPrimitive.If>
           </ThreadPrimitive.ViewportFooter>
         </ThreadPrimitive.Viewport>
       </ThreadPrimitive.Root>
