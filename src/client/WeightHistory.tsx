@@ -16,10 +16,18 @@ export function WeightHistory() {
   }, []);
   useEffect(load, [load]);
 
-  async function saveNote(id: number) {
+  // Close the editor, persisting only if the note actually changed. Called on
+  // Enter, on Save, and on blur (tap/click off) so the input always goes away.
+  async function closeNote(id: number, currentNote: string | null) {
+    if (editing !== id) return;
+    const next = draft.trim();
+    if (next === (currentNote ?? "")) {
+      setEditing(null);
+      return;
+    }
     setBusy(true);
     try {
-      await api.setWeightNote(id, draft.trim() || null);
+      await api.setWeightNote(id, next || null);
       setEditing(null);
       load();
     } finally {
@@ -53,17 +61,16 @@ export function WeightHistory() {
                   <input
                     autoFocus
                     value={draft}
+                    disabled={busy}
                     onChange={(e) => setDraft(e.target.value)}
                     placeholder="add a note…"
                     maxLength={500}
+                    onBlur={() => closeNote(r.id, r.note)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") saveNote(r.id);
+                      if (e.key === "Enter") closeNote(r.id, r.note);
                       if (e.key === "Escape") setEditing(null);
                     }}
                   />
-                  <button className="btn sm" onClick={() => saveNote(r.id)} disabled={busy}>
-                    Save
-                  </button>
                 </div>
               ) : (
                 <button

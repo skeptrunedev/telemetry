@@ -34,16 +34,19 @@ async function sendMagicLinkEmail(env: AuthEnv, email: string, url: string): Pro
     return;
   }
 
+  // Keep this minimal and light — no forced dark theme or full-bleed background,
+  // so Gmail and other clients render it cleanly (and their own dark modes can
+  // adapt it). Semantic, mostly-unstyled HTML with a single accent button.
   const html = `<!doctype html>
 <html>
-  <body style="margin:0;background:#17181a;color:#ececec;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:32px">
-    <div style="max-width:460px;margin:0 auto;background:#1f2123;border:1px solid #303236;border-radius:16px;padding:28px">
-      <p style="font-size:12px;letter-spacing:.14em;color:#9a9ca0;margin:0 0 6px;text-transform:uppercase">skcal</p>
-      <h1 style="font-size:20px;margin:0 0 14px;color:#ececec">Sign in to skcal</h1>
-      <p style="font-size:14px;line-height:1.6;color:#9a9ca0;margin:0 0 22px">Click the button below to sign in. This link expires shortly and can only be used once.</p>
-      <a href="${url}" style="display:inline-block;background:#f59e0b;color:#1a1205;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px">Sign in</a>
-      <p style="font-size:12px;line-height:1.6;color:#6c6f73;margin:22px 0 0;word-break:break-all">Or paste this link into your browser:<br>${url}</p>
-    </div>
+  <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a;margin:0;padding:24px">
+    <p style="margin:0 0 16px">Click the button below to sign in to skcal. This link expires shortly and can only be used once.</p>
+    <p style="margin:0 0 20px">
+      <a href="${url}" style="display:inline-block;padding:10px 20px;background:#f59e0b;color:#1a1205;text-decoration:none;border-radius:6px;font-weight:600">Sign in to skcal</a>
+    </p>
+    <p style="margin:0 0 6px;color:#666">Or paste this link into your browser:</p>
+    <p style="margin:0;word-break:break-all"><a href="${url}">${url}</a></p>
+    <p style="margin:24px 0 0;color:#999;font-size:13px">If you didn't request this, you can ignore this email.</p>
   </body>
 </html>`;
   const text = `Sign in to skcal\n\nClick the link below to sign in. It expires shortly and can only be used once.\n\n${url}\n`;
