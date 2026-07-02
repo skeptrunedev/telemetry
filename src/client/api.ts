@@ -82,7 +82,7 @@ export const api = {
     return r.json() as Promise<MealAnalysis>;
   },
   coach: async (messages: CoachMessage[], date?: string): Promise<{ reply: string }> => {
-    const url = date ? `/api/coach?date=${date}` : `/api/coach`;
+    const url = date ? `/api/agent?date=${date}` : `/api/agent`;
     const r = await rawFetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -94,7 +94,7 @@ export const api = {
   // Streaming variant for the in-app chat: returns the raw Response so the
   // caller can read the plain-text token stream off `.body`.
   coachStream: async (messages: CoachMessage[], date: string, signal?: AbortSignal): Promise<Response> => {
-    const r = await rawFetch(`/api/coach/stream?date=${date}`, {
+    const r = await rawFetch(`/api/agent/stream?date=${date}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages, date }),
@@ -104,9 +104,9 @@ export const api = {
     return r;
   },
   // ---- Coach conversation history ----
-  listConversations: () => jget<CoachConversation[]>(`/api/coach/conversations`),
+  listConversations: () => jget<CoachConversation[]>(`/api/agent/conversations`),
   createConversation: async (title: string, messages: CoachMessage[]): Promise<{ id: string; title: string }> => {
-    const r = await rawFetch(`/api/coach/conversations`, {
+    const r = await rawFetch(`/api/agent/conversations`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ title, messages }),
@@ -115,8 +115,8 @@ export const api = {
     return r.json() as Promise<{ id: string; title: string }>;
   },
   appendMessages: (id: string, messages: CoachMessage[]) =>
-    jsend(`/api/coach/conversations/${id}/messages`, "POST", { messages }),
-  deleteConversation: (id: string) => jsend(`/api/coach/conversations/${id}`, "DELETE", undefined),
+    jsend(`/api/agent/conversations/${id}/messages`, "POST", { messages }),
+  deleteConversation: (id: string) => jsend(`/api/agent/conversations/${id}`, "DELETE", undefined),
   meals: (date: string) => jget<Meal[]>(`/api/nutrition/meals?date=${date}`),
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),
   deleteItem: (id: number) => jsend(`/api/nutrition/items/${id}`, "DELETE", undefined),

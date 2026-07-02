@@ -760,7 +760,7 @@
         }
       }
     },
-    "/api/coach": {
+    "/api/agent": {
       "post": {
         "tags": [
           "Coach"

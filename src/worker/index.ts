@@ -1316,7 +1316,7 @@ async function executeCoachTool(
 
 /**
  * @openapi
- * /api/coach:
+ * /api/agent:
  *   post:
  *     tags: [Coach]
  *     summary: Ask the AI coach
@@ -1355,7 +1355,7 @@ async function executeCoachTool(
  *       '503':
  *         $ref: '#/components/responses/ServiceUnavailable'
  */
-app.post("/api/coach", async (c) => {
+app.post("/api/agent", async (c) => {
   const email = c.get("email");
   const b = await c.req.json<{ messages?: unknown; date?: string }>();
   const parsed = parseCoachMessages(b.messages);
@@ -1387,10 +1387,10 @@ app.post("/api/coach", async (c) => {
   return c.json({ reply });
 });
 
-// Streaming sibling of /api/coach for the in-app chat UI (assistant-ui). Emits
+// Streaming sibling of /api/agent for the in-app chat UI (assistant-ui). Emits
 // the reply as a plain-text token stream so the coach types out live. The JSON
 // route above stays for the CLI/API/MCP surface.
-app.post("/api/coach/stream", async (c) => {
+app.post("/api/agent/stream", async (c) => {
   const email = c.get("email");
   const b = await c.req.json<{ messages?: unknown; date?: string }>();
   const parsed = parseCoachMessages(b.messages);
@@ -1467,7 +1467,7 @@ function deriveConversationTitle(messages: { role: string; content: string }[]):
 // ---- Coach conversation history (saved threads + local-search source) ------
 // List the caller's conversations, newest first, each with its full message
 // list so the client can render history and search it locally.
-app.get("/api/coach/conversations", async (c) => {
+app.get("/api/agent/conversations", async (c) => {
   const email = c.get("email");
   const convs = await db(c)
     .select()
@@ -1500,7 +1500,7 @@ app.get("/api/coach/conversations", async (c) => {
 });
 
 // Create a conversation seeded with its first turn.
-app.post("/api/coach/conversations", async (c) => {
+app.post("/api/agent/conversations", async (c) => {
   const email = c.get("email");
   const b = await c.req.json<{ title?: string; messages?: unknown }>();
   const parsed = parseCoachMessages(b.messages);
@@ -1515,7 +1515,7 @@ app.post("/api/coach/conversations", async (c) => {
 });
 
 // Append a turn (user + assistant) to an existing conversation.
-app.post("/api/coach/conversations/:id/messages", async (c) => {
+app.post("/api/agent/conversations/:id/messages", async (c) => {
   const email = c.get("email");
   const id = c.req.param("id");
   const b = await c.req.json<{ messages?: unknown }>();
@@ -1535,7 +1535,7 @@ app.post("/api/coach/conversations/:id/messages", async (c) => {
 });
 
 // Delete a conversation and its messages.
-app.delete("/api/coach/conversations/:id", async (c) => {
+app.delete("/api/agent/conversations/:id", async (c) => {
   const email = c.get("email");
   const id = c.req.param("id");
   const owned = await db(c)
