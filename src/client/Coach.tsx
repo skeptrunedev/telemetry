@@ -124,16 +124,10 @@ function ChatPane({
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="coach">
         <ThreadPrimitive.Viewport className="chat-list" autoScroll>
+          {/* Home state: greeting centered in the viewport, composer docked below. */}
           <ThreadPrimitive.Empty>
             <div className="chat-welcome">
-              <div className="chat-empty">
-                <p className="chat-empty-title">Ask before you eat.</p>
-                <p className="meta">
-                  I know your targets, what you've logged today, and your weight trend. Tell me what
-                  you're thinking of eating and I'll give you a straight read.
-                </p>
-              </div>
-              <Composer />
+              <p className="chat-welcome-title">Ask before you eat.</p>
             </div>
           </ThreadPrimitive.Empty>
 
@@ -142,9 +136,7 @@ function ChatPane({
           </ThreadPrimitive.Messages>
 
           <ThreadPrimitive.ViewportFooter className="chat-input-row">
-            <ThreadPrimitive.If empty={false}>
-              <Composer />
-            </ThreadPrimitive.If>
+            <Composer />
           </ThreadPrimitive.ViewportFooter>
         </ThreadPrimitive.Viewport>
       </ThreadPrimitive.Root>
