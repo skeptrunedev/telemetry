@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sun, MessageSquare, Plus, SquarePen, Search, PanelLeft, Trash2, ChevronDown } from "lucide-react";
 import type { View } from "./BottomNav";
 import type { CoachHistory } from "./Coach";
@@ -48,6 +48,17 @@ export function NavDrawer({
   coach: CoachHistory;
 }) {
   const [profileMenu, setProfileMenu] = useState(false);
+  const footRef = useRef<HTMLDivElement>(null);
+
+  // Close the profile menu when clicking/tapping anywhere outside it.
+  useEffect(() => {
+    if (!profileMenu) return;
+    const onDown = (e: PointerEvent) => {
+      if (footRef.current && !footRef.current.contains(e.target as Node)) setProfileMenu(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [profileMenu]);
 
   const goCoachNew = () => {
     coach.newChat();
@@ -112,7 +123,7 @@ export function NavDrawer({
           ))}
         </nav>
 
-        <div className="sidebar-foot">
+        <div className="sidebar-foot" ref={footRef}>
           {profileMenu && (
             <div className="profile-menu" role="menu">
               <button
