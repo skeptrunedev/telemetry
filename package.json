@@ -7,6 +7,8 @@
     "dev": "vite",
     "openapi:gen": "node scripts/gen-openapi.mjs",
     "openapi:lint": "npx --yes @quobix/vacuum@0.27.0 lint --details --fail-severity info --min-score 100 src/worker/openapi.gen.json",
+    "docs:openapi": "node scripts/gen-openapi.mjs && cp src/worker/openapi.gen.json docs/api-reference/openapi.json",
+    "docs:dev": "cd docs && npx mint@latest dev",
     "prebuild": "node scripts/gen-openapi.mjs",
     "build": "vite build",
     "typecheck": "tsc -b",

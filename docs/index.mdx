@@ -1,0 +1,40 @@
+---
+title: "skcal"
+description: "Calorie and body-composition tracking for developers and AI power users."
+---
+
+skcal tracks weigh-ins, body measurements, and nutrition, and gives you a daily
+snapshot of where you stand against your targets. It's built to be driven by
+software: a typed HTTP API, a CLI, and a remote MCP server so your agents can
+log and query your data.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Sign in and make your first calls.
+  </Card>
+  <Card title="Install the CLI" icon="terminal" href="/cli">
+    `@skeptrune/skcal` — log and query from your terminal.
+  </Card>
+  <Card title="Install the MCP server" icon="plug" href="/mcp">
+    Connect skcal to Claude, Claude Code, or ChatGPT.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/introduction">
+    Every endpoint, generated from the OpenAPI spec.
+  </Card>
+</CardGroup>
+
+## What you can do
+
+- **Log** weigh-ins (with optional body-fat % and notes), body measurements, and meals.
+- **Estimate meal macros** from a photo or a plain-text description.
+- **Track** calories and protein against daily targets, and weight against a goal.
+- **Ask the agent** for a blunt read on what to eat, grounded in your real numbers.
+
+## Ways to use it
+
+| Surface | Best for |
+| --- | --- |
+| [Web app](https://skcal.skeptrune.com) | Day-to-day logging and the agent chat |
+| [CLI](/cli) | Scripting and terminal logging |
+| [MCP server](/mcp) | Letting an AI client log and query your data |
+| [HTTP API](/api-reference/introduction) | Custom integrations |

@@ -1,0 +1,43 @@
+---
+title: "Authentication"
+description: "How skcal authenticates the app, the CLI, agents, and the scale ingest."
+---
+
+skcal uses [Better Auth](https://better-auth.com) with Google sign-in and email
+magic links. Every request is scoped to the signed-in account, so you only ever
+see your own data.
+
+## Web app
+
+Signing in sets a secure, HttpOnly session cookie. Browser requests to the API
+carry it automatically — nothing to configure.
+
+## CLI
+
+`skcal login` runs the browser sign-in and caches a token locally, which the
+[CLI](/cli) replays on each request. See the CLI page for details.
+
+## Agents (MCP)
+
+The [MCP server](/mcp) is authorized with OAuth 2.1. Clients discover the
+endpoints, register dynamically, run the PKCE authorization-code flow against
+your skcal login, and receive a token scoped to your account. This is the
+recommended path for programmatic and agent access.
+
+## Scale ingest
+
+The single write endpoint `POST /api/ingest/weight` accepts a shared bearer
+token so a smart scale can push readings without a browser session:
+
+```bash
+curl -X POST https://skcal.skeptrune.com/api/ingest/weight \
+  -H "Authorization: Bearer $INGEST_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"weightKg": 72.6}'
+```
+
+<Note>
+The rest of the API is guarded by the session cookie (web app / CLI) or an MCP
+OAuth token. There is no general-purpose API key — use the MCP server or CLI for
+programmatic access.
+</Note>

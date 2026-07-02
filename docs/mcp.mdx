@@ -1,0 +1,76 @@
+---
+title: "Install the MCP server"
+description: "Connect skcal to Claude, Claude Code, or ChatGPT over a remote MCP server."
+---
+
+skcal exposes a remote [Model Context Protocol](https://modelcontextprotocol.io)
+server so AI clients can log and query your data. It uses **Streamable HTTP**
+and is guarded by **OAuth 2.1** — you sign in once in the browser to authorize,
+with no token to copy or paste.
+
+<Info>
+**Server URL:** `https://skcal.skeptrune.com/mcp`
+</Info>
+
+## Claude Code
+
+```bash
+claude mcp add --transport http skcal https://skcal.skeptrune.com/mcp
+```
+
+Then run any skcal request in Claude Code; the first call opens a browser to
+authorize.
+
+## Claude (desktop & claude.ai)
+
+<Steps>
+  <Step title="Open connector settings">
+    Go to **Settings → Connectors → Add custom connector**.
+  </Step>
+  <Step title="Paste the URL">
+    Enter `https://skcal.skeptrune.com/mcp` and save.
+  </Step>
+  <Step title="Authorize">
+    Connect and sign in with your skcal account when prompted.
+  </Step>
+</Steps>
+
+## ChatGPT
+
+<Steps>
+  <Step title="Enable Developer mode">
+    In **Settings → Connectors**, turn on developer/custom connectors.
+  </Step>
+  <Step title="Add the server">
+    Add a connector with the URL `https://skcal.skeptrune.com/mcp`.
+  </Step>
+  <Step title="Authorize">
+    Sign in with your skcal account to grant access.
+  </Step>
+</Steps>
+
+<Tip>
+You can also open the skcal web app, tap **Install MCP** in the sidebar, and copy
+these instructions with the correct URL for your deployment.
+</Tip>
+
+## Available tools
+
+| Tool | What it does |
+| --- | --- |
+| `skcal_get_status` | Calories + protein logged vs. targets for a day, plus latest weight |
+| `skcal_get_targets` | Daily calorie/protein targets and goal/start weight |
+| `skcal_list_weigh_ins` | Recent weigh-ins (pounds) |
+| `skcal_log_weight` | Record a weigh-in |
+| `skcal_log_measurement` | Record a body measurement |
+| `skcal_log_meal` | Log a food item with calories + protein |
+| `skcal_list_meals` | List meals logged on a day |
+| `skcal_move_food` | Move a meal or item to another day |
+
+## How authorization works
+
+The server advertises OAuth discovery at
+`/.well-known/oauth-authorization-server` and
+`/.well-known/oauth-protected-resource`. Clients register dynamically, run the
+PKCE authorization-code flow against your skcal login, and receive a token
+scoped to your account — the same login used by the web app and CLI.

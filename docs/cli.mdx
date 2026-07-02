@@ -1,0 +1,71 @@
+---
+title: "Install the CLI"
+description: "Log weigh-ins, meals, and measurements from your terminal with @skeptrune/skcal."
+---
+
+`@skeptrune/skcal` is a terminal client for skcal. It logs weigh-ins, meals, and
+measurements and prints your daily snapshot — handy for scripting and wiring
+into your own tooling.
+
+## Install
+
+<CodeGroup>
+
+```bash npm
+npm install -g @skeptrune/skcal
+```
+
+```bash npx
+npx @skeptrune/skcal <command>
+```
+
+</CodeGroup>
+
+Prefer no Node? Grab a standalone binary for your platform from the
+[latest release](https://github.com/skeptrunedev/telemetry/releases).
+
+## Sign in
+
+```bash
+skcal login
+```
+
+This opens your browser to sign in (Google or magic link). A short-lived token
+is cached locally and replayed on each request.
+
+<Tip>
+Point the CLI at a different deployment with `skcal login --url https://example.com`.
+Credentials live in `~/.config/skcal/credentials.json` (override the directory
+with the `SKCAL_CONFIG_DIR` environment variable).
+</Tip>
+
+## Usage
+
+```bash
+skcal whoami                     # signed-in account + token expiry
+skcal status                     # today: weight, S:W ratio, calories/protein
+
+skcal weight log 158.2           # log a weigh-in in pounds
+skcal weight log 72 --kg --bf 17 --note "morning, fasted"
+skcal weight list -n 10          # recent weigh-ins
+skcal weight note 42 re-weighed  # set/clear a note on reading #42
+
+skcal meal describe "chicken breast + toum, skipped the salad"  # AI macros
+skcal meal list                  # meals logged today (--date YYYY-MM-DD)
+
+skcal measure waist 32.5         # inches (--cm for centimetres)
+skcal targets                    # your goals
+
+skcal logout
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install the MCP server" icon="plug" href="/mcp">
+    Let Claude, Claude Code, or ChatGPT drive skcal.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/introduction">
+    The endpoints the CLI calls under the hood.
+  </Card>
+</CardGroup>

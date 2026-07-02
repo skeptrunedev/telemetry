@@ -1,0 +1,37 @@
+---
+title: "API overview"
+description: "Base URLs, authentication, and conventions for the skcal HTTP API."
+---
+
+The skcal API is a typed HTTP API for calorie and body-composition tracking. The
+reference pages in this section are generated from the
+[OpenAPI spec](https://skcal.skeptrune.com/openapi.json).
+
+## Base URL
+
+```
+https://skcal.skeptrune.com
+```
+
+A local development server runs at `http://localhost:5173`.
+
+## Authentication
+
+Requests are scoped to the signed-in account. See [Authentication](/authentication)
+for the full picture — in short:
+
+- **Web app / CLI** — a Better Auth session cookie (or the CLI's cached token).
+- **Agents** — an OAuth 2.1 token from the [MCP server](/mcp).
+- **Scale ingest** — a shared bearer token for `POST /api/ingest/weight` only.
+
+## Conventions
+
+- Requests and responses are JSON (`content-type: application/json`).
+- Write endpoints return a minimal `{ "ok": true }` acknowledgement unless noted.
+- Errors use a consistent envelope: `{ "error": "reason", "detail"?: "..." }`.
+- Weights are stored in kilograms and measurements in centimetres; the CLI and
+  app convert to/from pounds and inches for display.
+
+<Card title="Browse the endpoints" icon="list" href="/api-reference/endpoint">
+  Jump into the generated endpoint reference.
+</Card>

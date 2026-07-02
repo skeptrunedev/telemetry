@@ -1,0 +1,57 @@
+---
+title: "Quickstart"
+description: "Sign in, log your first entries, and connect skcal to your tools."
+---
+
+## 1. Sign in
+
+Open [skcal.skeptrune.com](https://skcal.skeptrune.com) and sign in with Google
+or an email magic link. Your data is scoped to your account.
+
+## 2. Set your targets
+
+On the web app, log a weigh-in and set your daily calorie + protein targets and
+goal weight. The dashboard tracks everything against these.
+
+## 3. Log from wherever you are
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    npm install -g @skeptrune/skcal
+    skcal login
+    skcal weight log 158.2 --note "morning, fasted"
+    skcal meal describe "chicken breast + toum, skipped the salad"
+    skcal status
+    ```
+    See [Install the CLI](/cli) for the full command list.
+  </Tab>
+  <Tab title="MCP (agents)">
+    ```bash
+    claude mcp add --transport http skcal https://skcal.skeptrune.com/mcp
+    ```
+    Then ask your agent things like "what's my status today?" or "log 160 lb."
+    See [Install the MCP server](/mcp) for Claude, Claude Code, and ChatGPT.
+  </Tab>
+  <Tab title="HTTP API">
+    Every request is scoped to your account (see [Authentication](/authentication)).
+    The scale-ingest endpoint takes a bearer token:
+
+    ```bash
+    curl -X POST https://skcal.skeptrune.com/api/ingest/weight \
+      -H "Authorization: Bearer $INGEST_TOKEN" \
+      -H "content-type: application/json" \
+      -d '{"weightKg": 72.6}'
+    ```
+    Browse everything in the [API reference](/api-reference/introduction).
+  </Tab>
+</Tabs>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install the CLI" icon="terminal" href="/cli" />
+  <Card title="Install the MCP server" icon="plug" href="/mcp" />
+  <Card title="Authentication" icon="key" href="/authentication" />
+  <Card title="API reference" icon="code" href="/api-reference/introduction" />
+</CardGroup>

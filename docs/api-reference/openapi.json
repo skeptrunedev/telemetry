@@ -1,0 +1,1925 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "skcal API",
+    "version": "1.0.0",
+    "summary": "Typed HTTP API for skcal — calorie and body-composition tracking, built to wire into developer + AI tooling.",
+    "description": "HTTP API behind [skcal](https://skcal.skeptrune.com), a calorie and body-composition tracker built for developers and AI power users — drive it from the CLI or straight from this typed API (MCP server planned).\n\nEvery record is scoped to the signed-in account's email, so one account can never read another's data. The scale-ingest route is the one exception — it is authenticated with a bearer token and attributes readings to a configured owner.\n\nNutrition is logged from a freeform text description, which is sent to Claude, which returns per-item calories and protein.",
+    "contact": {
+      "name": "Nick Khami",
+      "url": "https://skcal.skeptrune.com",
+      "email": "nick@mintlify.com"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/license/mit"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://skcal.skeptrune.com",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:5173",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Service",
+      "description": "Liveness and identity probes."
+    },
+    {
+      "name": "Weight",
+      "description": "Body-weight readings and per-reading notes."
+    },
+    {
+      "name": "Measurements",
+      "description": "Body-part circumference measurements (stored in centimetres)."
+    },
+    {
+      "name": "Nutrition",
+      "description": "Per-day calorie and protein totals plus AI meal logging."
+    },
+    {
+      "name": "Targets",
+      "description": "Per-user goals: target weight, calories, and protein."
+    },
+    {
+      "name": "Coach",
+      "description": "AI coach chat grounded in the caller's targets, intake, and weight trend."
+    },
+    {
+      "name": "Dashboard",
+      "description": "Pre-aggregated snapshot powering the home screen."
+    },
+    {
+      "name": "Ingest",
+      "description": "Token-authenticated machine ingest from the Bluetooth scale listener."
+    },
+    {
+      "name": "Spec",
+      "description": "The OpenAPI document itself."
+    }
+  ],
+  "security": [
+    {
+      "cloudflareAccess": []
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "Service"
+        ],
+        "summary": "Liveness probe",
+        "description": "Returns a static payload confirming the Worker is up. Unauthenticated; used for uptime checks.",
+        "operationId": "getHealth",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The service is healthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whoami": {
+      "get": {
+        "tags": [
+          "Service"
+        ],
+        "summary": "Resolve the current identity",
+        "description": "Returns the Cloudflare Access-verified email backing this session.",
+        "operationId": "whoami",
+        "responses": {
+          "200": {
+            "description": "The resolved identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhoAmI"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/weight": {
+      "get": {
+        "tags": [
+          "Weight"
+        ],
+        "summary": "List weigh-ins",
+        "description": "Returns up to 365 of the caller's most recent weight readings, newest first.",
+        "operationId": "listWeight",
+        "responses": {
+          "200": {
+            "description": "Weight readings, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WeightReading"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Weight"
+        ],
+        "summary": "Log a weigh-in",
+        "description": "Records a manual body-weight reading for the caller.",
+        "operationId": "addWeight",
+        "requestBody": {
+          "required": true,
+          "description": "The weigh-in to record.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewWeight"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The reading was stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/api/weight/{id}": {
+      "patch": {
+        "tags": [
+          "Weight"
+        ],
+        "summary": "Edit a weigh-in note",
+        "description": "Updates or clears the note on one of the caller's past readings.",
+        "operationId": "updateWeightNote",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Weight-reading identifier.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The new note value, or null to clear it.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeightNote"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The note was updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/measurements": {
+      "get": {
+        "tags": [
+          "Measurements"
+        ],
+        "summary": "List measurements",
+        "description": "Returns up to 500 of the caller's measurements, newest first.",
+        "operationId": "listMeasurements",
+        "responses": {
+          "200": {
+            "description": "Measurements, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Measurement"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Measurements"
+        ],
+        "summary": "Record a measurement",
+        "description": "Stores a body-part circumference measurement for the caller.",
+        "operationId": "addMeasurement",
+        "requestBody": {
+          "required": true,
+          "description": "The measurement to record.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewMeasurement"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The measurement was stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/api/nutrition": {
+      "get": {
+        "tags": [
+          "Nutrition"
+        ],
+        "summary": "List daily totals",
+        "description": "Returns up to 60 of the caller's most recent daily nutrition roll-ups, newest first.",
+        "operationId": "listNutritionDays",
+        "responses": {
+          "200": {
+            "description": "Daily nutrition totals, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NutritionDay"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Nutrition"
+        ],
+        "summary": "Upsert a day's totals",
+        "description": "Directly sets the calorie and protein totals for one calendar day, replacing any existing roll-up.",
+        "operationId": "upsertNutritionDay",
+        "requestBody": {
+          "required": true,
+          "description": "The day's totals to store.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NutritionDayInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The day's totals were stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/api/targets": {
+      "get": {
+        "tags": [
+          "Targets"
+        ],
+        "summary": "Get goals",
+        "description": "Returns the caller's targets, creating a default row on first access.",
+        "operationId": "getTargets",
+        "responses": {
+          "200": {
+            "description": "The caller's targets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Targets"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Targets"
+        ],
+        "summary": "Update goals",
+        "description": "Partially updates the caller's targets; omitted fields are left unchanged.",
+        "operationId": "updateTargets",
+        "requestBody": {
+          "required": true,
+          "description": "The fields to change; omitted fields are left unchanged.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetsInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The targets were updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Home-screen snapshot",
+        "description": "Returns the weight summary, targets, latest measurements, shoulder-to-waist ratio, and the given day's nutrition in one response.",
+        "operationId": "getDashboard",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Day to report nutrition for (YYYY-MM-DD). Defaults to the server's current UTC date.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The dashboard snapshot.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardData"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ingest/weight": {
+      "post": {
+        "tags": [
+          "Ingest"
+        ],
+        "summary": "Ingest a scale reading",
+        "description": "Machine endpoint for the Bluetooth scale listener. Authenticated with the ingest bearer token and attributed to a configured owner rather than the Access identity.",
+        "operationId": "ingestWeight",
+        "security": [
+          {
+            "ingestToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The scale reading to ingest.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestWeight"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The scale reading was ingested and stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/nutrition/analyze": {
+      "post": {
+        "tags": [
+          "Nutrition"
+        ],
+        "summary": "Log a meal from photos",
+        "description": "Uploads 1–5 photos of a single meal, sends them to Claude vision for per-item calorie and protein estimates, stores the photos plus a meal, and returns the analysis.",
+        "operationId": "analyzeMeal",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Day to log against (YYYY-MM-DD). Defaults to the server's current UTC date.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The meal photos (multipart field `photos`), plus an optional `note` caption for context.",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "photos"
+                ],
+                "properties": {
+                  "photos": {
+                    "type": "array",
+                    "description": "1–5 photos of a single meal, possibly from multiple angles (JPEG, PNG, WebP, or GIF; max 8MB each).",
+                    "example": [
+                      "@plate.jpg",
+                      "@plate-side.jpg"
+                    ],
+                    "items": {
+                      "type": "string",
+                      "format": "binary",
+                      "example": "@plate.jpg"
+                    }
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Optional caption to disambiguate the photo; passed to the model and stored as the meal note.",
+                    "example": "the white sauce is toum, and that's a 12oz steak"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The meal was analyzed and logged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MealAnalysis"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/nutrition/describe": {
+      "post": {
+        "tags": [
+          "Nutrition"
+        ],
+        "summary": "Log a meal from a description",
+        "description": "Sends a freeform meal description to Claude for per-item calorie and protein estimates, respecting stated portions and excluding anything the user says they skipped, then stores it as a meal.",
+        "operationId": "describeMeal",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Day to log the described meal against (YYYY-MM-DD). Defaults to the server's current UTC date.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The freeform meal description to analyze.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DescribeMeal"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The meal description was analyzed and logged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MealAnalysis"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/nutrition/meals": {
+      "get": {
+        "tags": [
+          "Nutrition"
+        ],
+        "summary": "List meals for a day",
+        "description": "Returns the caller's logged meals for a day, each with its food items, newest first.",
+        "operationId": "listMeals",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Day to list (YYYY-MM-DD). Defaults to the server's current UTC date.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meals for the day, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Meal"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/nutrition/meals/{id}": {
+      "delete": {
+        "tags": [
+          "Nutrition"
+        ],
+        "summary": "Delete a meal",
+        "description": "Removes one of the caller's meals, its food items, and any stored photos, then recomputes the day's totals.",
+        "operationId": "deleteMeal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Meal identifier (UUID).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The meal was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/nutrition/items/{id}": {
+      "delete": {
+        "tags": [
+          "Nutrition"
+        ],
+        "summary": "Delete a food item",
+        "description": "Removes a single logged food item and recomputes the affected day's totals.",
+        "operationId": "deleteItem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Food-item identifier.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The item was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/nutrition/photo/{key}": {
+      "get": {
+        "tags": [
+          "Nutrition"
+        ],
+        "summary": "Fetch a meal photo",
+        "description": "Streams a stored meal photo from object storage. The key is owner-prefixed, so callers can only read their own photos. Note that the key contains slashes.",
+        "operationId": "getMealPhoto",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "Owner-prefixed object key, e.g. `user@example.com/2026-06-29/<uuid>`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The image bytes.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No photo exists at that key."
+          }
+        }
+      }
+    },
+    "/api/agent": {
+      "post": {
+        "tags": [
+          "Coach"
+        ],
+        "summary": "Ask the AI coach",
+        "description": "Sends a short chat history to Claude with a system prompt grounded in the caller's own targets, today's logged calories and protein, and their latest weight and weekly trend. Use it before eating to get a blunt verdict on a food and how it fits the remaining budget. The client holds the conversation history and posts the whole thing each turn.",
+        "operationId": "coach",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Day to ground today's intake against (YYYY-MM-DD). Defaults to the server's current UTC date.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The chat history to answer, oldest message first.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CoachRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The coach's reply.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "Spec"
+        ],
+        "summary": "OpenAPI document",
+        "description": "The machine-readable OpenAPI 3.1 description of this API, generated from in-code comments.",
+        "operationId": "getOpenapi",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The OpenAPI document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "example": {
+                    "openapi": "3.1.0",
+                    "info": {
+                      "title": "skcal",
+                      "version": "1.0.0"
+                    },
+                    "paths": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "cloudflareAccess": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "CF_Authorization",
+        "description": "Cloudflare Access session. Access verifies the user via SSO at the edge, sets the `CF_Authorization` cookie, and injects the trusted `Cf-Access-Authenticated-User-Email` header that the API uses as identity."
+      },
+      "ingestToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Shared secret carried as `Authorization: Bearer <token>`, used only by the scale-ingest route."
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request body or parameters failed validation.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or incorrect ingest bearer token.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The requested resource belongs to another user.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "No matching resource owned by the caller.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "BadGateway": {
+        "description": "The upstream model call failed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "A required secret (model key or ingest token) is not configured.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "description": "Standard error envelope returned by every non-2xx response.",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Human-readable failure reason.",
+            "example": "weightKg must be 9-320 kg"
+          },
+          "detail": {
+            "type": "string",
+            "description": "Optional extra context, present on upstream failures.",
+            "example": "upstream model returned 500"
+          }
+        }
+      },
+      "Ok": {
+        "type": "object",
+        "description": "Minimal success acknowledgement for write operations.",
+        "additionalProperties": false,
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true,
+            "description": "Always true.",
+            "example": true
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "description": "Liveness probe payload.",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "service",
+          "ts"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "Always true when the Worker is responding.",
+            "example": true
+          },
+          "service": {
+            "type": "string",
+            "description": "Service identifier.",
+            "example": "skcal"
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server time when the probe was answered.",
+            "example": "2026-06-29T12:00:00.000Z"
+          }
+        }
+      },
+      "WhoAmI": {
+        "type": "object",
+        "description": "The Cloudflare Access identity resolved for this request.",
+        "additionalProperties": false,
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Verified account email, or `dev@local` in local development.",
+            "example": "nick@mintlify.com"
+          }
+        }
+      },
+      "WeightReading": {
+        "type": "object",
+        "description": "A single body-weight reading.",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "ts",
+          "weightKg",
+          "bodyFatPct",
+          "note",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Auto-increment weight-reading identifier.",
+            "example": 4821
+          },
+          "ts": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Weigh-in time as a Unix epoch in milliseconds.",
+            "example": 1782000000000
+          },
+          "weightKg": {
+            "type": "number",
+            "description": "Recorded body weight in kilograms.",
+            "example": 72.6
+          },
+          "bodyFatPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Body-fat percentage, if recorded (noisy on consumer scales).",
+            "example": 17.4
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free-text note attached to the reading.",
+            "example": "morning, fasted"
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the reading came from, e.g. `manual` or `scale`.",
+            "example": "manual"
+          }
+        }
+      },
+      "NewWeight": {
+        "type": "object",
+        "description": "Body for logging a manual weigh-in.",
+        "additionalProperties": false,
+        "required": [
+          "weightKg"
+        ],
+        "properties": {
+          "weightKg": {
+            "type": "number",
+            "minimum": 9,
+            "maximum": 320,
+            "description": "Body weight to log, in kilograms.",
+            "example": 72.6
+          },
+          "bodyFatPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 80,
+            "description": "Optional body-fat percentage for the weigh-in.",
+            "example": 17.4
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Optional note (truncated to 500 characters).",
+            "example": "morning, fasted"
+          }
+        }
+      },
+      "WeightNote": {
+        "type": "object",
+        "description": "Body for editing the note on an existing weigh-in.",
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "description": "New note text, or null to clear it.",
+            "example": "re-weighed after workout"
+          }
+        }
+      },
+      "Measurement": {
+        "type": "object",
+        "description": "A body-part circumference measurement.",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "ts",
+          "site",
+          "valueCm",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Auto-increment measurement identifier.",
+            "example": 318
+          },
+          "ts": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Measurement time as a Unix epoch in milliseconds.",
+            "example": 1782000000000
+          },
+          "site": {
+            "type": "string",
+            "description": "Body site, e.g. `waist`, `shoulders`, `arm_r`.",
+            "example": "waist"
+          },
+          "valueCm": {
+            "type": "number",
+            "description": "Measured circumference in centimetres.",
+            "example": 81.5
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the measurement came from.",
+            "example": "manual"
+          }
+        }
+      },
+      "NewMeasurement": {
+        "type": "object",
+        "description": "Body for recording a measurement.",
+        "additionalProperties": false,
+        "required": [
+          "site",
+          "valueCm"
+        ],
+        "properties": {
+          "site": {
+            "type": "string",
+            "description": "Body site identifier for the new measurement.",
+            "example": "waist"
+          },
+          "valueCm": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 300,
+            "description": "Circumference to record, in centimetres.",
+            "example": 81.5
+          }
+        }
+      },
+      "NutritionDay": {
+        "type": "object",
+        "description": "Rolled-up calorie and protein totals for one calendar day.",
+        "additionalProperties": false,
+        "required": [
+          "userEmail",
+          "date",
+          "kcal",
+          "proteinG",
+          "hitProtein",
+          "adherence"
+        ],
+        "properties": {
+          "userEmail": {
+            "type": "string",
+            "format": "email",
+            "description": "Owning account email.",
+            "example": "nick@mintlify.com"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Calendar day these totals cover (YYYY-MM-DD).",
+            "example": "2026-06-29"
+          },
+          "kcal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Total calories logged that day.",
+            "example": 2150
+          },
+          "proteinG": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Total protein in grams logged that day.",
+            "example": 168
+          },
+          "hitProtein": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the day's protein target was met.",
+            "example": true
+          },
+          "adherence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "under",
+              "on",
+              "over",
+              null
+            ],
+            "description": "Calorie adherence bucket for the day.",
+            "example": "on"
+          }
+        }
+      },
+      "NutritionDayInput": {
+        "type": "object",
+        "description": "Body for upserting a day's totals directly.",
+        "additionalProperties": false,
+        "required": [
+          "date"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Calendar day to upsert (YYYY-MM-DD).",
+            "example": "2026-06-29"
+          },
+          "kcal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 20000,
+            "description": "Total calories to set for the day.",
+            "example": 2150
+          },
+          "proteinG": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Total protein in grams to set for the day.",
+            "example": 168
+          },
+          "hitProtein": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether to mark the protein target as met.",
+            "example": true
+          },
+          "adherence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "under",
+              "on",
+              "over",
+              null
+            ],
+            "description": "Calorie adherence bucket to set.",
+            "example": "on"
+          }
+        }
+      },
+      "Targets": {
+        "type": "object",
+        "description": "A user's goals. Created with defaults on first read.",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "goalWeightKg",
+          "startWeightKg",
+          "targetDate",
+          "startDate",
+          "dailyKcalTarget",
+          "proteinTargetG"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Auto-increment targets-row identifier.",
+            "example": 1
+          },
+          "goalWeightKg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Target body weight in kilograms.",
+            "example": 70
+          },
+          "startWeightKg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Starting body weight in kilograms.",
+            "example": 78.4
+          },
+          "targetDate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Goal date as a Unix epoch in milliseconds.",
+            "example": 1790000000000
+          },
+          "startDate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Plan start date as a Unix epoch in milliseconds.",
+            "example": 1782000000000
+          },
+          "dailyKcalTarget": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Daily calorie target.",
+            "example": 2100
+          },
+          "proteinTargetG": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Daily protein target in grams.",
+            "example": 170
+          }
+        }
+      },
+      "TargetsInput": {
+        "type": "object",
+        "description": "Partial update to a user's targets; omitted fields are left unchanged.",
+        "additionalProperties": false,
+        "properties": {
+          "goalWeightKg": {
+            "type": "number",
+            "description": "New target body weight in kilograms.",
+            "example": 70
+          },
+          "startWeightKg": {
+            "type": "number",
+            "description": "New starting body weight in kilograms.",
+            "example": 78.4
+          },
+          "dailyKcalTarget": {
+            "type": "integer",
+            "description": "New daily calorie target.",
+            "example": 2100
+          },
+          "proteinTargetG": {
+            "type": "integer",
+            "description": "New daily protein target in grams.",
+            "example": 170
+          },
+          "targetDate": {
+            "type": "integer",
+            "format": "int64",
+            "description": "New goal date as a Unix epoch in milliseconds.",
+            "example": 1790000000000
+          }
+        }
+      },
+      "TrendPoint": {
+        "type": "object",
+        "description": "One point on the weight trend line.",
+        "additionalProperties": false,
+        "required": [
+          "ts",
+          "kg"
+        ],
+        "properties": {
+          "ts": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Trend-point time as a Unix epoch in milliseconds.",
+            "example": 1782000000000
+          },
+          "kg": {
+            "type": "number",
+            "description": "Trend-point body weight in kilograms.",
+            "example": 72.6
+          }
+        }
+      },
+      "WeightSummary": {
+        "type": "object",
+        "description": "Latest-weight summary block of the dashboard.",
+        "additionalProperties": false,
+        "required": [
+          "latestKg",
+          "weeklyAvgKg",
+          "bodyFatPct",
+          "note",
+          "trend"
+        ],
+        "properties": {
+          "latestKg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Most recent weight in kilograms.",
+            "example": 72.6
+          },
+          "weeklyAvgKg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Mean weight over the last seven days.",
+            "example": 72.9
+          },
+          "bodyFatPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Body-fat percentage from the latest reading.",
+            "example": 17.4
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Note on the latest reading.",
+            "example": "morning, fasted"
+          },
+          "trend": {
+            "type": "array",
+            "description": "Chronological weight trend (oldest first).",
+            "example": [
+              {
+                "ts": 1781000000000,
+                "kg": 73.1
+              },
+              {
+                "ts": 1782000000000,
+                "kg": 72.6
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TrendPoint"
+            }
+          }
+        }
+      },
+      "MeasurementLatest": {
+        "type": "object",
+        "description": "Most recent value for one measurement site.",
+        "additionalProperties": false,
+        "required": [
+          "site",
+          "valueCm",
+          "ts"
+        ],
+        "properties": {
+          "site": {
+            "type": "string",
+            "description": "Body site of this latest measurement.",
+            "example": "waist"
+          },
+          "valueCm": {
+            "type": "number",
+            "description": "Latest circumference in centimetres.",
+            "example": 81.5
+          },
+          "ts": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Time of the latest measurement as a Unix epoch in milliseconds.",
+            "example": 1782000000000
+          }
+        }
+      },
+      "DashboardData": {
+        "type": "object",
+        "description": "Everything the home screen needs in a single response.",
+        "additionalProperties": false,
+        "required": [
+          "weight",
+          "targets",
+          "measurementsLatest",
+          "shoulderToWaist",
+          "nutritionToday"
+        ],
+        "properties": {
+          "weight": {
+            "type": "object",
+            "$ref": "#/components/schemas/WeightSummary",
+            "description": "Latest-weight summary for the dashboard card.",
+            "example": {
+              "latestKg": 72.6,
+              "weeklyAvgKg": 72.9,
+              "bodyFatPct": 17.4,
+              "note": "morning, fasted",
+              "trend": [
+                {
+                  "ts": 1782000000000,
+                  "kg": 72.6
+                }
+              ]
+            }
+          },
+          "targets": {
+            "type": "object",
+            "$ref": "#/components/schemas/Targets",
+            "description": "The user's current goals shown on the dashboard.",
+            "example": {
+              "id": 1,
+              "goalWeightKg": 70,
+              "startWeightKg": 78.4,
+              "targetDate": 1790000000000,
+              "startDate": 1782000000000,
+              "dailyKcalTarget": 2100,
+              "proteinTargetG": 170
+            }
+          },
+          "measurementsLatest": {
+            "type": "array",
+            "description": "Latest value per measured site.",
+            "example": [
+              {
+                "site": "waist",
+                "valueCm": 81.5,
+                "ts": 1782000000000
+              },
+              {
+                "site": "shoulders",
+                "valueCm": 122,
+                "ts": 1782000000000
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/MeasurementLatest"
+            }
+          },
+          "shoulderToWaist": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Shoulder-to-waist ratio (V-taper metric).",
+            "example": 1.497
+          },
+          "nutritionToday": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NutritionDay"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Today's nutrition totals, or null if nothing is logged.",
+            "example": {
+              "userEmail": "nick@mintlify.com",
+              "date": "2026-06-29",
+              "kcal": 2150,
+              "proteinG": 168,
+              "hitProtein": true,
+              "adherence": "on"
+            }
+          }
+        }
+      },
+      "IngestWeight": {
+        "type": "object",
+        "description": "Body for a machine-submitted scale reading.",
+        "additionalProperties": false,
+        "required": [
+          "weightKg"
+        ],
+        "properties": {
+          "weightKg": {
+            "type": "number",
+            "minimum": 9,
+            "maximum": 320,
+            "description": "Scale-reported body weight in kilograms.",
+            "example": 72.6
+          },
+          "bodyFatPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Optional scale-reported body-fat percentage.",
+            "example": 17.4
+          },
+          "userEmail": {
+            "type": "string",
+            "format": "email",
+            "description": "Owner to attribute the reading to; falls back to the configured ingest user.",
+            "example": "nick@mintlify.com"
+          },
+          "raw": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Opaque raw payload from the scale, stored for debugging.",
+            "example": {
+              "device": "withings-body+",
+              "battery": 82
+            }
+          }
+        }
+      },
+      "AnalyzedItem": {
+        "type": "object",
+        "description": "One food item estimated by the model.",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "kcal",
+          "proteinG"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Estimated food item name.",
+            "example": "grilled chicken breast"
+          },
+          "kcal": {
+            "type": "integer",
+            "description": "Estimated calories for the portion.",
+            "example": 284
+          },
+          "proteinG": {
+            "type": "number",
+            "description": "Estimated protein in grams.",
+            "example": 53.4
+          }
+        }
+      },
+      "MealAnalysis": {
+        "type": "object",
+        "description": "Result of logging a meal from photos or a text description.",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "mealId",
+          "items",
+          "totalKcal",
+          "totalProteinG",
+          "note",
+          "photoKeys"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true,
+            "description": "Always true once analysis succeeds.",
+            "example": true
+          },
+          "mealId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Identifier of the created meal.",
+            "example": "3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071"
+          },
+          "items": {
+            "type": "array",
+            "description": "Estimated food items.",
+            "example": [
+              {
+                "name": "grilled chicken breast",
+                "kcal": 284,
+                "proteinG": 53.4
+              },
+              {
+                "name": "toum",
+                "kcal": 90,
+                "proteinG": 0.4
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AnalyzedItem"
+            }
+          },
+          "totalKcal": {
+            "type": "integer",
+            "description": "Summed calories across items.",
+            "example": 374
+          },
+          "totalProteinG": {
+            "type": "integer",
+            "description": "Summed protein in grams across items.",
+            "example": 54
+          },
+          "note": {
+            "type": "string",
+            "description": "The model's one-line assumptions note.",
+            "example": "assumed a single chicken breast and one tablespoon of toum"
+          },
+          "photoKeys": {
+            "type": "array",
+            "description": "R2 object keys of stored photos (empty for text descriptions).",
+            "example": [
+              "nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071"
+            ],
+            "items": {
+              "type": "string",
+              "example": "nick@mintlify.com/2026-06-29/3f8b1c2a"
+            }
+          }
+        }
+      },
+      "DescribeMeal": {
+        "type": "object",
+        "description": "Body for logging a meal from a freeform text description.",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "What you ate, in your own words. State anything you skipped so it is excluded.",
+            "example": "two scrambled eggs, a slice of sourdough, and black coffee"
+          }
+        }
+      },
+      "LoggedItem": {
+        "type": "object",
+        "description": "A persisted food item within a meal.",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "kcal",
+          "proteinG"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Auto-increment food-item identifier.",
+            "example": 9012
+          },
+          "name": {
+            "type": "string",
+            "description": "Persisted food item name.",
+            "example": "grilled chicken breast"
+          },
+          "kcal": {
+            "type": "integer",
+            "description": "Stored calories for the portion.",
+            "example": 284
+          },
+          "proteinG": {
+            "type": "number",
+            "description": "Stored protein in grams.",
+            "example": 53.4
+          }
+        }
+      },
+      "Meal": {
+        "type": "object",
+        "description": "A logged meal with its food items.",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "note",
+          "createdAt",
+          "photoKeys",
+          "items"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Meal identifier.",
+            "example": "3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Meal note or the original text description.",
+            "example": "lunch at the office"
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Meal creation time as a Unix epoch in milliseconds.",
+            "example": 1782000000000
+          },
+          "photoKeys": {
+            "type": "array",
+            "description": "R2 object keys of the meal's photos.",
+            "example": [
+              "nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071"
+            ],
+            "items": {
+              "type": "string",
+              "example": "nick@mintlify.com/2026-06-29/3f8b1c2a-5d6e"
+            }
+          },
+          "items": {
+            "type": "array",
+            "description": "Food items in the meal.",
+            "example": [
+              {
+                "id": 9012,
+                "name": "grilled chicken breast",
+                "kcal": 284,
+                "proteinG": 53.4
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/LoggedItem"
+            }
+          }
+        }
+      },
+      "CoachMessage": {
+        "type": "object",
+        "description": "One turn in the coach conversation.",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "description": "Who authored the turn — the user or the coach.",
+            "example": "user"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "The message text (truncated to 2000 characters).",
+            "example": "what do you think of me eating a meat pie for breakfast?"
+          }
+        }
+      },
+      "CoachRequest": {
+        "type": "object",
+        "description": "Body for asking the coach; the client sends the full running history each turn.",
+        "additionalProperties": false,
+        "required": [
+          "messages"
+        ],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "Conversation history, oldest message first (1–20 turns).",
+            "example": [
+              {
+                "role": "user",
+                "content": "what do you think of me eating a meat pie for breakfast? how's that gonna impact my plan?"
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CoachMessage"
+            }
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Optional calendar day (YYYY-MM-DD) whose logged intake grounds the reply; the server's current UTC date is used when omitted.",
+            "example": "2026-06-30"
+          }
+        }
+      },
+      "CoachReply": {
+        "type": "object",
+        "description": "The coach's plain-text reply, grounded in the caller's targets, intake, and weight trend.",
+        "additionalProperties": false,
+        "required": [
+          "reply"
+        ],
+        "properties": {
+          "reply": {
+            "type": "string",
+            "description": "The coach's answer — an estimate, a budget fit, a blunt verdict, and a better option if it's a poor fit.",
+            "example": "A meat pie runs about 550 kcal and 15 g protein. That eats a big chunk of your 1850 kcal budget for little protein — skip it. Have three eggs and Greek yogurt instead to hit protein without blowing the day."
+          }
+        }
+      }
+    }
+  }
+}
