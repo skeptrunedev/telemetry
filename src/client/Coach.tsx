@@ -11,6 +11,76 @@ import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { api, todayLocal } from "./api";
 import type { CoachMessage, CoachConversation } from "./api";
 
+// ---- Shared conversation history (lives at the app level so the global nav
+// drawer and the coach view both read/drive the same state) -----------------
+export type CoachSession = { key: string; convId: string | null; messages: CoachMessage[] };
+
+export function useCoachHistory() {
+  const [conversations, setConversations] = useState<CoachConversation[]>([]);
+  const [search, setSearch] = useState("");
+  const nonceRef = useRef(0);
+  const [session, setSession] = useState<CoachSession>({ key: "new-0", convId: null, messages: [] });
+
+  const load = useCallback(async () => {
+    try {
+      setConversations(await api.listConversations());
+    } catch {
+      /* history is best-effort */
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const newChat = useCallback(() => {
+    nonceRef.current += 1;
+    setSession({ key: `new-${nonceRef.current}`, convId: null, messages: [] });
+  }, []);
+  const openConversation = useCallback((conv: CoachConversation) => {
+    setSession({ key: conv.id, convId: conv.id, messages: conv.messages });
+  }, []);
+  const onPersisted = useCallback(
+    (id: string) => {
+      setSession((s) => (s.convId ? s : { ...s, convId: id }));
+      load();
+    },
+    [load],
+  );
+  const removeConversation = useCallback(
+    async (id: string) => {
+      try {
+        await api.deleteConversation(id);
+      } catch {
+        /* ignore */
+      }
+      if (session.convId === id) newChat();
+      else load();
+    },
+    [session.convId, newChat, load],
+  );
+
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? conversations.filter(
+        (c) => c.title.toLowerCase().includes(q) || c.messages.some((m) => m.content.toLowerCase().includes(q)),
+      )
+    : conversations;
+
+  return {
+    conversations: filtered,
+    activeId: session.convId,
+    session,
+    search,
+    setSearch,
+    hasQuery: !!q,
+    newChat,
+    openConversation,
+    onPersisted,
+    removeConversation,
+  };
+}
+export type CoachHistory = ReturnType<typeof useCoachHistory>;
+
 const MarkdownText = () => <MarkdownTextPrimitive />;
 
 function UserMessage() {
@@ -52,10 +122,10 @@ function Composer() {
   );
 }
 
-// One live thread. Seeded from a saved conversation's messages (or empty for a
-// new chat); streams from the coach endpoint and persists each completed turn.
-// Remounted (via `key`) whenever the selected conversation changes.
-function ChatPane({
+// The live coach thread. Seeded from a saved conversation (or empty for a new
+// chat); streams from the coach endpoint and persists each completed turn.
+// The parent applies `key={session.key}` so switching threads remounts it.
+export function CoachThread({
   initialMessages,
   initialConversationId,
   onPersisted,
@@ -94,7 +164,6 @@ function ChatPane({
           yield { content: [{ type: "text", text }] };
         }
 
-        // Persist the completed turn (new user message + assistant reply).
         const lastUser = history[history.length - 1];
         const reply = text.trim();
         if (lastUser?.role === "user" && reply) {
@@ -124,7 +193,6 @@ function ChatPane({
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="coach">
         <ThreadPrimitive.Viewport className="chat-list" autoScroll>
-          {/* Home state: greeting centered in the viewport, composer docked below. */}
           <ThreadPrimitive.Empty>
             <div className="chat-welcome">
               <p className="chat-welcome-title">Ask before you eat.</p>
@@ -141,136 +209,5 @@ function ChatPane({
         </ThreadPrimitive.Viewport>
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
-  );
-}
-
-export function Coach() {
-  const [conversations, setConversations] = useState<CoachConversation[]>([]);
-  const [search, setSearch] = useState("");
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const nonceRef = useRef(0);
-  const [session, setSession] = useState<{ key: string; convId: string | null; messages: CoachMessage[] }>({
-    key: "new-0",
-    convId: null,
-    messages: [],
-  });
-
-  const load = useCallback(async () => {
-    try {
-      setConversations(await api.listConversations());
-    } catch {
-      /* ignore — history is best-effort */
-    }
-  }, []);
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const newChat = () => {
-    nonceRef.current += 1;
-    setSession({ key: `new-${nonceRef.current}`, convId: null, messages: [] });
-    setDrawerOpen(false);
-  };
-  const openConversation = (conv: CoachConversation) => {
-    setSession({ key: conv.id, convId: conv.id, messages: conv.messages });
-    setDrawerOpen(false);
-  };
-  const onPersisted = (id: string) => {
-    // Highlight the freshly-saved new chat without remounting the live thread.
-    setSession((s) => (s.convId ? s : { ...s, convId: id }));
-    load();
-  };
-  const removeConversation = async (id: string) => {
-    try {
-      await api.deleteConversation(id);
-    } catch {
-      /* ignore */
-    }
-    if (session.convId === id) newChat();
-    else load();
-  };
-
-  const q = search.trim().toLowerCase();
-  const filtered = q
-    ? conversations.filter(
-        (c) =>
-          c.title.toLowerCase().includes(q) || c.messages.some((m) => m.content.toLowerCase().includes(q)),
-      )
-    : conversations;
-  const activeTitle = conversations.find((c) => c.id === session.convId)?.title ?? "New chat";
-
-  return (
-    <div className="coach-shell">
-      {drawerOpen && <div className="coach-backdrop" onClick={() => setDrawerOpen(false)} />}
-
-      <aside className={`coach-sidebar ${drawerOpen ? "open" : ""}`}>
-        <div className="coach-sidebar-head">
-          <button className="coach-newchat" onClick={newChat}>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M10 4v12M4 10h12" />
-            </svg>
-            New chat
-          </button>
-          <button className="coach-icon-btn coach-close" onClick={() => setDrawerOpen(false)} aria-label="Close">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M5 5l10 10M15 5L5 15" />
-            </svg>
-          </button>
-        </div>
-
-        <input
-          className="coach-search"
-          placeholder="Search chats"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-
-        <div className="coach-recents-label">Recents</div>
-        <nav className="coach-recents">
-          {filtered.length === 0 && (
-            <p className="meta coach-empty-list">{q ? "No matches" : "No conversations yet"}</p>
-          )}
-          {filtered.map((c) => (
-            <div key={c.id} className={`coach-recent ${session.convId === c.id ? "active" : ""}`}>
-              <button className="coach-recent-title" onClick={() => openConversation(c)} title={c.title}>
-                {c.title}
-              </button>
-              <button
-                className="coach-icon-btn coach-recent-del"
-                onClick={() => removeConversation(c.id)}
-                aria-label="Delete conversation"
-              >
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M4 6h12M8 6V4h4v2M6 6l.7 10h6.6L15 6" />
-                </svg>
-              </button>
-            </div>
-          ))}
-        </nav>
-      </aside>
-
-      <div className="coach-main">
-        <div className="coach-topbar">
-          <button className="coach-icon-btn" onClick={() => setDrawerOpen(true)} aria-label="Conversation history">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M3 5h14M3 10h14M3 15h14" />
-            </svg>
-          </button>
-          <span className="coach-topbar-title">{activeTitle}</span>
-          <button className="coach-icon-btn" onClick={newChat} aria-label="New chat">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M10 4v12M4 10h12" />
-            </svg>
-          </button>
-        </div>
-
-        <ChatPane
-          key={session.key}
-          initialMessages={session.messages}
-          initialConversationId={session.convId}
-          onPersisted={onPersisted}
-        />
-      </div>
-    </div>
   );
 }

@@ -6,9 +6,10 @@ import { api, todayLocal } from "./api";
 import { Dashboard } from "./Dashboard";
 import { AreaChart } from "./Chart";
 import { AddSheet } from "./AddSheet";
-import { BottomNav, type View } from "./BottomNav";
+import { type View } from "./BottomNav";
+import { NavDrawer } from "./NavDrawer";
 import { WeightHistory } from "./WeightHistory";
-import { Coach } from "./Coach";
+import { useCoachHistory, CoachThread } from "./Coach";
 import { SignIn } from "./SignIn";
 import { useSession, signOut } from "./auth-client";
 
@@ -100,7 +101,8 @@ export default function App() {
   const [view, setView] = useState<View>(readView);
   const [adding, setAdding] = useState(false);
   const [tick, setTick] = useState(0);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const coach = useCoachHistory();
   const viewRef = useRef(view);
   viewRef.current = view;
 
@@ -117,6 +119,7 @@ export default function App() {
   // remember where we were scrolled, cross-fade, and start the new view at top.
   const navigate = useCallback(
     (next: View) => {
+      setDrawerOpen(false);
       if (next === viewRef.current) return;
       history.replaceState({ view: viewRef.current, scroll: window.scrollY } satisfies HistoryState, "");
       history.pushState({ view: next, scroll: 0 } satisfies HistoryState, "", `#/${next}`);
@@ -177,11 +180,11 @@ export default function App() {
     if (email) load();
   }, [email, load]);
   useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrawerOpen(false);
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [menuOpen]);
+  }, [drawerOpen]);
 
   // Initial session check: hold a blank frame rather than flashing the sign-in
   // screen before we know whether there's a session.
@@ -189,56 +192,53 @@ export default function App() {
   // Signed out → the sign-in screen (Google + magic link).
   if (!email) return <SignIn />;
 
+  const signOutAndReload = async () => {
+    await signOut();
+    // Drop any signed-in view state and re-render the gate.
+    window.location.reload();
+  };
+
   return (
     <div className="app">
-      <header className="topbar">
-        <span className="brand">skcal</span>
-        {email && (
-          <div className="account">
-            <button
-              className="avatar"
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              aria-label={`Account: ${email}`}
-              title={email}
-            >
-              {email[0]}
-            </button>
-            {menuOpen && (
-              <>
-                <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
-                <div className="menu" role="menu">
-                  <p className="menu-email">{email}</p>
-                  <button
-                    type="button"
-                    className="menu-item"
-                    role="menuitem"
-                    onClick={async () => {
-                      setMenuOpen(false);
-                      await signOut();
-                      // Drop any signed-in view state and re-render the gate.
-                      window.location.reload();
-                    }}
-                  >
-                    Sign out
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </header>
+      <NavDrawer
+        view={view}
+        onNavigate={navigate}
+        onAdd={() => {
+          setDrawerOpen(false);
+          setAdding(true);
+        }}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        email={email}
+        onSignOut={signOutAndReload}
+        coach={coach}
+      />
 
-      <main className="shell">
-        {error && <p className="form-err">{error}</p>}
-        {!data && !error && <p className="meta">loading…</p>}
-        {data && view === "today" && <Dashboard data={data} refreshKey={tick} onChange={reloadAll} />}
-        {data && view === "trends" && <Trends data={data} />}
-        {data && view === "coach" && <Coach />}
-      </main>
+      <div className="app-body">
+        <header className="topbar">
+          <button className="nav-icon-btn topbar-menu" onClick={() => setDrawerOpen(true)} aria-label="Menu">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <path d="M3 5h14M3 10h14M3 15h14" />
+            </svg>
+          </button>
+          <span className="topbar-title">{view === "coach" ? "Coach" : view === "trends" ? "Trends" : "Today"}</span>
+        </header>
 
-      <BottomNav view={view} onChange={navigate} onAdd={() => setAdding(true)} />
+        <main className={`shell ${view === "coach" ? "shell-coach" : ""}`}>
+          {error && <p className="form-err">{error}</p>}
+          {!data && !error && <p className="meta">loading…</p>}
+          {data && view === "today" && <Dashboard data={data} refreshKey={tick} onChange={reloadAll} />}
+          {data && view === "trends" && <Trends data={data} />}
+          {data && view === "coach" && (
+            <CoachThread
+              key={coach.session.key}
+              initialMessages={coach.session.messages}
+              initialConversationId={coach.session.convId}
+              onPersisted={coach.onPersisted}
+            />
+          )}
+        </main>
+      </div>
 
       {adding && (
         <AddSheet
