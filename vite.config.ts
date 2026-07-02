@@ -16,7 +16,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         // Don't let the SPA navigation-fallback hijack real backend routes:
         // browser navigations to these must hit the Worker, not index.html.
-        navigateFallbackDenylist: [/^\/api\//, /^\/openapi\.json$/],
+        navigateFallbackDenylist: [/^\/api\//, /^\/openapi\.json$/, /^\/privacy$/, /^\/terms$/, /^\/mcp$/],
       },
       manifest: {
         name: "skcal",

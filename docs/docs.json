@@ -61,6 +61,16 @@
   "footer": {
     "socials": {
       "github": "https://github.com/skeptrunedev/telemetry"
-    }
+    },
+    "links": [
+      {
+        "header": "skcal",
+        "items": [
+          { "label": "App", "href": "https://skcal.skeptrune.com" },
+          { "label": "Privacy", "href": "https://skcal.skeptrune.com/privacy" },
+          { "label": "Terms", "href": "https://skcal.skeptrune.com/terms" }
+        ]
+      }
+    ]
   }
 }

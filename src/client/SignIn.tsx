@@ -85,6 +85,9 @@ export function SignIn() {
         )}
 
         {error && <p className="form-err">{error}</p>}
+        <p className="signin-legal">
+          <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+        </p>
       </div>
     </div>
   );
