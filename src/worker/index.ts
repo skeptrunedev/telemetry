@@ -2056,6 +2056,16 @@ app.all("/mcp", async (c) => {
   return transport.handleRequest(c);
 });
 
+// Kill-switch service worker for skcal itself. The app no longer ships a PWA;
+// serving this at /sw.js makes any worker still registered on a visitor's
+// browser (from the old PWA) unregister itself, drop its caches, and reload —
+// after which the app is always served fresh from the network.
+app.get("/sw.js", () =>
+  new Response(KILL_SERVICE_WORKER, {
+    headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache, no-store, must-revalidate" },
+  }),
+);
+
 // ---- SPA fallback ----------------------------------------------------------
 // Cache policy that makes redeploys take effect without a hard refresh:
 //   - the service worker + the HTML shell are always revalidated (no-cache), so

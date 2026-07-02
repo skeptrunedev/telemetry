@@ -1,25 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import "./index.css";
 
-// Keep the installed PWA fresh after a deploy: register the service worker,
-// poll for a new version (on load, every 30 min, and when the tab regains
-// focus), and apply + reload as soon as one is found.
-const updateSW = registerSW({
-  immediate: true,
-  onRegisteredSW(_swUrl, registration) {
-    if (!registration) return;
-    setInterval(() => registration.update().catch(() => {}), 30 * 60 * 1000);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") registration.update().catch(() => {});
-    });
-  },
-  onNeedRefresh() {
-    updateSW(true);
-  },
-});
+// No service worker: the app is always served fresh from the network. A stale
+// SW previously served an outdated HTML shell pointing at 404'd asset hashes,
+// which broke styling after deploys. The Worker serves /sw.js as a kill-switch
+// so any previously-registered worker unregisters itself and reloads.
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
