@@ -255,6 +255,48 @@ a {
   text-transform: uppercase;
   margin: 0;
 }
+.foodlog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+}
+.daynav {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+.daynav-btn {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.daynav-btn:hover:not(:disabled) {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.06);
+}
+.daynav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.daynav-btn svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.daynav-label {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--fg);
+  min-width: 4.5rem;
+  text-align: center;
+}
 .status {
   font-family: var(--mono);
   font-size: 0.62rem;
