@@ -1442,6 +1442,40 @@ a {
   font-size: 0.82rem;
   letter-spacing: 0.02em;
 }
+/* Coach tool-call chip (assistant-ui tool part) */
+.tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.15rem 0;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--input-bg);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.tool-chip.done {
+  color: var(--fg);
+}
+.tool-chip-icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex: none;
+}
+.tool-chip.done .tool-chip-icon {
+  color: var(--accent);
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .chat-input-row {
   /* assistant-ui ViewportFooter: sticks to the bottom of the scroll area. */
   position: sticky;

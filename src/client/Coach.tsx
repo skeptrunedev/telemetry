@@ -6,9 +6,10 @@ import {
   MessagePrimitive,
   ComposerPrimitive,
   type ChatModelAdapter,
+  type ChatModelRunResult,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Square, Check, Loader2 } from "lucide-react";
 import { api, todayLocal } from "./api";
 import type { CoachMessage, CoachConversation } from "./api";
 
@@ -84,6 +85,23 @@ export type CoachHistory = ReturnType<typeof useCoachHistory>;
 
 const MarkdownText = () => <MarkdownTextPrimitive />;
 
+const TOOL_LABELS: Record<string, string> = {
+  list_food_log: "Reading food log",
+  move_meal: "Moving meal",
+  move_food_item: "Moving food",
+};
+
+// Compact chip for a coach tool call — spinner while running, check when done.
+function ToolFallback({ toolName, result }: { toolName: string; result?: unknown }) {
+  const done = result !== undefined;
+  return (
+    <div className={`tool-chip ${done ? "done" : "running"}`}>
+      {done ? <Check className="tool-chip-icon" /> : <Loader2 className="tool-chip-icon spin" />}
+      <span>{TOOL_LABELS[toolName] ?? toolName}</span>
+    </div>
+  );
+}
+
 function UserMessage() {
   return (
     <MessagePrimitive.Root className="bubble bubble-user">
@@ -95,7 +113,7 @@ function UserMessage() {
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="bubble bubble-assistant">
-      <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+      <MessagePrimitive.Parts components={{ Text: MarkdownText, tools: { Fallback: ToolFallback } }} />
     </MessagePrimitive.Root>
   );
 }
@@ -153,16 +171,68 @@ export function CoachThread({
         const reader = res.body?.getReader();
         if (!reader) throw new Error("coach stream unavailable");
         const decoder = new TextDecoder();
-        let text = "";
+
+        // Parse the NDJSON event stream into ordered assistant-ui content parts:
+        // text parts accumulate; each tool call becomes a "tool-call" part whose
+        // result is filled in when it arrives.
+        type Part =
+          | { type: "text"; text: string }
+          | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown>; argsText: string; result?: unknown };
+        const parts: Part[] = [];
+        let cur: { type: "text"; text: string } | null = null;
+        const snapshot = (): ChatModelRunResult =>
+          ({ content: parts.map((p) => ({ ...p })) }) as unknown as ChatModelRunResult;
+        const handle = (line: string) => {
+          const s = line.trim();
+          if (!s) return;
+          let ev: { t: string; v?: string; id?: string; name?: string; args?: unknown; result?: unknown };
+          try {
+            ev = JSON.parse(s);
+          } catch {
+            return;
+          }
+          if (ev.t === "text" && ev.v) {
+            if (!cur) {
+              cur = { type: "text", text: "" };
+              parts.push(cur);
+            }
+            cur.text += ev.v;
+          } else if (ev.t === "tool") {
+            cur = null;
+            parts.push({
+              type: "tool-call",
+              toolCallId: String(ev.id),
+              toolName: String(ev.name),
+              args: (ev.args ?? {}) as Record<string, unknown>,
+              argsText: JSON.stringify(ev.args ?? {}),
+            });
+          } else if (ev.t === "result") {
+            const p = parts.find((x) => x.type === "tool-call" && x.toolCallId === String(ev.id));
+            if (p && p.type === "tool-call") p.result = ev.result;
+          }
+        };
+
+        let buf = "";
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
-          text += decoder.decode(value, { stream: true });
-          yield { content: [{ type: "text", text }] };
+          buf += decoder.decode(value, { stream: true });
+          let nl: number;
+          while ((nl = buf.indexOf("\n")) >= 0) {
+            handle(buf.slice(0, nl));
+            buf = buf.slice(nl + 1);
+          }
+          yield snapshot();
         }
+        if (buf.trim()) handle(buf);
+        yield snapshot();
 
         const lastUser = history[history.length - 1];
-        const reply = text.trim();
+        const reply = parts
+          .filter((p): p is { type: "text"; text: string } => p.type === "text")
+          .map((p) => p.text)
+          .join("\n")
+          .trim();
         if (lastUser?.role === "user" && reply) {
           const turn: CoachMessage[] = [lastUser, { role: "assistant", content: reply }];
           try {

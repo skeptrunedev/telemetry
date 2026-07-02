@@ -1365,16 +1365,19 @@ app.post("/api/coach/stream", async (c) => {
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
   const system =
     (await buildCoachSystem(c, email, today)) +
-    `\n\nTools: you can view and reorganize the food log with list_food_log, move_meal, and move_food_item. Today's date is ${today}. When the user asks to move, re-date, or fix which day something was logged on, first list_food_log for the relevant day to find the exact meal/item, then move it, then confirm in one short sentence what you changed (item + from/to day).`;
+    `\n\nTools: you can view and reorganize the food log with list_food_log, move_meal, and move_food_item. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
+  // NDJSON event protocol so the client renders tool calls as real parts rather
+  // than mashing each turn's text together: {t:"text",v} / {t:"tool"} / {t:"result"}.
   const convo: Anthropic.MessageParam[] = messages.map((m) => ({ role: m.role, content: m.content }));
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      const send = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
       try {
         // Agentic loop: stream each turn's text; if the model calls tools,
-        // execute them, feed back the results, and continue until it stops.
+        // emit tool + result events, then continue until it stops.
         for (let turn = 0; turn < 6; turn++) {
           const msgStream = anthropic.messages.stream({
             model: "claude-opus-4-8",
@@ -1385,7 +1388,7 @@ app.post("/api/coach/stream", async (c) => {
           });
           for await (const event of msgStream) {
             if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-              controller.enqueue(encoder.encode(event.delta.text));
+              send({ t: "text", v: event.delta.text });
             }
           }
           const final = await msgStream.finalMessage();
@@ -1394,7 +1397,9 @@ app.post("/api/coach/stream", async (c) => {
           convo.push({ role: "assistant", content: final.content });
           const results: Anthropic.ToolResultBlockParam[] = [];
           for (const tu of toolUses) {
+            send({ t: "tool", id: tu.id, name: tu.name, args: tu.input });
             const out = await executeCoachTool(c, email, tu.name, tu.input as Record<string, unknown>, today);
+            send({ t: "result", id: tu.id, result: out });
             results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out) });
           }
           convo.push({ role: "user", content: results });
@@ -1408,7 +1413,7 @@ app.post("/api/coach/stream", async (c) => {
 
   return new Response(stream, {
     headers: {
-      "content-type": "text/plain; charset=utf-8",
+      "content-type": "application/x-ndjson; charset=utf-8",
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
     },
