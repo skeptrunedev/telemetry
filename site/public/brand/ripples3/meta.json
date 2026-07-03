@@ -1,0 +1,126 @@
+[
+ {
+  "file": "r3-01-arcs-s9162.svg",
+  "family": "arcs",
+  "seed": 9162,
+  "n": "2",
+  "sweep": "138",
+  "stagger": "85.0"
+ },
+ {
+  "file": "r3-02-arcs-s3311.svg",
+  "family": "arcs",
+  "seed": 3311,
+  "n": "2",
+  "sweep": "222",
+  "stagger": "0.0"
+ },
+ {
+  "file": "r3-03-arcs-s8439.svg",
+  "family": "arcs",
+  "seed": 8439,
+  "n": "3",
+  "sweep": "222",
+  "stagger": "85.0"
+ },
+ {
+  "file": "r3-04-arcs-s7221.svg",
+  "family": "arcs",
+  "seed": 7221,
+  "n": "2",
+  "sweep": "138",
+  "stagger": "0.0"
+ },
+ {
+  "file": "r3-05-spiral-s8194.svg",
+  "family": "spiral",
+  "seed": 8194,
+  "quarters": "4",
+  "shrink": "1.272"
+ },
+ {
+  "file": "r3-06-spiral-s7864.svg",
+  "family": "spiral",
+  "seed": 7864,
+  "quarters": "6",
+  "shrink": "1.618"
+ },
+ {
+  "file": "r3-07-spiral-s1995.svg",
+  "family": "spiral",
+  "seed": 1995,
+  "quarters": "4",
+  "shrink": "1.272"
+ },
+ {
+  "file": "r3-08-spiral-s6045.svg",
+  "family": "spiral",
+  "seed": 6045,
+  "quarters": "5",
+  "shrink": "1.272"
+ },
+ {
+  "file": "r3-09-crescent-s5039.svg",
+  "family": "crescent",
+  "seed": 5039,
+  "ratio": "1.272",
+  "off": "59.3",
+  "ang": "90"
+ },
+ {
+  "file": "r3-10-crescent-s7221.svg",
+  "family": "crescent",
+  "seed": 7221,
+  "ratio": "1.272",
+  "off": "59.3",
+  "ang": "45"
+ },
+ {
+  "file": "r3-11-crescent-s9042.svg",
+  "family": "crescent",
+  "seed": 9042,
+  "ratio": "1.618",
+  "off": "36.7",
+  "ang": "315"
+ },
+ {
+  "file": "r3-12-crescent-s6737.svg",
+  "family": "crescent",
+  "seed": 6737,
+  "ratio": "1.618",
+  "off": "36.7",
+  "ang": "315"
+ },
+ {
+  "file": "r3-13-crop-s7142.svg",
+  "family": "crop",
+  "seed": 7142,
+  "corner": "256,256",
+  "step": "1.272",
+  "base": "134"
+ },
+ {
+  "file": "r3-14-crop-s1844.svg",
+  "family": "crop",
+  "seed": 1844,
+  "corner": "256,256",
+  "step": "1.435",
+  "base": "173"
+ },
+ {
+  "file": "r3-15-crop-s9781.svg",
+  "family": "crop",
+  "seed": 9781,
+  "corner": "0,0",
+  "step": "1.435",
+  "base": "134"
+ },
+ {
+  "file": "r3-16-crop-s2829.svg",
+  "family": "crop",
+  "seed": 2829,
+  "corner": "0,256",
+  "step": "1.272",
+  "base": "134"
+ }
+]
