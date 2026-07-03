@@ -1,0 +1,162 @@
+[
+ {
+  "seed": 9756,
+  "rings": 4,
+  "step": "sqrt(phi)",
+  "stretch": 1.128,
+  "thick_edge": "outer",
+  "drift": 0.0,
+  "dot": "golden",
+  "file": "ripple-01-s9756.svg"
+ },
+ {
+  "seed": 7479,
+  "rings": 3,
+  "step": "phi",
+  "stretch": 1.062,
+  "thick_edge": "outer",
+  "drift": 2.0,
+  "dot": "center",
+  "file": "ripple-02-s7479.svg"
+ },
+ {
+  "seed": 5965,
+  "rings": 3,
+  "step": "phi",
+  "stretch": 1.0,
+  "thick_edge": "inner",
+  "drift": 0.0,
+  "dot": "none",
+  "file": "ripple-03-s5965.svg"
+ },
+ {
+  "seed": 2440,
+  "rings": 3,
+  "step": "sqrt(phi)",
+  "stretch": 1.062,
+  "thick_edge": "inner",
+  "drift": 2.0,
+  "dot": "center",
+  "file": "ripple-04-s2440.svg"
+ },
+ {
+  "seed": 4409,
+  "rings": 3,
+  "step": "sqrt(phi)",
+  "stretch": 1.0,
+  "thick_edge": "inner",
+  "drift": 0.0,
+  "dot": "golden",
+  "file": "ripple-05-s4409.svg"
+ },
+ {
+  "seed": 5170,
+  "rings": 3,
+  "step": "sqrt(phi)",
+  "stretch": 1.128,
+  "thick_edge": "outer",
+  "drift": 1.0,
+  "dot": "center",
+  "file": "ripple-06-s5170.svg"
+ },
+ {
+  "seed": 7094,
+  "rings": 3,
+  "step": "sqrt(phi)",
+  "stretch": 1.0,
+  "thick_edge": "outer",
+  "drift": 2.0,
+  "dot": "center",
+  "file": "ripple-07-s7094.svg"
+ },
+ {
+  "seed": 6339,
+  "rings": 2,
+  "step": "phi",
+  "stretch": 1.062,
+  "thick_edge": "outer",
+  "drift": 2.0,
+  "dot": "center",
+  "file": "ripple-08-s6339.svg"
+ },
+ {
+  "seed": 8373,
+  "rings": 3,
+  "step": "sqrt(phi)",
+  "stretch": 1.128,
+  "thick_edge": "outer",
+  "drift": 2.0,
+  "dot": "golden",
+  "file": "ripple-09-s8373.svg"
+ },
+ {
+  "seed": 2500,
+  "rings": 4,
+  "step": "phi",
+  "stretch": 1.0,
+  "thick_edge": "outer",
+  "drift": 0.0,
+  "dot": "golden",
+  "file": "ripple-10-s2500.svg"
+ },
+ {
+  "seed": 8836,
+  "rings": 3,
+  "step": "phi",
+  "stretch": 1.0,
+  "thick_edge": "outer",
+  "drift": 0.0,
+  "dot": "center",
+  "file": "ripple-11-s8836.svg"
+ },
+ {
+  "seed": 4293,
+  "rings": 3,
+  "step": "sqrt(phi)",
+  "stretch": 1.128,
+  "thick_edge": "outer",
+  "drift": 2.0,
+  "dot": "golden",
+  "file": "ripple-12-s4293.svg"
+ },
+ {
+  "seed": 7401,
+  "rings": 3,
+  "step": "sqrt(phi)",
+  "stretch": 1.062,
+  "thick_edge": "outer",
+  "drift": 2.0,
+  "dot": "center",
+  "file": "ripple-13-s7401.svg"
+ },
+ {
+  "seed": 7349,
+  "rings": 4,
+  "step": "phi",
+  "stretch": 1.0,
+  "thick_edge": "outer",
+  "drift": 0.0,
+  "dot": "none",
+  "file": "ripple-14-s7349.svg"
+ },
+ {
+  "seed": 8518,
+  "rings": 4,
+  "step": "sqrt(phi)",
+  "stretch": 1.062,
+  "thick_edge": "inner",
+  "drift": 1.0,
+  "dot": "none",
+  "file": "ripple-15-s8518.svg"
+ },
+ {
+  "seed": 9296,
+  "rings": 3,
+  "step": "phi",
+  "stretch": 1.128,
+  "thick_edge": "outer",
+  "drift": 1.0,
+  "dot": "center",
+  "file": "ripple-16-s9296.svg"
+ }
+]
