@@ -1,0 +1,133 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+import CtaBand from "../components/CtaBand.astro";
+
+const APP = "https://app.skcal.fit";
+---
+
+<Layout
+  title="Features — skcal"
+  description="Every skcal surface is programmable: agent with tools, MCP server, CLI, typed HTTP API, scoped keys, scale ingest."
+>
+  <Nav active="features" />
+
+  <div class="wrap page-head">
+    <h1>API-first, because you live in the terminal.</h1>
+    <p>Every surface is programmable. The web app is just one client.</p>
+  </div>
+
+  <section class="bento">
+    <div class="wrap bento-grid">
+      <div class="bcard wide">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+        </div>
+        <h3>A real CLI</h3>
+        <p>Log, list, and check status from your shell. Install from npm or grab a standalone binary.</p>
+        <div class="term" role="img" aria-label="Terminal session logging a weigh-in and printing today's status">
+          <div><span class="ps">$</span> skcal weight log 158.2 --note "morning, fasted"</div>
+          <div><span class="ok">✓</span> logged 158.2 lb</div>
+          <div><span class="ps">$</span> skcal status</div>
+          <div>weight <span class="ok">157.3 lb</span> <span class="dim">· down 1.3 this week</span></div>
+          <div>calories 1120 / 1850 <span class="dim">·</span> protein 92 / 160g</div>
+        </div>
+      </div>
+
+      <div class="bcard">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
+        </div>
+        <h3>Scoped API keys</h3>
+        <p>Mint keys limited to exactly what a script needs. Hashed at rest, revoke anytime.</p>
+        <div class="scopes" aria-label="Example scopes on a key">
+          <span class="on">weight:read</span>
+          <span class="on">nutrition:write</span>
+          <span>targets:write</span>
+          <span>agent:write</span>
+        </div>
+      </div>
+
+      <div class="bcard">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"></path><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"></path></svg>
+        </div>
+        <h3>Typed HTTP API</h3>
+        <p>
+          OpenAPI 3.1 with a lint-perfect spec: every endpoint documented, every schema exact.
+          Pipe <a href={`${APP}/openapi.json`}><code>/openapi.json</code></a> straight into your codegen.
+        </p>
+      </div>
+
+      <div class="bcard">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        </div>
+        <h3>OAuth 2.1 everywhere</h3>
+        <p>One sign-in guards the app, API, CLI, and MCP: PKCE, dynamic client registration, refresh tokens. No shared secrets.</p>
+      </div>
+
+      <div class="bcard">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path><circle cx="12" cy="13" r="3"></circle></svg>
+        </div>
+        <h3>Photo → macros</h3>
+        <p>Snap, paste, or describe a meal; Claude estimates calories + protein per item and logs it. Correct it in one sentence.</p>
+      </div>
+
+      <div class="bcard half">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8"></path><path d="M8.5 7L12 10.5 15.5 7"></path><rect x="3" y="14" width="18" height="8" rx="2"></rect><path d="M7 18h.01M11 18h.01"></path></svg>
+        </div>
+        <h3>Scale ingest</h3>
+        <p>Point your smart scale's webhook at one token-authed endpoint. Weigh-ins land in your trend without opening anything.</p>
+      </div>
+
+      <div class="bcard half">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+        </div>
+        <h3>Your data, in the open</h3>
+        <p>Weights in kg, measurements in cm, meals as line items: all pullable over the API. It's your database row, not our moat.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="surfaces">
+    <div class="wrap">
+      <h2>Five ways in, one account</h2>
+      <div class="surface-rows">
+        <div class="srow">
+          <span class="sname">Web app</span>
+          <span class="sdesc">Dashboard, trends, food log, and the agent chat.</span>
+          <a class="shref" href={APP}>app.skcal.fit</a>
+        </div>
+        <div class="srow">
+          <span class="sname">Agent</span>
+          <span class="sdesc">Chat with tools that read and edit your log, grounded in your numbers.</span>
+          <a class="shref" href={`${APP}/agent`}>app.skcal.fit/agent</a>
+        </div>
+        <div class="srow">
+          <span class="sname">MCP server</span>
+          <span class="sdesc">Eight tools for Claude, ChatGPT, Claude Code, or any MCP client.</span>
+          <a class="shref" href="https://docs.skcal.fit">docs.skcal.fit</a>
+        </div>
+        <div class="srow">
+          <span class="sname">CLI</span>
+          <span class="sdesc">npm package and standalone binaries; browser or API-key sign-in.</span>
+          <a class="shref" href="https://www.npmjs.com/package/@skeptrune/skcal">@skeptrune/skcal</a>
+        </div>
+        <div class="srow">
+          <span class="sname">HTTP API</span>
+          <span class="sdesc">Typed OpenAPI 3.1 surface behind every other client on this list.</span>
+          <a class="shref" href={`${APP}/openapi.json`}>/openapi.json</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <CtaBand />
+
+  <Footer />
+</Layout>

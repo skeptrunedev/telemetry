@@ -1,0 +1,20 @@
+---
+interface Props {
+  active?: "features" | "pricing";
+}
+const { active } = Astro.props;
+const APP = "https://app.skcal.fit";
+---
+
+<nav class="wrap">
+  <div class="nav-row">
+    <a class="brand" href="/">skcal<span class="dot">.</span>fit</a>
+    <div class="nav-links">
+      <a href="/features" aria-current={active === "features" ? "page" : undefined}>Features</a>
+      <a href="/pricing" aria-current={active === "pricing" ? "page" : undefined}>Pricing</a>
+      <a href="https://docs.skcal.fit">Docs</a>
+      <a href="https://github.com/skeptrunedev/telemetry">GitHub</a>
+    </div>
+    <a class="btn nav-cta" href={APP}>Get started</a>
+  </div>
+</nav>

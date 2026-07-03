@@ -1,0 +1,38 @@
+---
+import CodeChip from "./CodeChip.astro";
+const APP = "https://app.skcal.fit";
+---
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="/">skcal<span class="dot">.</span>fit</a>
+        <p class="foot-tag">Calorie tracking for vibe coders.</p>
+        <div class="foot-links">
+          <a href={APP}>App</a>
+          <a href="/features">Features</a>
+          <a href="/pricing">Pricing</a>
+          <a href="https://docs.skcal.fit">Docs</a>
+          <a href="https://github.com/skeptrunedev/telemetry">GitHub</a>
+          <a href={`${APP}/openapi.json`}>API</a>
+          <a href={`${APP}/privacy`}>Privacy</a>
+          <a href={`${APP}/terms`}>Terms</a>
+        </div>
+      </div>
+      <div class="foot-connect">
+        <h4>Connect your agent</h4>
+        <p>Add skcal as a custom connector in Claude or ChatGPT, or one line in Claude Code:</p>
+        <CodeChip
+          cmd="claude mcp add skcal …"
+          copy="claude mcp add --transport http skcal https://app.skcal.fit/mcp"
+          class="chip-sm"
+        />
+      </div>
+    </div>
+    <div class="copyright">
+      <span>© 2026 skcal. All rights reserved.</span>
+      <span>Built on Cloudflare Workers · Powered by Claude</span>
+    </div>
+  </div>
+</footer>

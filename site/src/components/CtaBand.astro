@@ -1,0 +1,20 @@
+---
+import CodeChip from "./CodeChip.astro";
+const APP = "https://app.skcal.fit";
+---
+
+<section class="dark" id="connect">
+  <div class="cta wrap">
+    <div class="rings"><i class="r1"></i></div>
+    <h2>Start tracking today</h2>
+    <p>
+      Connect your agent or install the CLI in under a minute. Sign in once with Google or a magic
+      link; OAuth handles the rest.
+    </p>
+    <div class="cta-blocks">
+      <CodeChip prefix="mcp" cmd="https://app.skcal.fit/mcp" />
+      <CodeChip cmd="npm i -g @skeptrune/skcal" />
+    </div>
+    <a class="btn" href={APP}>Get started</a>
+  </div>
+</section>

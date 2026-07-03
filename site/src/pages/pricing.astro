@@ -1,0 +1,78 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+import Check from "../components/Check.astro";
+import CtaBand from "../components/CtaBand.astro";
+
+const APP = "https://app.skcal.fit";
+---
+
+<Layout
+  title="Pricing — skcal"
+  description="One plan, $100/month, everything included: AI meal logging, the agent, MCP, CLI, API, and scoped keys. No free tier."
+>
+  <Nav active="pricing" />
+
+  <section class="pricing" style="background: var(--paper);">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>One plan. Everything.</h2>
+        <p>No free tier, no feature matrix, no “Pro”. $100 a month buys all of it.</p>
+      </div>
+      <div class="price-card">
+        <div class="price-brand"><span class="mark">sk</span> skcal</div>
+        <div class="price-num">$100<small>/mo</small></div>
+        <p class="price-sub">Everything skcal does today, and everything it ships next.</p>
+        <ul class="plist">
+          <Check>Unlimited AI meal logging: photo, paste, or plain text</Check>
+          <Check>The agent: chat, tools, saved &amp; searchable history</Check>
+          <Check>MCP server access from any client</Check>
+          <Check>CLI, typed API, and scoped API keys</Check>
+          <Check>Weight, measurements, targets &amp; trend analytics</Check>
+          <Check>Smart-scale ingest webhook</Check>
+          <Check>Every new feature, the day it ships</Check>
+        </ul>
+        <a class="btn" href={APP}>Get started</a>
+      </div>
+
+      <div class="faq">
+        <h2>Questions</h2>
+        <details>
+          <summary>Why is there no free plan?</summary>
+          <p>
+            Every log runs through Claude, and the agent does real work on every request. One honest
+            price keeps the product fast and ad-free instead of gating features to push upgrades.
+          </p>
+        </details>
+        <details>
+          <summary>Can I cancel anytime?</summary>
+          <p>
+            Yes. Billing runs on Stripe; open Billing in the app to manage or cancel, and you keep
+            access through the end of the period you paid for. Your data stays exportable over the
+            API either way.
+          </p>
+        </details>
+        <details>
+          <summary>What counts as AI meal logging?</summary>
+          <p>
+            Photos, pasted screenshots, and plain-text descriptions. Claude estimates calories and
+            protein per item and writes the entries to your log; you can correct any line in one
+            sentence.
+          </p>
+        </details>
+        <details>
+          <summary>Does the price cover the MCP server and API?</summary>
+          <p>
+            Yes. One subscription covers every surface: the app, the agent, the MCP server, the CLI,
+            the HTTP API, and scoped API keys. There are no per-seat or per-call charges.
+          </p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <CtaBand />
+
+  <Footer />
+</Layout>
