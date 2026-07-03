@@ -2058,7 +2058,7 @@ const COACH_TOOLS: Anthropic.Tool[] = [
   {
     name: "log_measurement",
     description:
-      "Record a body-part circumference measurement in INCHES. Sites: shoulders, chest, arm_l, arm_r, waist, neck, thigh.",
+      "Record a body-part circumference measurement in INCHES. Sites: shoulders, chest, arm_l, arm_r, waist, neck, thigh, glutes.",
     input_schema: {
       type: "object",
       properties: {
