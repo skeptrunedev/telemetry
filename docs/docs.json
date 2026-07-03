@@ -19,7 +19,7 @@
           },
           {
             "group": "Integrate",
-            "pages": ["mcp", "cli"]
+            "pages": ["mcp-server", "cli"]
           }
         ]
       },

@@ -6,9 +6,11 @@
   "compatibility_date": "2026-06-01",
   "workers_dev": false,
   "preview_urls": false,
+  // Edge script: proxies /docs* to Mintlify; everything else -> static assets.
+  "main": "worker.ts",
   "routes": [
     { "pattern": "skcal.fit", "custom_domain": true },
     { "pattern": "www.skcal.fit", "custom_domain": true }
   ],
-  "assets": { "directory": "./dist" }
+  "assets": { "directory": "./dist", "binding": "ASSETS" }
 }
