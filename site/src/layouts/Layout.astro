@@ -19,10 +19,9 @@ const {
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content="https://skcal.fit" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f59e0b'/%3E%3Ctext x='16' y='21.5' font-family='monospace' font-size='14' font-weight='700' text-anchor='middle' fill='%231a1205'%3Esk%3C/text%3E%3C/svg%3E"
-    />
+    <meta property="og:image" content="https://skcal.fit/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
   <body>
     <slot />
@@ -130,7 +129,8 @@ const {
   /* ---- nav ---- */
   nav.wrap { padding-block: clamp(18px, 3.5vw, 26px); }
   .nav-row { display: flex; align-items: center; gap: clamp(16px, 3vw, 36px); }
-  .brand { font-family: var(--mono); font-weight: 700; letter-spacing: 0.16em; font-size: 17px; }
+  .brand { font-family: var(--mono); font-weight: 700; letter-spacing: 0.16em; font-size: 17px; display: inline-flex; align-items: center; gap: 9px; }
+  .brand-mark { width: 30px; height: 30px; }
   .brand .dot { color: var(--amber); }
   .nav-links { display: flex; gap: clamp(16px, 2.6vw, 28px); font-size: 15.5px; color: var(--ink-soft); flex: 1; }
   .nav-links a:hover { color: var(--ink); }
