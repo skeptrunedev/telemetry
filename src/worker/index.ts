@@ -1346,6 +1346,11 @@ async function buildCoachSystem(
       (stw ? ` (shoulder:waist ${stw})` : "")
     : "none logged yet";
 
+  const memories = await listMemories(c, email);
+  const memoryLines = memories.length
+    ? memories.map((m) => `- [${m.id.slice(0, 8)}] ${m.content}`).join("\n")
+    : "- none saved yet";
+
   const kcalTarget = targets.dailyKcalTarget ?? 0;
   const proteinTarget = targets.proteinTargetG ?? 0;
   const kcalLeft = kcalTarget - kcalIn;
@@ -1377,6 +1382,9 @@ async function buildCoachSystem(
     "",
     "BODY MEASUREMENTS (latest):",
     `- ${measurementLine}`,
+    "",
+    "MEMORIES (durable preferences/facts the user told you — always honor these):",
+    memoryLines,
     "",
     "When the user asks about eating a specific food: estimate its calories and protein, say how it fits the remaining budget above, then give a short blunt verdict (eat it / fine / skip). If it's a poor fit, suggest a better alternative that protects the protein floor and calorie budget.",
     "Be concise: 2–5 sentences, conversational. Light markdown is fine (a **bold** verdict, an occasional short list) but keep it tight — no headers, no long bullet dumps.",
@@ -1473,6 +1481,26 @@ const COACH_TOOLS: Anthropic.Tool[] = [
         note: { type: "string", description: "Optional note, e.g. 'morning, fasted'." },
       },
       required: ["pounds"],
+    },
+  },
+
+  {
+    name: "remember",
+    description:
+      "Save a durable fact or preference the user just told you (dislikes, allergies, diet style, goals, schedule). One short sentence. Don't save transient info or duplicates of existing MEMORIES.",
+    input_schema: {
+      type: "object",
+      properties: { content: { type: "string", description: "The fact, e.g. 'Dislikes yogurt.'" } },
+      required: ["content"],
+    },
+  },
+  {
+    name: "forget_memory",
+    description: "Delete a saved memory when the user corrects or retracts it. Use the [id] prefix shown in MEMORIES.",
+    input_schema: {
+      type: "object",
+      properties: { idPrefix: { type: "string", description: "The 8-char id prefix from the MEMORIES list." } },
+      required: ["idPrefix"],
     },
   },
 ];
@@ -1577,6 +1605,26 @@ async function executeCoachTool(
     return { ok: true, loggedPounds: pounds };
   }
 
+  if (name === "remember") {
+    const content = String(input.content ?? "").trim().slice(0, 500);
+    if (!content) return { error: "content required" };
+    const existing = await listMemories(c, email);
+    if (existing.some((m) => m.content.toLowerCase() === content.toLowerCase())) return { ok: true, duplicate: true };
+    const id = crypto.randomUUID();
+    await db(c).insert(schema.agentMemories).values({ id, userEmail: email, content });
+    return { ok: true, remembered: content };
+  }
+
+  if (name === "forget_memory") {
+    const prefix = String(input.idPrefix ?? "").trim();
+    if (prefix.length < 4) return { error: "idPrefix too short" };
+    const rows = await listMemories(c, email);
+    const hit = rows.find((m) => m.id.startsWith(prefix));
+    if (!hit) return { error: "no memory with that id" };
+    await db(c).delete(schema.agentMemories).where(eq(schema.agentMemories.id, hit.id));
+    return { ok: true, forgot: hit.content };
+  }
+
   return { error: "unknown tool" };
 }
 
@@ -1667,7 +1715,7 @@ app.post("/api/agent/stream", async (c) => {
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
   const system =
     (await buildCoachSystem(c, email, today)) +
-    `\n\nTools: you can view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds). Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
+    `\n\nTools: you can view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); save durable user preferences/facts with remember and remove wrong ones with forget_memory. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
@@ -1729,6 +1777,56 @@ function deriveConversationTitle(messages: { role: string; content: string }[]):
   if (!t) return "New chat";
   return t.length > 60 ? `${t.slice(0, 57)}…` : t;
 }
+
+// ---- Agent memories (durable per-user preferences/facts) -------------------
+const MAX_MEMORIES = 60;
+
+async function listMemories(c: Context<{ Bindings: Bindings; Variables: Variables }>, email: string) {
+  return db(c)
+    .select()
+    .from(schema.agentMemories)
+    .where(eq(schema.agentMemories.userEmail, email))
+    .orderBy(desc(schema.agentMemories.createdAt))
+    .limit(MAX_MEMORIES);
+}
+
+app.get("/api/agent/memories", async (c) => {
+  const email = c.get("email");
+  const rows = await listMemories(c, email);
+  return c.json(rows.map((m) => ({ id: m.id, content: m.content, createdAt: m.createdAt.getTime() })));
+});
+
+app.post("/api/agent/memories", async (c) => {
+  const email = c.get("email");
+  const b = await c.req.json<{ content?: string }>();
+  const content = (b.content ?? "").trim().slice(0, 500);
+  if (!content) return c.json({ error: "content required" }, 400);
+  const existing = await listMemories(c, email);
+  if (existing.some((m) => m.content.toLowerCase() === content.toLowerCase())) {
+    return c.json({ ok: true, duplicate: true });
+  }
+  if (existing.length >= MAX_MEMORIES) {
+    // Drop the oldest to stay under the cap.
+    const oldest = existing[existing.length - 1];
+    await db(c).delete(schema.agentMemories).where(eq(schema.agentMemories.id, oldest.id));
+  }
+  const id = crypto.randomUUID();
+  await db(c).insert(schema.agentMemories).values({ id, userEmail: email, content });
+  return c.json({ id, content });
+});
+
+app.delete("/api/agent/memories/:id", async (c) => {
+  const email = c.get("email");
+  const id = c.req.param("id");
+  const owned = await db(c)
+    .select({ id: schema.agentMemories.id })
+    .from(schema.agentMemories)
+    .where(and(eq(schema.agentMemories.id, id), eq(schema.agentMemories.userEmail, email)))
+    .limit(1);
+  if (!owned.length) return c.json({ error: "not found" }, 404);
+  await db(c).delete(schema.agentMemories).where(eq(schema.agentMemories.id, id));
+  return c.json({ ok: true });
+});
 
 // ---- Coach conversation history (saved threads + local-search source) ------
 // List the caller's conversations, newest first, each with its full message

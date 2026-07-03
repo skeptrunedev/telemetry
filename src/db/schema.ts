@@ -953,3 +953,17 @@ export const linkedChannels = sqliteTable(
     index("linked_channels_value_idx").on(t.kind, t.value),
   ],
 );
+
+// Durable agent memories: preferences/facts the user states in conversation
+// ("I don't like yogurt", "vegetarian", "training for a marathon"). Injected
+// into every agent surface's grounding prompt.
+export const agentMemories = sqliteTable(
+  "agent_memories",
+  {
+    id: text("id").primaryKey(), // uuid
+    userEmail: text("user_email").notNull(),
+    content: text("content").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [index("agent_memories_user_idx").on(t.userEmail)],
+);
