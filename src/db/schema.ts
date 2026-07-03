@@ -536,6 +536,184 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *           items:
  *             type: string
  *             example: nick@mintlify.com/2026-06-29/3f8b1c2a
+ *     WorkoutExercise:
+ *       type: object
+ *       description: One exercise inside a strength-style workout; null fields were not stated.
+ *       additionalProperties: false
+ *       required: [exercise, sets, reps, weightLb, durationS, distanceM, notes]
+ *       properties:
+ *         exercise:
+ *           type: string
+ *           description: Exercise name as the user gave it.
+ *           example: bench press
+ *         sets:
+ *           type: [integer, 'null']
+ *           description: Number of sets, when stated.
+ *           example: 3
+ *         reps:
+ *           type: [integer, 'null']
+ *           description: Reps per set, when stated.
+ *           example: 8
+ *         weightLb:
+ *           type: [number, 'null']
+ *           description: Working weight in pounds, when stated.
+ *           example: 135
+ *         durationS:
+ *           type: [integer, 'null']
+ *           description: Duration in seconds for timed pieces, when stated.
+ *           example: null
+ *         distanceM:
+ *           type: [number, 'null']
+ *           description: Distance in meters for distance pieces, when stated.
+ *           example: null
+ *         notes:
+ *           type: [string, 'null']
+ *           description: Anything else the user said about the exercise.
+ *           example: paused reps
+ *     Workout:
+ *       type: object
+ *       description: A logged workout, normalized to the standard fields of Apple Health, Garmin, and Strava; metric fields are null when the user didn't state them.
+ *       additionalProperties: false
+ *       required: [id, source, activityType, summary, description, startedAt, durationS, movingDurationS, distanceM, elevationGainM, energyKcal, avgHr, maxHr, avgPowerW, avgCadence, exercises, createdAt]
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *           description: Workout identifier.
+ *           example: 9c2d1e4f-7a8b-4c5d-9e0f-1a2b3c4d5e6f
+ *         source:
+ *           type: string
+ *           enum: [manual, apple_health, garmin, strava]
+ *           description: Where the workout came from; manual for described/photographed logs.
+ *           example: manual
+ *         activityType:
+ *           type: string
+ *           description: Normalized activity type (run, ride, swim, walk, hike, strength_training, yoga, rowing, elliptical, crossfit, other).
+ *           example: run
+ *         summary:
+ *           type: string
+ *           description: Short AI-generated title.
+ *           example: 5k run + pullups
+ *         description:
+ *           type: string
+ *           description: The user's original words (or the summary for photo-only logs).
+ *           example: ran 5k easy, then 3x10 pullups
+ *         startedAt:
+ *           type: integer
+ *           description: Start time as Unix milliseconds.
+ *           example: 1783100000000
+ *         durationS:
+ *           type: [integer, 'null']
+ *           description: Elapsed duration in seconds.
+ *           example: 1680
+ *         movingDurationS:
+ *           type: [integer, 'null']
+ *           description: Moving time in seconds, when distinct from elapsed.
+ *           example: null
+ *         distanceM:
+ *           type: [number, 'null']
+ *           description: Distance in meters.
+ *           example: 5000
+ *         elevationGainM:
+ *           type: [number, 'null']
+ *           description: Elevation gain in meters.
+ *           example: null
+ *         energyKcal:
+ *           type: [number, 'null']
+ *           description: Active energy in kilocalories.
+ *           example: 320
+ *         avgHr:
+ *           type: [integer, 'null']
+ *           description: Average heart rate in bpm.
+ *           example: 148
+ *         maxHr:
+ *           type: [integer, 'null']
+ *           description: Max heart rate in bpm.
+ *           example: null
+ *         avgPowerW:
+ *           type: [number, 'null']
+ *           description: Average power in watts.
+ *           example: null
+ *         avgCadence:
+ *           type: [number, 'null']
+ *           description: Average cadence (spm or rpm as reported).
+ *           example: null
+ *         exercises:
+ *           type: array
+ *           description: Strength breakdown; empty for pure cardio.
+ *           example: [{ exercise: pullups, sets: 3, reps: 10, weightLb: null, durationS: null, distanceM: null, notes: null }]
+ *           items:
+ *             $ref: '#/components/schemas/WorkoutExercise'
+ *         createdAt:
+ *           type: integer
+ *           description: Row creation time as Unix milliseconds.
+ *           example: 1783100001000
+ *     DescribeWorkout:
+ *       type: object
+ *       description: Body for logging a workout from a freeform text description.
+ *       additionalProperties: false
+ *       required: [text]
+ *       properties:
+ *         text:
+ *           type: string
+ *           maxLength: 4000
+ *           description: The workout in the user's own words.
+ *           example: ran 5k easy in 28 minutes, then 3x10 pullups
+ *         date:
+ *           type: string
+ *           format: date
+ *           description: Local day to log against (YYYY-MM-DD); defaults to now.
+ *           example: 2026-07-02
+ *         tz:
+ *           type: integer
+ *           description: Timezone offset in minutes, as from getTimezoneOffset.
+ *           example: 420
+ *     AnyAnalysis:
+ *       type: object
+ *       description: Result of classify-and-log. `kind` says what the photos showed; food results carry the MealAnalysis fields, workout results carry `workout`, and `other` logs nothing.
+ *       required: [kind]
+ *       properties:
+ *         kind:
+ *           type: string
+ *           enum: [food, workout, other]
+ *           description: What the photos were classified as.
+ *           example: workout
+ *         ok:
+ *           type: boolean
+ *           description: True when something was logged.
+ *           example: true
+ *         mealId:
+ *           type: string
+ *           format: uuid
+ *           description: Created meal id (food only).
+ *           example: 3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071
+ *         items:
+ *           type: array
+ *           description: Estimated food items (food only).
+ *           example: [{ name: grilled chicken breast, kcal: 284, proteinG: 53.4 }]
+ *           items:
+ *             $ref: '#/components/schemas/AnalyzedItem'
+ *         totalKcal:
+ *           type: integer
+ *           description: Summed calories (food only).
+ *           example: 374
+ *         totalProteinG:
+ *           type: integer
+ *           description: Summed protein grams (food only).
+ *           example: 54
+ *         note:
+ *           type: string
+ *           description: Model assumptions note (food only).
+ *           example: assumed a single chicken breast
+ *         photoKeys:
+ *           type: array
+ *           description: Stored photo keys (food only).
+ *           example: ["nick@mintlify.com/2026-06-29/3f8b1c2a"]
+ *           items:
+ *             type: string
+ *             example: nick@mintlify.com/2026-06-29/3f8b1c2a
+ *         workout:
+ *           $ref: '#/components/schemas/Workout'
  *     DescribeMeal:
  *       type: object
  *       description: Body for logging a meal from a freeform text description.

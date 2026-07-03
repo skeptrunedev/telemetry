@@ -346,6 +346,19 @@ const WORKOUT_SCHEMA = {
 const WORKOUT_PROMPT =
   "The user describes a workout they did, in their own words. Produce a short `summary` title (3–8 words, e.g. '5k run + pullups'), pick the closest `activity_type` from the enum ('strength_training' for lifting; 'other' if nothing fits), and fill the metric fields ONLY where stated or clearly implied — null when unknown. Convert to storage units: distance in METERS, durations in SECONDS, energy in kcal, heart rate in bpm, power in watts (so '5k' → 5000, '45 min' → 2700, '3 miles' → 4828). For lifting/strength work, break it into `exercises` — one entry per exercise with sets, reps, and weight_lb (weight in POUNDS) where given. Never invent numbers the user didn't give.";
 
+const PHOTO_KIND_SCHEMA = {
+  type: "object",
+  properties: { kind: { type: "string", enum: ["food", "workout", "other"] } },
+  required: ["kind"],
+  additionalProperties: false,
+};
+
+const PHOTO_KIND_PROMPT =
+  "Classify what these image(s) show so the right logger runs. `food`: a meal, snack, drink, plate, packaging, or menu item the user consumed. `workout`: exercise evidence — a treadmill/bike/erg console, a fitness-app or watch summary screenshot (Strava, Garmin, Apple Fitness), a whiteboard WOD, or gym equipment mid-session. `other`: anything else. If the user's caption contradicts the pixels, trust the caption.";
+
+const WORKOUT_VISION_PROMPT =
+  "The image(s) show evidence of a workout the user did — typically a cardio-machine console, a fitness app or watch summary screenshot, or a whiteboard. Read only the metrics actually visible and fill the same fields as for a described workout — null anything not shown. `summary` must be a SHORT title (3–8 words, e.g. 'treadmill 5k'), not a sentence.";
+
 type WorkoutExercise = {
   exercise: string;
   sets: number | null;
@@ -368,6 +381,17 @@ type WorkoutMetrics = {
   avg_cadence?: number | null;
 };
 
+// Exercises as returned by the API (camelCase mirror of the stored details).
+type WorkoutExerciseOut = {
+  exercise: string;
+  sets: number | null;
+  reps: number | null;
+  weightLb: number | null;
+  durationS: number | null;
+  distanceM: number | null;
+  notes: string | null;
+};
+
 // One logged workout as returned by the API (camelCase mirror of the row).
 type WorkoutOut = {
   id: string;
@@ -385,7 +409,7 @@ type WorkoutOut = {
   maxHr: number | null;
   avgPowerW: number | null;
   avgCadence: number | null;
-  exercises: WorkoutExercise[];
+  exercises: WorkoutExerciseOut[];
   createdAt: number;
 };
 
@@ -406,7 +430,17 @@ function workoutOut(r: typeof schema.workouts.$inferSelect): WorkoutOut {
     maxHr: r.maxHr,
     avgPowerW: r.avgPowerW,
     avgCadence: r.avgCadence,
-    exercises: r.details ? (JSON.parse(r.details) as WorkoutExercise[]) : [],
+    exercises: r.details
+      ? (JSON.parse(r.details) as WorkoutExercise[]).map((e) => ({
+          exercise: e.exercise,
+          sets: e.sets,
+          reps: e.reps,
+          weightLb: e.weight_lb,
+          durationS: e.duration_s,
+          distanceM: e.distance_m,
+          notes: e.notes,
+        }))
+      : [],
     createdAt: r.createdAt.getTime(),
   };
 }
@@ -419,13 +453,17 @@ async function logDescribedWorkout(
   email: string,
   text: string,
   startedAt: Date,
+  images?: Anthropic.ImageBlockParam[],
 ): Promise<WorkoutOut> {
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
+  const content: Anthropic.MessageCreateParamsNonStreaming["messages"][number]["content"] = images?.length
+    ? [...images, { type: "text", text: `${WORKOUT_VISION_PROMPT}${text ? `\n\nUser's caption: ${text}` : ""}` }]
+    : `${WORKOUT_PROMPT}\n\nWorkout: ${text}`;
   const msg = await anthropic.messages.create({
     model: "claude-opus-4-8",
     max_tokens: 1024,
     output_config: { format: { type: "json_schema", schema: WORKOUT_SCHEMA } },
-    messages: [{ role: "user", content: `${WORKOUT_PROMPT}\n\nWorkout: ${text}` }],
+    messages: [{ role: "user", content }],
   } as Anthropic.MessageCreateParamsNonStreaming);
   const out = msg.content.filter((bk): bk is Anthropic.TextBlock => bk.type === "text").map((bk) => bk.text).join("");
   const parsed = JSON.parse(out) as (WorkoutMetrics & { summary?: string; activity_type?: string; exercises?: WorkoutExercise[] });
@@ -448,7 +486,7 @@ async function logDescribedWorkout(
         source: "manual",
         activityType,
         summary,
-        description: text,
+        description: text || summary,
         startedAt,
         durationS: int(parsed.duration_s),
         movingDurationS: int(parsed.moving_duration_s),
@@ -1171,6 +1209,22 @@ app.post("/api/nutrition/analyze", async (c) => {
   }
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "vision not configured" }, 503);
 
+  try {
+    return c.json(await analyzeMealPhotos(c, email, bufs, note, today));
+  } catch (e) {
+    return c.json({ error: "analysis failed", detail: String(e) }, 502);
+  }
+});
+
+// Shared by /api/nutrition/analyze and the classify-and-route /api/log/analyze:
+// stores the photos, runs the vision estimate, and logs the meal.
+async function analyzeMealPhotos(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+  bufs: { mt: string; buf: ArrayBuffer }[],
+  note: string,
+  today: string,
+) {
   const imageBlocks: Anthropic.ImageBlockParam[] = [];
   const photoKeys: string[] = [];
   for (const { mt, buf } of bufs) {
@@ -1185,32 +1239,27 @@ app.post("/api/nutrition/analyze", async (c) => {
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   type Macro = { items: { name: string; kcal: number; protein_g: number }[]; total_kcal: number; total_protein_g: number; note: string };
-  let parsed: Macro;
-  try {
-    const msg = await anthropic.messages.create({
-      model: "claude-opus-4-8",
-      max_tokens: 1024,
-      output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
-      messages: [
-        {
-          role: "user",
-          content: [
-            ...imageBlocks,
-            {
-              type: "text",
-              text: note
-                ? `${VISION_PROMPT}\n\nContext the user gave about this meal (trust it to disambiguate what's shown): ${note}`
-                : VISION_PROMPT,
-            },
-          ],
-        },
-      ],
-    } as Anthropic.MessageCreateParamsNonStreaming);
-    const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
-    parsed = JSON.parse(out);
-  } catch (e) {
-    return c.json({ error: "analysis failed", detail: String(e) }, 502);
-  }
+  const msg = await anthropic.messages.create({
+    model: "claude-opus-4-8",
+    max_tokens: 1024,
+    output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
+    messages: [
+      {
+        role: "user",
+        content: [
+          ...imageBlocks,
+          {
+            type: "text",
+            text: note
+              ? `${VISION_PROMPT}\n\nContext the user gave about this meal (trust it to disambiguate what's shown): ${note}`
+              : VISION_PROMPT,
+          },
+        ],
+      },
+    ],
+  } as Anthropic.MessageCreateParamsNonStreaming);
+  const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
+  const parsed: Macro = JSON.parse(out);
 
   const mealId = crypto.randomUUID();
   await db(c).insert(schema.meals).values({
@@ -1226,7 +1275,7 @@ app.post("/api/nutrition/analyze", async (c) => {
   if (items.length) await db(c).insert(schema.nutritionItems).values(items);
   await recomputeDay(c, email, today);
 
-  return c.json({
+  return {
     ok: true,
     mealId,
     items: items.map((i) => ({ name: i.name, kcal: i.kcal, proteinG: i.proteinG })),
@@ -1234,7 +1283,131 @@ app.post("/api/nutrition/analyze", async (c) => {
     totalProteinG: Math.round(items.reduce((s, i) => s + i.proteinG, 0)),
     note: parsed.note,
     photoKeys,
-  });
+  };
+}
+
+// ---- photo -> classify -> meal or workout -----------------------------------
+/**
+ * @openapi
+ * /api/log/analyze:
+ *   post:
+ *     tags: [Nutrition]
+ *     summary: Log a meal or workout from photos
+ *     description: Uploads 1–5 photos, classifies whether they show food or workout evidence (a machine console, app/watch summary, whiteboard), then logs a meal (as /api/nutrition/analyze) or a workout accordingly. Returns the classification in `kind`.
+ *     operationId: analyzeAny
+ *     parameters:
+ *       - name: date
+ *         in: query
+ *         required: false
+ *         description: Day to log against (YYYY-MM-DD). Defaults to today.
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - name: tz
+ *         in: query
+ *         required: false
+ *         description: Timezone offset in minutes (as from getTimezoneOffset), used to anchor a dated workout.
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       description: The photos (multipart field `photos`), plus an optional `note` caption for context.
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [photos]
+ *             properties:
+ *               photos:
+ *                 type: array
+ *                 description: 1–5 photos of one meal or one workout (JPEG, PNG, WebP, or GIF; max 8MB each).
+ *                 example: ["@treadmill.jpg"]
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                   example: "@treadmill.jpg"
+ *               note:
+ *                 type: string
+ *                 maxLength: 2000
+ *                 description: Optional caption; trusted over the pixels when they disagree.
+ *                 example: today's treadmill session
+ *     responses:
+ *       '200':
+ *         description: The photos were classified and, unless `kind` is `other`, logged.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AnyAnalysis'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '502':
+ *         $ref: '#/components/responses/BadGateway'
+ *       '503':
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
+app.post("/api/log/analyze", async (c) => {
+  const email = c.get("email");
+  const date = c.req.query("date");
+  const today = date ?? new Date().toISOString().slice(0, 10);
+  const tzMin = Number(c.req.query("tz") ?? "0") || 0;
+
+  const form = await c.req.formData();
+  type UploadFile = { type: string; arrayBuffer: () => Promise<ArrayBuffer> };
+  const isFile = (f: unknown): f is UploadFile =>
+    typeof f === "object" && f !== null && typeof (f as UploadFile).arrayBuffer === "function";
+  const files = (form.getAll("photos") as unknown[]).filter(isFile);
+  if (!files.length) return c.json({ error: "no photos uploaded" }, 400);
+  if (files.length > 5) return c.json({ error: "max 5 photos" }, 400);
+  const noteRaw = form.get("note");
+  const note = typeof noteRaw === "string" ? noteRaw.trim().slice(0, 2000) : "";
+  const bufs: { mt: string; buf: ArrayBuffer }[] = [];
+  for (const file of files) {
+    const mt = file.type || "image/jpeg";
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(mt)) return c.json({ error: `unsupported image type ${mt}` }, 400);
+    const buf = await file.arrayBuffer();
+    if (buf.byteLength > 8_000_000) return c.json({ error: "image too large (max 8MB)" }, 400);
+    bufs.push({ mt, buf });
+  }
+  if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "vision not configured" }, 503);
+
+  const imageBlocks: Anthropic.ImageBlockParam[] = bufs.map(({ mt, buf }) => ({
+    type: "image",
+    source: { type: "base64", media_type: mt as "image/jpeg", data: bufToBase64(buf) },
+  }));
+
+  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
+  let kind: string;
+  try {
+    const msg = await anthropic.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 64,
+      output_config: { format: { type: "json_schema", schema: PHOTO_KIND_SCHEMA } },
+      messages: [
+        {
+          role: "user",
+          content: [
+            ...imageBlocks,
+            { type: "text", text: note ? `${PHOTO_KIND_PROMPT}\n\nUser's caption: ${note}` : PHOTO_KIND_PROMPT },
+          ],
+        },
+      ],
+    } as Anthropic.MessageCreateParamsNonStreaming);
+    const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
+    kind = String((JSON.parse(out) as { kind: string }).kind);
+  } catch (e) {
+    return c.json({ error: "classification failed", detail: String(e) }, 502);
+  }
+
+  try {
+    if (kind === "food") return c.json({ kind, ...(await analyzeMealPhotos(c, email, bufs, note, today)) });
+    if (kind === "workout") {
+      const workout = await logDescribedWorkout(c, email, note, workoutTs(date, tzMin), imageBlocks);
+      return c.json({ kind, ok: true, workout });
+    }
+  } catch (e) {
+    return c.json({ error: "analysis failed", detail: String(e) }, 502);
+  }
+  return c.json({ kind: "other", ok: false });
 });
 
 // ---- nutrition: text description -> Claude -> macros ------------------------
@@ -1489,6 +1662,35 @@ app.get("/api/nutrition/photo/*", async (c) => {
 });
 
 // ---- workouts: text description -> Claude parse -> log ----------------------
+/**
+ * @openapi
+ * /api/workouts/describe:
+ *   post:
+ *     tags: [Workouts]
+ *     summary: Log a workout from a description
+ *     description: Parses a freeform description of a workout into a normalized row (activity type, duration, distance, heart rate, strength exercises) and logs it.
+ *     operationId: describeWorkout
+ *     requestBody:
+ *       required: true
+ *       description: The workout description and optional local day.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DescribeWorkout'
+ *     responses:
+ *       '200':
+ *         description: The workout was parsed and logged.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Workout'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '502':
+ *         $ref: '#/components/responses/BadGateway'
+ *       '503':
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
 app.post("/api/workouts/describe", async (c) => {
   const email = c.get("email");
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "ai not configured" }, 503);
@@ -1505,6 +1707,41 @@ app.post("/api/workouts/describe", async (c) => {
 });
 
 // The given local day's workouts (tz = the client's getTimezoneOffset() minutes).
+/**
+ * @openapi
+ * /api/workouts:
+ *   get:
+ *     tags: [Workouts]
+ *     summary: List a day's workouts
+ *     description: Returns the caller's workouts whose start time falls on the given local day, newest first.
+ *     operationId: listWorkouts
+ *     parameters:
+ *       - name: date
+ *         in: query
+ *         required: false
+ *         description: Local day (YYYY-MM-DD). Defaults to today.
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - name: tz
+ *         in: query
+ *         required: false
+ *         description: Client timezone offset in minutes (getTimezoneOffset) used to bound the local day.
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       '200':
+ *         description: The day's workouts.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               description: Workouts started on the requested local day.
+ *               items:
+ *                 $ref: '#/components/schemas/Workout'
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ */
 app.get("/api/workouts", async (c) => {
   const email = c.get("email");
   const date = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
@@ -1521,6 +1758,32 @@ app.get("/api/workouts", async (c) => {
   return c.json(rows.map(workoutOut));
 });
 
+/**
+ * @openapi
+ * /api/workouts/{id}:
+ *   delete:
+ *     tags: [Workouts]
+ *     summary: Delete a workout
+ *     description: Removes one of the caller's workouts.
+ *     operationId: deleteWorkout
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: Workout identifier (UUID).
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: The workout was deleted.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ok'
+ *       '404':
+ *         $ref: '#/components/responses/NotFound'
+ */
 app.delete("/api/workouts/:id", async (c) => {
   const email = c.get("email");
   const id = c.req.param("id");
