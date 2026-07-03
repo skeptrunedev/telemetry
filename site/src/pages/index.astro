@@ -32,8 +32,12 @@ const APP = "https://app.skcal.fit";
           />
           <button class="btn" type="submit">Text to get started</button>
         </form>
+        <div class="textme-done" role="status" hidden>
+          <p class="textme-msg ok">Your line is ready. Text anything to get started:</p>
+          <a class="btn textme-number" href="#">…</a>
+        </div>
         <p class="textme-msg" role="status" hidden></p>
-        <p class="hero-note"># we text first: reply and you're tracking. or <a href={APP}>start in the browser</a>.</p>
+        <p class="hero-note"># text your food, weight, and measurements. or <a href={APP}>start in the browser</a>.</p>
       </div>
       <div class="phone imsg-phone">
         <div
@@ -169,11 +173,14 @@ const APP = "https://app.skcal.fit";
         body: JSON.stringify({ phone: input.value }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? "Something went wrong — try again.");
+      if (!res.ok || !body.number) throw new Error(body.error ?? "Something went wrong — try again.");
       form.hidden = true;
-      msg.hidden = false;
-      msg.classList.add("ok");
-      msg.textContent = "Check your messages: the first text is on its way. Reply to it and you're tracking.";
+      const done = document.querySelector<HTMLDivElement>(".textme-done")!;
+      const link = done.querySelector<HTMLAnchorElement>(".textme-number")!;
+      const pretty = body.number.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "+1 ($1) $2-$3");
+      link.href = `sms:${body.number}?&body=${encodeURIComponent("hi")}`;
+      link.textContent = `Text ${pretty}`;
+      done.hidden = false;
     } catch (err) {
       msg.hidden = false;
       msg.classList.remove("ok");

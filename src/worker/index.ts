@@ -48,6 +48,8 @@ type Bindings = {
   // of the account a channel resolves to (Authorization: Bearer <this> +
   // x-skcal-channel header).
   AGENT_SERVICE_TOKEN?: string;
+  PHOTON_PROJECT_ID?: string;
+  PHOTON_ACCESS_TOKEN?: string;
 };
 
 type Variables = { email: string };
@@ -2187,18 +2189,50 @@ app.post("/api/onboard/text-me", async (c) => {
   const b = await c.req.json<{ phone?: string }>().catch(() => ({ phone: "" }));
   const phone = normalizePhone(b.phone ?? "");
   if (!phone) return c.json({ error: "enter a valid phone number" }, 400, headers);
-  // Throttle: one request per number per 10 minutes.
+  // Register the visitor as a Spectrum user; Photon assigns them a personal
+  // line from the shared pool. The POST upserts by phone number, so repeat
+  // submissions return the same assigned number.
+  if (!c.env.PHOTON_PROJECT_ID || !c.env.PHOTON_ACCESS_TOKEN) {
+    return c.json({ error: "texting is not configured — sign up in the browser instead" }, 503, headers);
+  }
+  const res = await fetch(
+    `https://app.photon.codes/api/projects/${c.env.PHOTON_PROJECT_ID}/spectrum/users`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${c.env.PHOTON_ACCESS_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        firstName: "skcal",
+        lastName: "user",
+        email: `${phone.replace("+", "")}@textme.skcal.fit`,
+        phoneNumber: phone,
+        sendInvite: false,
+      }),
+    },
+  );
+  if (!res.ok) {
+    console.error("photon user registration failed", res.status, await res.text().catch(() => ""));
+    return c.json({ error: "couldn't set up your line — try again, or sign up in the browser" }, 502, headers);
+  }
+  const body = (await res.json()) as { user?: { assignedPhoneNumber?: string } };
+  const number = body.user?.assignedPhoneNumber;
+  if (!number) {
+    return c.json({ error: "couldn't set up your line — try again, or sign up in the browser" }, 502, headers);
+  }
+  // Record the request so the agent daemon can greet users who are already
+  // opted in (numbers that have texted the line before).
   const recent = await db(c)
     .select()
     .from(schema.textMeRequests)
     .where(eq(schema.textMeRequests.phone, phone))
     .orderBy(desc(schema.textMeRequests.createdAt))
     .limit(1);
-  if (recent[0] && Date.now() - recent[0].createdAt.getTime() < 10 * 60_000) {
-    return c.json({ ok: true, throttled: true }, 200, headers);
+  if (!recent[0] || Date.now() - recent[0].createdAt.getTime() > 10 * 60_000) {
+    await db(c).insert(schema.textMeRequests).values({ id: crypto.randomUUID(), phone });
   }
-  await db(c).insert(schema.textMeRequests).values({ id: crypto.randomUUID(), phone });
-  return c.json({ ok: true }, 200, headers);
+  return c.json({ ok: true, number }, 200, headers);
 });
 
 // Agent daemon: list pending sends (service token only).
