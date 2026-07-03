@@ -25,7 +25,7 @@ const options = {
       version: pkg.version && pkg.version !== "0.0.0" ? pkg.version : "1.0.0",
       summary: "Typed HTTP API for skcal — calorie and body-composition tracking, built to wire into developer + AI tooling.",
       description:
-        "HTTP API behind [skcal](https://skcal.skeptrune.com), a calorie and body-composition tracker " +
+        "HTTP API behind [skcal](https://app.skcal.fit), a calorie and body-composition tracker " +
         "built for developers and AI power users — drive it from the CLI or straight from this typed API " +
         "(MCP server planned).\n\n" +
         "Every record is scoped to the signed-in account's email, so one account can never read another's " +
@@ -33,11 +33,11 @@ const options = {
         "attributes readings to a configured owner.\n\n" +
         "Nutrition is logged from a freeform text description, which is sent to Claude, " +
         "which returns per-item calories and protein.",
-      contact: { name: "Nick Khami", url: "https://skcal.skeptrune.com", email: "nick@mintlify.com" },
+      contact: { name: "Nick Khami", url: "https://app.skcal.fit", email: "nick@mintlify.com" },
       license: { name: "MIT", url: "https://opensource.org/license/mit" },
     },
     servers: [
-      { url: "https://skcal.skeptrune.com", description: "Production" },
+      { url: "https://app.skcal.fit", description: "Production" },
       { url: "http://localhost:5173", description: "Local development" },
     ],
     tags: [

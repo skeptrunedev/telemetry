@@ -1,6 +1,6 @@
 # @skeptrune/skcal
 
-Command-line client for [skcal](https://skcal.skeptrune.com), a calorie and
+Command-line client for [skcal](https://app.skcal.fit), a calorie and
 body-composition tracker built for developers and AI power users. Logs
 weigh-ins, meals, and measurements and prints your daily snapshot — straight
 from the terminal, so you can wire it into scripts and your AI tooling. (Pairs

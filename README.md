@@ -53,7 +53,7 @@ npm run openapi:lint     # quobix vacuum, gated at a perfect 100/100 score
 ```
 
 The generated spec is served by the Worker at **`/openapi.json`**
-([live](https://skcal.skeptrune.com/openapi.json)). CI regenerates the spec,
+([live](https://app.skcal.fit/openapi.json)). CI regenerates the spec,
 fails if the committed copy drifted from the comments, and holds the vacuum
 score at 100.
 
@@ -73,7 +73,7 @@ skcal meal describe "chicken breast + toum, skipped the salad"
 ## MCP server
 
 skcal exposes a remote [MCP](https://modelcontextprotocol.io) server at
-**`https://skcal.skeptrune.com/mcp`** (Streamable HTTP) so agents can log and
+**`https://app.skcal.fit/mcp`** (Streamable HTTP) so agents can log and
 query your data. It's guarded by OAuth 2.1 via Better Auth — clients discover
 `/.well-known/oauth-authorization-server`, dynamically register, and you sign in
 with the same Google / magic-link login (no manual token to copy).
@@ -81,13 +81,13 @@ with the same Google / magic-link login (no manual token to copy).
 Add it to an MCP client, e.g. Claude Code:
 
 ```bash
-claude mcp add --transport http skcal https://skcal.skeptrune.com/mcp
+claude mcp add --transport http skcal https://app.skcal.fit/mcp
 ```
 
 or in a client that takes JSON config:
 
 ```json
-{ "mcpServers": { "skcal": { "url": "https://skcal.skeptrune.com/mcp" } } }
+{ "mcpServers": { "skcal": { "url": "https://app.skcal.fit/mcp" } } }
 ```
 
 On first use the client opens a browser to authorize. Tools: `skcal_get_status`,

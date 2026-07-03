@@ -8,7 +8,7 @@
     "url": "git+https://github.com/skeptrunedev/telemetry.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://skcal.skeptrune.com",
+  "homepage": "https://app.skcal.fit",
   "type": "commonjs",
   "bin": {
     "skcal": "dist/index.js"

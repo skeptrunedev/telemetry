@@ -2,7 +2,7 @@ import { loadCredentials, saveCredentials, DEFAULT_BASE_URL } from "./config";
 import type { OAuthCreds } from "./config";
 import { refreshAccessToken } from "./auth";
 
-// Shapes mirror the API's OpenAPI components (skcal.skeptrune.com/openapi.json).
+// Shapes mirror the API's OpenAPI components (app.skcal.fit/openapi.json).
 export type WhoAmI = { email: string };
 export type WeightReading = {
   id: number;

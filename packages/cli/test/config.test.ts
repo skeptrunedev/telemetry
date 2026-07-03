@@ -61,7 +61,7 @@ describe("credentials round-trip", () => {
 
   it("save → load returns the same credentials", () => {
     expect(loadCredentials()).toBeNull();
-    const creds = { baseUrl: "https://skcal.skeptrune.com", token: "tok123", savedAt: "2026-06-29T00:00:00Z" };
+    const creds = { baseUrl: "https://app.skcal.fit", token: "tok123", savedAt: "2026-06-29T00:00:00Z" };
     saveCredentials(creds);
     expect(loadCredentials()).toEqual(creds);
   });

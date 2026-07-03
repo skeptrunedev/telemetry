@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 
-export const DEFAULT_BASE_URL = "https://skcal.skeptrune.com";
+export const DEFAULT_BASE_URL = "https://app.skcal.fit";
 
 export type OAuthCreds = {
   accessToken: string;

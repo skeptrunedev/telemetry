@@ -42,13 +42,13 @@ type Variables = { email: string };
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 const db = (c: { env: Bindings }) => drizzle(c.env.DB, { schema });
 
-// A self-destructing service worker for the retired telemetry.skeptrune.com
-// origin. Old visitors have a PWA service worker registered there that serves
-// the cached app shell and swallows navigations, so they never see the 301
-// below. The browser still fetches /sw.js from the network to check for SW
-// updates (that request bypasses the SW), so serving this here lets the old
-// worker update to one that unregisters itself, drops its caches, and reloads
-// every client — after which navigations hit the network and get redirected.
+// A self-destructing service worker for retired origins (telemetry.* and
+// skcal.skeptrune.com). Old visitors have a PWA service worker registered there
+// that could serve a cached shell; the browser still fetches /sw.js from the
+// network to check for SW updates (that request bypasses the SW), so serving
+// this lets the old worker update to one that unregisters itself, drops its
+// caches, and reloads every client — after which navigations hit the network
+// and get redirected to the canonical host.
 const KILL_SERVICE_WORKER = `self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
@@ -63,11 +63,18 @@ self.addEventListener("activate", (event) => {
 });
 `;
 
-// The app moved to skcal.skeptrune.com; permanently redirect the old brand host
-// (first middleware so it beats auth + the session guard).
+// The app lives at app.skcal.fit; the old brand hosts permanently redirect
+// (first middleware so it beats auth + the session guard). Machine surfaces —
+// the API (CLI + API keys + scale ingest), the MCP endpoint, and OAuth
+// discovery — are still SERVED on the old hosts rather than redirected, so
+// existing tokens, installed connectors, and the scale listener keep working
+// (many HTTP clients won't replay a POST body across a 301).
+const CANONICAL_ORIGIN = "https://app.skcal.fit";
+const LEGACY_HOSTS = new Set(["telemetry.skeptrune.com", "skcal.skeptrune.com"]);
+
 app.use("*", async (c, next) => {
   const url = new URL(c.req.url);
-  if (url.hostname === "telemetry.skeptrune.com") {
+  if (LEGACY_HOSTS.has(url.hostname)) {
     // Don't redirect the SW script — serve the kill-switch so stale installs
     // can tear themselves down (a redirected /sw.js just fails the update).
     if (url.pathname === "/sw.js") {
@@ -78,7 +85,10 @@ app.use("*", async (c, next) => {
         },
       });
     }
-    return c.redirect(`https://skcal.skeptrune.com${url.pathname}${url.search}`, 301);
+    if (url.pathname.startsWith("/api/") || url.pathname === "/mcp" || url.pathname.startsWith("/.well-known/")) {
+      return next();
+    }
+    return c.redirect(`${CANONICAL_ORIGIN}${url.pathname}${url.search}`, 301);
   }
   return next();
 });

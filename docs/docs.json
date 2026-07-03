@@ -52,7 +52,7 @@
     "primary": {
       "type": "button",
       "label": "Open skcal",
-      "href": "https://skcal.skeptrune.com"
+      "href": "https://app.skcal.fit"
     }
   },
   "contextual": {
@@ -66,9 +66,9 @@
       {
         "header": "skcal",
         "items": [
-          { "label": "App", "href": "https://skcal.skeptrune.com" },
-          { "label": "Privacy", "href": "https://skcal.skeptrune.com/privacy" },
-          { "label": "Terms", "href": "https://skcal.skeptrune.com/terms" }
+          { "label": "App", "href": "https://app.skcal.fit" },
+          { "label": "Privacy", "href": "https://app.skcal.fit/privacy" },
+          { "label": "Terms", "href": "https://app.skcal.fit/terms" }
         ]
       }
     ]

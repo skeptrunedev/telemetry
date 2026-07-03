@@ -22,7 +22,7 @@ carry it automatically — nothing to configure.
 Create bearer API keys in the app under **profile → API keys**. Send them as:
 
 ```bash
-curl https://skcal.skeptrune.com/api/dashboard \
+curl https://app.skcal.fit/api/dashboard \
   -H "Authorization: Bearer skcal_your_key_here"
 ```
 
@@ -58,7 +58,7 @@ The single write endpoint `POST /api/ingest/weight` accepts a shared bearer
 token so a smart scale can push readings without a browser session:
 
 ```bash
-curl -X POST https://skcal.skeptrune.com/api/ingest/weight \
+curl -X POST https://app.skcal.fit/api/ingest/weight \
   -H "Authorization: Bearer $INGEST_TOKEN" \
   -H "content-type: application/json" \
   -d '{"weightKg": 72.6}'

@@ -5,7 +5,7 @@ description: "Sign in, log your first entries, and connect skcal to your tools."
 
 ## 1. Sign in
 
-Open [skcal.skeptrune.com](https://skcal.skeptrune.com) and sign in with Google
+Open [app.skcal.fit](https://app.skcal.fit) and sign in with Google
 or an email magic link. Your data is scoped to your account.
 
 ## 2. Set your targets
@@ -28,7 +28,7 @@ goal weight. The dashboard tracks everything against these.
   </Tab>
   <Tab title="MCP (agents)">
     ```bash
-    claude mcp add --transport http skcal https://skcal.skeptrune.com/mcp
+    claude mcp add --transport http skcal https://app.skcal.fit/mcp
     ```
     Then ask your agent things like "what's my status today?" or "log 160 lb."
     See [Install the MCP server](/mcp) for Claude, Claude Code, and ChatGPT.
@@ -38,7 +38,7 @@ goal weight. The dashboard tracks everything against these.
     The scale-ingest endpoint takes a bearer token:
 
     ```bash
-    curl -X POST https://skcal.skeptrune.com/api/ingest/weight \
+    curl -X POST https://app.skcal.fit/api/ingest/weight \
       -H "Authorization: Bearer $INGEST_TOKEN" \
       -H "content-type: application/json" \
       -d '{"weightKg": 72.6}'

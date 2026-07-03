@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Copy, Check, ExternalLink } from "lucide-react";
 
-const MCP_URL = `${typeof location !== "undefined" ? location.origin : "https://skcal.skeptrune.com"}/mcp`;
+const MCP_URL = `${typeof location !== "undefined" ? location.origin : "https://app.skcal.fit"}/mcp`;
 
 function CopyField({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
