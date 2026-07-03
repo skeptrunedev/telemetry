@@ -1,0 +1,114 @@
+[
+ {
+  "seed": 2357,
+  "approach": "concentric",
+  "stretch": 1.062,
+  "extras": "none",
+  "file": "r2-01-concentric-s2357.svg"
+ },
+ {
+  "seed": 6549,
+  "approach": "concentric",
+  "stretch": 1.062,
+  "extras": "dot",
+  "file": "r2-02-concentric-s6549.svg"
+ },
+ {
+  "seed": 9456,
+  "approach": "concentric",
+  "stretch": 1.062,
+  "extras": "dot",
+  "file": "r2-03-concentric-s9456.svg"
+ },
+ {
+  "seed": 7280,
+  "approach": "concentric",
+  "stretch": 1.0,
+  "extras": "dot",
+  "file": "r2-04-concentric-s7280.svg"
+ },
+ {
+  "seed": 2011,
+  "approach": "drift",
+  "stretch": 1.0,
+  "extras": "dot",
+  "file": "r2-05-drift-s2011.svg"
+ },
+ {
+  "seed": 4108,
+  "approach": "drift",
+  "stretch": 1.062,
+  "extras": "none",
+  "file": "r2-06-drift-s4108.svg"
+ },
+ {
+  "seed": 9686,
+  "approach": "drift",
+  "stretch": 1.0,
+  "extras": "none",
+  "file": "r2-07-drift-s9686.svg"
+ },
+ {
+  "seed": 4661,
+  "approach": "drift",
+  "stretch": 1.062,
+  "extras": "none",
+  "file": "r2-08-drift-s4661.svg"
+ },
+ {
+  "seed": 3863,
+  "approach": "drop",
+  "stretch": 1.0,
+  "extras": "none",
+  "file": "r2-09-drop-s3863.svg"
+ },
+ {
+  "seed": 7923,
+  "approach": "drop",
+  "stretch": 1.062,
+  "extras": "none",
+  "file": "r2-10-drop-s7923.svg"
+ },
+ {
+  "seed": 3591,
+  "approach": "drop",
+  "stretch": 1.062,
+  "extras": "none",
+  "file": "r2-11-drop-s3591.svg"
+ },
+ {
+  "seed": 3713,
+  "approach": "drop",
+  "stretch": 1.062,
+  "extras": "none",
+  "file": "r2-12-drop-s3713.svg"
+ },
+ {
+  "seed": 4433,
+  "approach": "skip",
+  "stretch": 1.062,
+  "extras": "dot",
+  "file": "r2-13-skip-s4433.svg"
+ },
+ {
+  "seed": 8749,
+  "approach": "skip",
+  "stretch": 1.0,
+  "extras": "none",
+  "file": "r2-14-skip-s8749.svg"
+ },
+ {
+  "seed": 1065,
+  "approach": "skip",
+  "stretch": 1.0,
+  "extras": "dot",
+  "file": "r2-15-skip-s1065.svg"
+ },
+ {
+  "seed": 7381,
+  "approach": "skip",
+  "stretch": 1.0,
+  "extras": "dot",
+  "file": "r2-16-skip-s7381.svg"
+ }
+]
