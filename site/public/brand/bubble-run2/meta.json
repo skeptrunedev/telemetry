@@ -1,0 +1,104 @@
+[
+ {
+  "file": "runner-01-s6013.svg",
+  "gap": "12",
+  "lean": "-12",
+  "L1": "34",
+  "L2": "26",
+  "seed": 6013
+ },
+ {
+  "file": "runner-02-s5771.svg",
+  "gap": "12",
+  "lean": "-16",
+  "L1": "34",
+  "L2": "24",
+  "dashes": "yes",
+  "seed": 5771
+ },
+ {
+  "file": "runner-03-s7149.svg",
+  "gap": "12",
+  "lean": "-16",
+  "L1": "29",
+  "L2": "20",
+  "seed": 7149
+ },
+ {
+  "file": "runner-04-s6876.svg",
+  "gap": "8",
+  "lean": "-16",
+  "L1": "34",
+  "L2": "26",
+  "dashes": "yes",
+  "seed": 6876
+ },
+ {
+  "file": "runner-05-s1574.svg",
+  "gap": "12",
+  "lean": "-12",
+  "L1": "29",
+  "L2": "20",
+  "seed": 1574
+ },
+ {
+  "file": "runner-06-s8967.svg",
+  "gap": "12",
+  "lean": "-16",
+  "L1": "34",
+  "L2": "26",
+  "dashes": "yes",
+  "seed": 8967
+ },
+ {
+  "file": "runner-07-s6379.svg",
+  "gap": "8",
+  "lean": "-12",
+  "L1": "34",
+  "L2": "26",
+  "seed": 6379
+ },
+ {
+  "file": "runner-08-s4628.svg",
+  "gap": "8",
+  "lean": "-16",
+  "L1": "29",
+  "L2": "20",
+  "dashes": "yes",
+  "seed": 4628
+ },
+ {
+  "file": "runner-09-s8116.svg",
+  "gap": "12",
+  "lean": "-12",
+  "L1": "34",
+  "L2": "26",
+  "dashes": "yes",
+  "seed": 8116
+ },
+ {
+  "file": "runner-10-s8146.svg",
+  "gap": "8",
+  "lean": "-12",
+  "L1": "34",
+  "L2": "26",
+  "seed": 8146
+ },
+ {
+  "file": "runner-11-s3000.svg",
+  "gap": "12",
+  "lean": "-8",
+  "L1": "29",
+  "L2": "22",
+  "dashes": "yes",
+  "seed": 3000
+ },
+ {
+  "file": "runner-12-s7064.svg",
+  "gap": "12",
+  "lean": "-16",
+  "L1": "34",
+  "L2": "24",
+  "seed": 7064
+ }
+]
