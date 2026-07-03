@@ -7,7 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { z } from "zod";
 import * as schema from "../db/schema";
-import { makeAuth } from "./auth";
+import { makeAuth, twilioVerify } from "./auth";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import type { DashboardData, Targets } from "../shared/types";
 import { lbToKg, inToCm, MEASUREMENT_SITES, API_SCOPES } from "../shared/types";
@@ -2888,20 +2888,8 @@ app.post("/api/onboard/done", async (c) => {
 });
 
 // ---- Linked channels (phone numbers for the messaging agent) ---------------
-// Verified via Twilio Verify; a number maps to exactly one account.
-async function twilioVerify(env: Bindings, path: string, params: Record<string, string>): Promise<Record<string, unknown>> {
-  const res = await fetch(`https://verify.twilio.com/v2/Services/${env.TWILIO_VERIFY_SERVICE_SID}/${path}`, {
-    method: "POST",
-    headers: {
-      authorization: `Basic ${btoa(`${env.TWILIO_API_KEY_SID}:${env.TWILIO_API_KEY_SECRET}`)}`,
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams(params).toString(),
-  });
-  const json = (await res.json()) as Record<string, unknown>;
-  if (!res.ok) throw new Error(String((json as { message?: string }).message ?? `twilio ${path} → ${res.status}`));
-  return json;
-}
+// Verified via Twilio Verify (helper shared with phone sign-in in auth.ts);
+// a number maps to exactly one account.
 
 const E164 = /^\+[1-9]\d{6,14}$/;
 

@@ -1,8 +1,9 @@
 import { betterAuth } from "better-auth";
 import type { BetterAuthPlugin } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { magicLink, mcp } from "better-auth/plugins";
+import { magicLink, mcp, phoneNumber } from "better-auth/plugins";
 import { drizzle } from "drizzle-orm/d1";
+import { and, eq } from "drizzle-orm";
 import { WorkerMailer } from "worker-mailer";
 import * as schema from "../db/schema";
 
@@ -18,7 +19,30 @@ export type AuthEnv = {
   SMTP_USER?: string;
   SMTP_PASS?: string;
   SMTP_FROM?: string;
+  TWILIO_API_KEY_SID?: string;
+  TWILIO_API_KEY_SECRET?: string;
+  TWILIO_VERIFY_SERVICE_SID?: string;
 };
+
+// Twilio Verify REST helper (shared with the linked-channels flow): Verify
+// generates and checks its own codes, so Better Auth's generated OTP is unused.
+export async function twilioVerify(
+  env: Pick<AuthEnv, "TWILIO_API_KEY_SID" | "TWILIO_API_KEY_SECRET" | "TWILIO_VERIFY_SERVICE_SID">,
+  path: string,
+  params: Record<string, string>,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`https://verify.twilio.com/v2/Services/${env.TWILIO_VERIFY_SERVICE_SID}/${path}`, {
+    method: "POST",
+    headers: {
+      authorization: `Basic ${btoa(`${env.TWILIO_API_KEY_SID}:${env.TWILIO_API_KEY_SECRET}`)}`,
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams(params).toString(),
+  });
+  const json = (await res.json()) as Record<string, unknown>;
+  if (!res.ok) throw new Error(String((json as { message?: string }).message ?? `twilio ${path} → ${res.status}`));
+  return json;
+}
 
 // Compose + send the magic-link email over SMTP using worker-mailer.
 // Runs inside the Worker: worker-mailer opens the socket via `cloudflare:sockets`
@@ -121,6 +145,73 @@ export function makeAuth(env: AuthEnv) {
       },
     },
     plugins: [
+      // Primary sign-in: phone number + Twilio Verify OTP. Verify manages its
+      // own codes, so sendOTP ignores Better Auth's generated code and
+      // verifyOTP checks against Twilio instead.
+      phoneNumber({
+        sendOTP: async ({ phoneNumber: phone }) => {
+          await twilioVerify(env, "Verifications", { To: phone, Channel: "sms" });
+        },
+        verifyOTP: async ({ phoneNumber: phone, code }) => {
+          try {
+            const check = await twilioVerify(env, "VerificationCheck", { To: phone, Code: code });
+            if (check.status !== "approved") return false;
+          } catch {
+            return false;
+          }
+          // Existing-account mapping: if this number is already a verified
+          // linked channel (agent texting) and no account uses it for sign-in
+          // yet, adopt it — the session then lands on that account instead of
+          // minting a fresh one.
+          try {
+            const db = drizzle(env.DB, { schema });
+            const taken = await db.select({ id: schema.user.id }).from(schema.user).where(eq(schema.user.phoneNumber, phone)).limit(1);
+            if (!taken.length) {
+              const chan = await db
+                .select()
+                .from(schema.linkedChannels)
+                .where(and(eq(schema.linkedChannels.kind, "phone"), eq(schema.linkedChannels.value, phone)))
+                .limit(1);
+              if (chan.length) {
+                await db
+                  .update(schema.user)
+                  .set({ phoneNumber: phone, phoneNumberVerified: true })
+                  .where(eq(schema.user.email, chan[0].userEmail));
+              }
+            }
+          } catch {
+            /* best-effort mapping; a fresh account is the fallback */
+          }
+          return true;
+        },
+        signUpOnVerification: {
+          getTempEmail: (phone) => `${phone.replace(/\D/g, "")}@phone.skcal.fit`,
+          getTempName: (phone) => phone,
+        },
+        // Auto-link the verified number as an agent channel so texting the
+        // iMessage agent works immediately after phone sign-in.
+        callbackOnVerification: async ({ phoneNumber: phone, user }) => {
+          try {
+            const db = drizzle(env.DB, { schema });
+            const existing = await db
+              .select({ id: schema.linkedChannels.id })
+              .from(schema.linkedChannels)
+              .where(and(eq(schema.linkedChannels.kind, "phone"), eq(schema.linkedChannels.value, phone)))
+              .limit(1);
+            if (!existing.length) {
+              await db.insert(schema.linkedChannels).values({
+                id: crypto.randomUUID(),
+                userEmail: user.email,
+                kind: "phone",
+                value: phone,
+                verifiedAt: new Date(),
+              });
+            }
+          } catch {
+            /* linking is best-effort; the profile UI can do it later */
+          }
+        },
+      }),
       magicLink({
         sendMagicLink: async ({ email, url }) => {
           await sendMagicLinkEmail(env, email, url);

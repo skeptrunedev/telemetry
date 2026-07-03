@@ -1,40 +1,62 @@
-import { useState } from "react";
-import { signIn } from "./auth-client";
+import { useRef, useState } from "react";
+import { authClient } from "./auth-client";
 
-// The signed-out screen. Two ways in: Google (OAuth redirect) or an email magic
-// link (passwordless). Styled to the Graphite & Amber theme — one amber accent,
-// flat dark surfaces, no green.
+// Normalize a user-entered phone number to E.164; bare 10-digit numbers are
+// assumed US/Canada (+1). Mirrors the server's normalizePhone.
+function normalizePhone(input: string): string | null {
+  const s = input.replace(/[\s().-]/g, "");
+  if (s.startsWith("+")) return /^\+[1-9]\d{6,14}$/.test(s) ? s : null;
+  const digits = s.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return null;
+}
+
+// The signed-out screen: phone number in, verification code back, signed in.
 export function SignIn() {
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
-  const [busy, setBusy] = useState<"google" | "magic" | null>(null);
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [stage, setStage] = useState<"phone" | "code">("phone");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const normalized = useRef<string>("");
 
-  const google = async () => {
-    setError(null);
-    setBusy("google");
-    try {
-      // Redirects to Google; on success Better Auth returns to callbackURL.
-      await signIn.social({ provider: "google", callbackURL: window.location.origin });
-    } catch (e) {
-      setError(String(e));
-      setBusy(null);
-    }
-  };
-
-  const magic = async (ev: React.FormEvent) => {
+  const sendCode = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    const addr = email.trim();
-    if (!addr) return;
-    setError(null);
-    setBusy("magic");
-    const { error: err } = await signIn.magicLink({ email: addr, callbackURL: window.location.origin });
-    setBusy(null);
-    if (err) {
-      setError(err.message ?? "Couldn't send the link. Try again.");
+    const e164 = normalizePhone(phone);
+    if (!e164) {
+      setError("Enter a valid phone number (US numbers can skip the +1).");
       return;
     }
-    setSent(true);
+    normalized.current = e164;
+    setError(null);
+    setBusy(true);
+    const { error: err } = await authClient.phoneNumber.sendOtp({ phoneNumber: e164 });
+    setBusy(false);
+    if (err) {
+      setError(err.message ?? "Couldn't send the code. Try again.");
+      return;
+    }
+    setCode("");
+    setStage("code");
+  };
+
+  const verify = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    const c = code.trim();
+    if (c.length < 4) return;
+    setError(null);
+    setBusy(true);
+    const { error: err } = await authClient.phoneNumber.verify({
+      phoneNumber: normalized.current,
+      code: c,
+    });
+    setBusy(false);
+    if (err) {
+      setError(err.message ?? "That code didn't work. Try again.");
+      return;
+    }
+    window.location.reload();
   };
 
   return (
@@ -42,45 +64,61 @@ export function SignIn() {
       <div className="signin-card">
         <p className="signin-brand">skcal</p>
         <h1 className="signin-title">Sign in</h1>
-        <p className="signin-sub">Body-recomposition tracking. One account, your data only.</p>
+        <p className="signin-sub">
+          {stage === "phone"
+            ? "Enter your phone number and we'll text you a sign-in code."
+            : `We texted a code to ${normalized.current}.`}
+        </p>
 
-        {sent ? (
-          <div className="signin-sent">
-            <p className="signin-sent-title">Check your inbox</p>
-            <p className="signin-sub">
-              We sent a sign-in link to <span className="signin-email">{email.trim()}</span>. It expires shortly
-              and can only be used once.
-            </p>
-            <button className="btn ghost" onClick={() => setSent(false)}>
-              Use a different email
+        {stage === "phone" ? (
+          <form className="signin-form" onSubmit={sendCode}>
+            <input
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="(415) 555-0132"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              disabled={busy}
+              aria-label="Phone number"
+              autoFocus
+              required
+            />
+            <button className="btn" type="submit" disabled={busy || !phone.trim()}>
+              {busy ? "Sending…" : "Text me a code"}
             </button>
-          </div>
+          </form>
         ) : (
           <>
-            <button className="btn signin-google" onClick={google} disabled={busy != null}>
-              {busy === "google" ? "Redirecting…" : "Continue with Google"}
-            </button>
-
-            <div className="signin-or">
-              <span>or</span>
-            </div>
-
-            <form className="signin-form" onSubmit={magic}>
+            <form className="signin-form" onSubmit={verify}>
               <input
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={busy != null}
-                aria-label="Email address"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]*"
+                maxLength={8}
+                placeholder="123456"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                disabled={busy}
+                aria-label="Verification code"
+                autoFocus
                 required
               />
-              <button className="btn" type="submit" disabled={busy != null || !email.trim()}>
-                {busy === "magic" ? "Sending…" : "Email me a sign-in link"}
+              <button className="btn" type="submit" disabled={busy || code.trim().length < 4}>
+                {busy ? "Checking…" : "Sign in"}
               </button>
             </form>
+            <button
+              className="btn ghost"
+              onClick={() => {
+                setStage("phone");
+                setError(null);
+              }}
+              disabled={busy}
+            >
+              Use a different number
+            </button>
           </>
         )}
 
