@@ -348,13 +348,31 @@ const WORKOUT_PROMPT =
 
 const PHOTO_KIND_SCHEMA = {
   type: "object",
-  properties: { kind: { type: "string", enum: ["food", "workout", "other"] } },
+  properties: { kind: { type: "string", enum: ["food", "workout", "weight", "measurement", "other"] } },
   required: ["kind"],
   additionalProperties: false,
 };
 
 const PHOTO_KIND_PROMPT =
-  "Classify what these image(s) show so the right logger runs. `food`: a meal, snack, drink, plate, packaging, or menu item the user consumed. `workout`: exercise evidence — a treadmill/bike/erg console, a fitness-app or watch summary screenshot (Strava, Garmin, Apple Fitness), a whiteboard WOD, or gym equipment mid-session. `other`: anything else. If the user's caption contradicts the pixels, trust the caption.";
+  "Classify what these image(s) show so the right logger runs. `food`: a meal, snack, drink, plate, packaging, or menu item the user consumed. `workout`: exercise evidence — a treadmill/bike/erg console, a fitness-app or watch summary screenshot (Strava, Garmin, Apple Fitness), a whiteboard WOD, or gym equipment mid-session. `weight`: a body-weight reading — a bathroom scale display or a smart-scale/weight-app screenshot. `measurement`: a body measurement being taken — a tape measure around a body part, calipers, or a measuring-app screenshot. `other`: anything else. If the user's caption contradicts the pixels, trust the caption.";
+
+const WEIGHT_VISION_SCHEMA = {
+  type: "object",
+  properties: {
+    weight: { type: "number" },
+    unit: { type: "string", enum: ["lb", "kg"] },
+    body_fat_pct: { type: ["number", "null"] },
+    note: { type: "string" },
+  },
+  required: ["weight", "unit", "body_fat_pct", "note"],
+  additionalProperties: false,
+};
+
+const WEIGHT_VISION_PROMPT =
+  "The image(s) show a body-weight reading (bathroom scale display or weight-app screenshot). Read the displayed weight and its unit exactly; include body_fat_pct only if the display shows one. In `note`, one short line on what was read (device, any ambiguity). Trust the user's caption over the pixels.";
+
+const MEASURE_VISION_PROMPT =
+  "The image(s) show a body measurement being taken (tape measure, calipers, or a measuring-app screenshot). Read the measured value and its unit exactly, and identify which body site is being measured if the image or caption makes it clear — otherwise 'unknown'. Trust the user's caption over the pixels.";
 
 const WORKOUT_VISION_PROMPT =
   "The image(s) show evidence of a workout the user did — typically a cardio-machine console, a fitness app or watch summary screenshot, or a whiteboard. Read only the metrics actually visible and fill the same fields as for a described workout — null anything not shown. `summary` must be a SHORT title (3–8 words, e.g. 'treadmill 5k'), not a sentence.";
@@ -1293,7 +1311,7 @@ async function analyzeMealPhotos(
  *   post:
  *     tags: [Nutrition]
  *     summary: Log a meal or workout from photos
- *     description: Uploads 1–5 photos, classifies whether they show food or workout evidence (a machine console, app/watch summary, whiteboard), then logs a meal (as /api/nutrition/analyze) or a workout accordingly. Returns the classification in `kind`.
+ *     description: Uploads 1–5 photos, classifies what they show — food, workout evidence (machine console, app/watch summary, whiteboard), a scale readout, or a tape-measure/measuring-app reading — and logs the matching entry (meal, workout, weigh-in, or body measurement). Returns the classification in `kind`.
  *     operationId: analyzeAny
  *     parameters:
  *       - name: date
@@ -1398,11 +1416,62 @@ app.post("/api/log/analyze", async (c) => {
     return c.json({ error: "classification failed", detail: String(e) }, 502);
   }
 
+  const extract = async (schemaDef: object, prompt: string) => {
+    const msg = await anthropic.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 256,
+      output_config: { format: { type: "json_schema", schema: schemaDef } },
+      messages: [
+        {
+          role: "user",
+          content: [...imageBlocks, { type: "text", text: note ? `${prompt}\n\nUser's caption: ${note}` : prompt }],
+        },
+      ],
+    } as Anthropic.MessageCreateParamsNonStreaming);
+    return JSON.parse(msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join(""));
+  };
+
   try {
     if (kind === "food") return c.json({ kind, ...(await analyzeMealPhotos(c, email, bufs, note, today)) });
     if (kind === "workout") {
       const workout = await logDescribedWorkout(c, email, note, workoutTs(date, tzMin), imageBlocks);
       return c.json({ kind, ok: true, workout });
+    }
+    if (kind === "weight") {
+      const r = (await extract(WEIGHT_VISION_SCHEMA, WEIGHT_VISION_PROMPT)) as {
+        weight: number; unit: "lb" | "kg"; body_fat_pct: number | null; note: string;
+      };
+      const weightKg = r.unit === "kg" ? r.weight : lbToKg(r.weight);
+      if (!(weightKg >= 9 && weightKg <= 320)) return c.json({ kind, ok: false, error: "couldn't read a plausible weight" });
+      const bodyFatPct = r.body_fat_pct != null && r.body_fat_pct >= 1 && r.body_fat_pct <= 80 ? r.body_fat_pct : null;
+      await db(c).insert(schema.weightReadings).values({
+        userEmail: email, weightKg, bodyFatPct,
+        note: (note || r.note || "logged from photo").slice(0, 500),
+        source: "manual",
+      });
+      return c.json({ kind, ok: true, pounds: Math.round(kgToLb(weightKg) * 10) / 10, weightKg, bodyFatPct });
+    }
+    if (kind === "measurement") {
+      const measureSchema = {
+        type: "object",
+        properties: {
+          site: { type: "string", enum: [...MEASUREMENT_SITES, "unknown"] },
+          value: { type: "number" },
+          unit: { type: "string", enum: ["in", "cm"] },
+        },
+        required: ["site", "value", "unit"],
+        additionalProperties: false,
+      };
+      const r = (await extract(measureSchema, MEASURE_VISION_PROMPT)) as {
+        site: string; value: number; unit: "in" | "cm";
+      };
+      const inches = r.unit === "in" ? r.value : r.value / 2.54;
+      if (!(inches >= 1 && inches <= 120)) return c.json({ kind, ok: false, error: "couldn't read a plausible measurement" });
+      if (!r.site || !(MEASUREMENT_SITES as readonly string[]).includes(r.site)) {
+        return c.json({ kind, ok: false, needSite: true, inches: Math.round(inches * 10) / 10 });
+      }
+      await db(c).insert(schema.measurements).values({ userEmail: email, site: r.site, valueCm: inToCm(inches), source: "manual" });
+      return c.json({ kind, ok: true, site: r.site, inches: Math.round(inches * 10) / 10 });
     }
   } catch (e) {
     return c.json({ error: "analysis failed", detail: String(e) }, 502);

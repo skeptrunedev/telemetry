@@ -675,7 +675,7 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *       properties:
  *         kind:
  *           type: string
- *           enum: [food, workout, other]
+ *           enum: [food, workout, weight, measurement, other]
  *           description: What the photos were classified as.
  *           example: workout
  *         ok:
@@ -714,6 +714,30 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *             example: nick@mintlify.com/2026-06-29/3f8b1c2a
  *         workout:
  *           $ref: '#/components/schemas/Workout'
+ *         pounds:
+ *           type: number
+ *           description: Logged body weight in pounds (weight only).
+ *           example: 158.2
+ *         weightKg:
+ *           type: number
+ *           description: Logged body weight in kilograms (weight only).
+ *           example: 71.8
+ *         bodyFatPct:
+ *           type: [number, 'null']
+ *           description: Body-fat percentage when the scale showed one (weight only).
+ *           example: 17.2
+ *         site:
+ *           type: string
+ *           description: Body site the measurement was logged against (measurement only).
+ *           example: waist
+ *         inches:
+ *           type: number
+ *           description: Measured value in inches (measurement only).
+ *           example: 31.8
+ *         needSite:
+ *           type: boolean
+ *           description: True when a measurement was read but the body site could not be identified — nothing was logged; resubmit with a caption naming the site.
+ *           example: false
  *     DescribeMeal:
  *       type: object
  *       description: Body for logging a meal from a freeform text description.

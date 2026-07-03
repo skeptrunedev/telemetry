@@ -566,7 +566,7 @@
           "Nutrition"
         ],
         "summary": "Log a meal or workout from photos",
-        "description": "Uploads 1–5 photos, classifies whether they show food or workout evidence (a machine console, app/watch summary, whiteboard), then logs a meal (as /api/nutrition/analyze) or a workout accordingly. Returns the classification in `kind`.",
+        "description": "Uploads 1–5 photos, classifies what they show — food, workout evidence (machine console, app/watch summary, whiteboard), a scale readout, or a tape-measure/measuring-app reading — and logs the matching entry (meal, workout, weigh-in, or body measurement). Returns the classification in `kind`.",
         "operationId": "analyzeAny",
         "parameters": [
           {
@@ -2232,6 +2232,8 @@
             "enum": [
               "food",
               "workout",
+              "weight",
+              "measurement",
               "other"
             ],
             "description": "What the photos were classified as.",
@@ -2290,6 +2292,39 @@
           },
           "workout": {
             "$ref": "#/components/schemas/Workout"
+          },
+          "pounds": {
+            "type": "number",
+            "description": "Logged body weight in pounds (weight only).",
+            "example": 158.2
+          },
+          "weightKg": {
+            "type": "number",
+            "description": "Logged body weight in kilograms (weight only).",
+            "example": 71.8
+          },
+          "bodyFatPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Body-fat percentage when the scale showed one (weight only).",
+            "example": 17.2
+          },
+          "site": {
+            "type": "string",
+            "description": "Body site the measurement was logged against (measurement only).",
+            "example": "waist"
+          },
+          "inches": {
+            "type": "number",
+            "description": "Measured value in inches (measurement only).",
+            "example": 31.8
+          },
+          "needSite": {
+            "type": "boolean",
+            "description": "True when a measurement was read but the body site could not be identified — nothing was logged; resubmit with a caption naming the site.",
+            "example": false
           }
         }
       },
