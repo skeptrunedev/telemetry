@@ -1,0 +1,14 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  // Static-assets-only Worker serving the Astro build for the marketing site.
+  "name": "skcal-landing",
+  "account_id": "2f016a113dca4bbf3eda769b3f7d12fd",
+  "compatibility_date": "2026-06-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "skcal.fit", "custom_domain": true },
+    { "pattern": "www.skcal.fit", "custom_domain": true }
+  ],
+  "assets": { "directory": "./dist" }
+}
