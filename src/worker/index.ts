@@ -1876,6 +1876,7 @@ async function buildCoachSystem(
   c: Context<{ Bindings: Bindings; Variables: Variables }>,
   email: string,
   today: string,
+  tzMin = 0,
 ): Promise<string> {
   const targets = await getTargets(c, email);
   const nutToday = await db(c)
@@ -1954,9 +1955,13 @@ async function buildCoachSystem(
         ? `7-day average is ${fmtLb(weeklyAvgKg)}; not enough history yet for a week-over-week trend`
         : "no recent weigh-ins to compute a trend";
 
+  const localNow = new Date(Date.now() - tzMin * 60_000);
+  const nowLine = `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][localNow.getUTCDay()]} ${localNow.toISOString().slice(0, 16).replace("T", " ")}`;
   return [
     "You are the user's blunt, knowledgeable nutrition coach inside their body-recomposition tracker (a lean cut with a protein floor).",
     "Answer using THEIR real numbers below — never invent targets or intake.",
+    "",
+    `CURRENT TIME (user's local): ${nowLine}`,
     "",
     "TARGETS:",
     `- Daily calories: ${kcalTarget || "unset"} kcal`,
@@ -2291,14 +2296,15 @@ async function executeCoachTool(
  */
 app.post("/api/agent", async (c) => {
   const email = c.get("email");
-  const b = await c.req.json<{ messages?: unknown; date?: string }>();
+  const b = await c.req.json<{ messages?: unknown; date?: string; tz?: number }>();
   const parsed = parseCoachMessages(b.messages);
   if ("error" in parsed) return c.json({ error: parsed.error }, 400);
   const messages = parsed.messages;
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "coach not configured" }, 503);
 
-  const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
-  const system = await buildCoachSystem(c, email, today);
+  const tzMin = Number(b.tz ?? 0) || 0;
+  const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
+  const system = await buildCoachSystem(c, email, today, tzMin);
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   let reply: string;
@@ -2326,15 +2332,16 @@ app.post("/api/agent", async (c) => {
 // route above stays for the CLI/API/MCP surface.
 app.post("/api/agent/stream", async (c) => {
   const email = c.get("email");
-  const b = await c.req.json<{ messages?: unknown; date?: string }>();
+  const b = await c.req.json<{ messages?: unknown; date?: string; tz?: number }>();
   const parsed = parseCoachMessages(b.messages);
   if ("error" in parsed) return c.json({ error: parsed.error }, 400);
   const messages = parsed.messages;
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "coach not configured" }, 503);
 
-  const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
+  const tzMin = Number(b.tz ?? 0) || 0;
+  const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
   const system =
-    (await buildCoachSystem(c, email, today)) +
+    (await buildCoachSystem(c, email, today, tzMin)) +
     `\n\nTools: you can view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
@@ -3121,6 +3128,7 @@ function buildMcpServer(c: Context<{ Bindings: Bindings; Variables: Variables }>
       const proteinIn = nut?.proteinG ?? 0;
       return ok({
         date: day,
+        nowUtc: new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC",
         calories: { logged: kcalIn, target: targets.dailyKcalTarget, remaining: (targets.dailyKcalTarget ?? 0) - kcalIn },
         protein: { loggedG: proteinIn, targetG: targets.proteinTargetG, remainingG: (targets.proteinTargetG ?? 0) - proteinIn },
         latestWeightLb: latest ? Number(kgToLb(latest.weightKg).toFixed(1)) : null,

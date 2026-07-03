@@ -9,6 +9,20 @@ import "./index.css";
 // navigateFallbackDenylist in vite.config.ts), so deploys can't leave a stale
 // shell pointing at 404'd asset hashes. Register + poll for updates (on load,
 // every 30 min, and when the tab regains focus) and apply them immediately.
+// Track the visual viewport so the chat view can shrink with the on-screen
+// keyboard (100dvh does NOT shrink when the iOS keyboard opens).
+const vv = window.visualViewport;
+if (vv) {
+  const setVvh = () => {
+    document.documentElement.style.setProperty("--vvh", `${vv.height}px`);
+    // iOS nudges the layout viewport when the keyboard opens; pin it back so
+    // the shrunken app stays aligned to the top.
+    if (window.scrollY !== 0 && document.querySelector(".shell-coach")) window.scrollTo(0, 0);
+  };
+  vv.addEventListener("resize", setVvh);
+  setVvh();
+}
+
 const updateSW = registerSW({
   immediate: true,
   onRegisteredSW(_swUrl, registration) {

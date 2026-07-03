@@ -212,17 +212,30 @@ export function CoachThread({
           }
         };
 
+        // Race every read against the abort signal: iOS Safari does not reject
+        // an in-flight reader.read() when the fetch is aborted, which left the
+        // stop button dead and the thread stuck in "running" forever.
+        const aborted = new Promise<never>((_, reject) => {
+          const fail = () => reject(new DOMException("aborted", "AbortError"));
+          if (abortSignal.aborted) fail();
+          else abortSignal.addEventListener("abort", fail, { once: true });
+        });
+        aborted.catch(() => {});
         let buf = "";
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          let nl: number;
-          while ((nl = buf.indexOf("\n")) >= 0) {
-            handle(buf.slice(0, nl));
-            buf = buf.slice(nl + 1);
+        try {
+          for (;;) {
+            const { done, value } = await Promise.race([reader.read(), aborted]);
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            let nl: number;
+            while ((nl = buf.indexOf("\n")) >= 0) {
+              handle(buf.slice(0, nl));
+              buf = buf.slice(nl + 1);
+            }
+            yield snapshot();
           }
-          yield snapshot();
+        } finally {
+          reader.cancel().catch(() => {});
         }
         if (buf.trim()) handle(buf);
         yield snapshot();

@@ -102,7 +102,7 @@ export const api = {
     const r = await rawFetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages, date }),
+      body: JSON.stringify({ messages, date, tz: new Date().getTimezoneOffset() }),
     });
     if (!r.ok) throw new Error(`coach → ${r.status}: ${await r.text().catch(() => "")}`);
     return r.json() as Promise<{ reply: string }>;
@@ -113,7 +113,7 @@ export const api = {
     const r = await rawFetch(`/api/agent/stream?date=${date}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages, date }),
+      body: JSON.stringify({ messages, date, tz: new Date().getTimezoneOffset() }),
       signal,
     });
     if (!r.ok) throw new Error(`coach → ${r.status}: ${await r.text().catch(() => "")}`);

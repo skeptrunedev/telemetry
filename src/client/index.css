@@ -195,6 +195,18 @@ a {
   display: flex;
   flex-direction: column;
 }
+/* While the agent view is up, the whole app is capped to the VISUAL viewport
+   (--vvh tracks window.visualViewport), so the on-screen keyboard shrinks the
+   pane and the composer rides up with it instead of hiding behind the keys. */
+.app:has(.shell-coach) {
+  height: var(--vvh, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+}
+.app:has(.shell-coach) .app-body {
+  height: 100%;
+  min-height: 0;
+}
 
 /* ---- glance strip ---- */
 .glance {
