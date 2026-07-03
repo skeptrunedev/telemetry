@@ -1325,6 +1325,27 @@ async function buildCoachSystem(
   });
   const prevWeekAvgKg = prevWeekRows.length ? prevWeekRows.reduce((s, r) => s + r.weightKg, 0) / prevWeekRows.length : null;
 
+  const mRows = await db(c)
+    .select()
+    .from(schema.measurements)
+    .where(eq(schema.measurements.userEmail, email))
+    .orderBy(desc(schema.measurements.ts), desc(schema.measurements.id))
+    .limit(200);
+  const seenSites = new Set<string>();
+  const latestMeasurements: { site: string; valueCm: number }[] = [];
+  for (const m of mRows) {
+    if (seenSites.has(m.site)) continue;
+    seenSites.add(m.site);
+    latestMeasurements.push({ site: m.site, valueCm: m.valueCm });
+  }
+  const shoulders = latestMeasurements.find((m) => m.site === "shoulders")?.valueCm;
+  const waist = latestMeasurements.find((m) => m.site === "waist")?.valueCm;
+  const stw = shoulders && waist ? (shoulders / waist).toFixed(3) : null;
+  const measurementLine = latestMeasurements.length
+    ? latestMeasurements.map((m) => `${m.site} ${(m.valueCm / 2.54).toFixed(1)} in`).join(", ") +
+      (stw ? ` (shoulder:waist ${stw})` : "")
+    : "none logged yet";
+
   const kcalTarget = targets.dailyKcalTarget ?? 0;
   const proteinTarget = targets.proteinTargetG ?? 0;
   const kcalLeft = kcalTarget - kcalIn;
@@ -1353,6 +1374,9 @@ async function buildCoachSystem(
     "WEIGHT:",
     `- Latest weigh-in: ${fmtLb(latestKg)}`,
     `- Trend: ${trendLine}`,
+    "",
+    "BODY MEASUREMENTS (latest):",
+    `- ${measurementLine}`,
     "",
     "When the user asks about eating a specific food: estimate its calories and protein, say how it fits the remaining budget above, then give a short blunt verdict (eat it / fine / skip). If it's a poor fit, suggest a better alternative that protects the protein floor and calorie budget.",
     "Be concise: 2–5 sentences, conversational. Light markdown is fine (a **bold** verdict, an occasional short list) but keep it tight — no headers, no long bullet dumps.",
@@ -1424,6 +1448,31 @@ const COACH_TOOLS: Anthropic.Tool[] = [
         toDate: { type: "string", description: "Destination day: YYYY-MM-DD, or 'today'/'yesterday'." },
       },
       required: ["itemId", "toDate"],
+    },
+  },
+  {
+    name: "log_measurement",
+    description:
+      "Record a body-part circumference measurement in INCHES. Sites: shoulders, chest, arm_l, arm_r, waist, neck, thigh.",
+    input_schema: {
+      type: "object",
+      properties: {
+        site: { type: "string", enum: [...MEASUREMENT_SITES], description: "Body site." },
+        inches: { type: "number", description: "Circumference in inches." },
+      },
+      required: ["site", "inches"],
+    },
+  },
+  {
+    name: "log_weight",
+    description: "Record a body-weight reading in POUNDS (optionally with a short note).",
+    input_schema: {
+      type: "object",
+      properties: {
+        pounds: { type: "number", description: "Body weight in pounds." },
+        note: { type: "string", description: "Optional note, e.g. 'morning, fasted'." },
+      },
+      required: ["pounds"],
     },
   },
 ];
@@ -1509,6 +1558,23 @@ async function executeCoachTool(
     await recomputeDay(c, email, fromDate);
     await recomputeDay(c, email, toDate);
     return { ok: true, movedItemId: itemId, name: item.name, fromDate, toDate };
+  }
+
+  if (name === "log_measurement") {
+    const site = String(input.site ?? "");
+    const inches = Number(input.inches);
+    if (!(MEASUREMENT_SITES as readonly string[]).includes(site)) return { error: "unknown site" };
+    if (!(inches >= 1 && inches <= 120)) return { error: "inches must be 1-120" };
+    await db(c).insert(schema.measurements).values({ userEmail: email, site, valueCm: inToCm(inches), source: "manual" });
+    return { ok: true, site, inches };
+  }
+
+  if (name === "log_weight") {
+    const pounds = Number(input.pounds);
+    if (!(pounds >= 30 && pounds <= 700)) return { error: "pounds must be 30-700" };
+    const note = typeof input.note === "string" ? input.note.trim().slice(0, 500) || null : null;
+    await db(c).insert(schema.weightReadings).values({ userEmail: email, weightKg: lbToKg(pounds), note, source: "manual" });
+    return { ok: true, loggedPounds: pounds };
   }
 
   return { error: "unknown tool" };
@@ -1601,7 +1667,7 @@ app.post("/api/agent/stream", async (c) => {
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
   const system =
     (await buildCoachSystem(c, email, today)) +
-    `\n\nTools: you can view and reorganize the food log with list_food_log, move_meal, and move_food_item. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
+    `\n\nTools: you can view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds). Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
