@@ -128,19 +128,37 @@ const {
   .chip-sm { font-size: 13px; padding: 8px 6px 8px 13px; }
 
   /* ---- nav ---- */
-  nav { padding: clamp(16px, 3vw, 24px) 0; }
-  .nav-row { display: flex; align-items: center; gap: clamp(16px, 3vw, 36px); flex-wrap: wrap; }
+  nav { padding: clamp(18px, 3.5vw, 26px) 0; }
+  .nav-row { display: flex; align-items: center; gap: clamp(16px, 3vw, 36px); }
   .brand { font-family: var(--mono); font-weight: 700; letter-spacing: 0.16em; font-size: 17px; }
   .brand .dot { color: var(--amber); }
   .nav-links { display: flex; gap: clamp(16px, 2.6vw, 28px); font-size: 15.5px; color: var(--ink-soft); flex: 1; }
   .nav-links a:hover { color: var(--ink); }
   .nav-links a[aria-current="page"] { color: var(--ink); font-weight: 650; }
   .nav-cta { padding: 10px 18px; font-size: 15px; }
+  .nav-burger {
+    display: none; place-items: center; width: 42px; height: 42px;
+    margin-left: auto; padding: 0; cursor: pointer;
+    border: 1px solid var(--card-line); border-radius: 10px;
+    background: var(--card); color: var(--ink);
+    transition: transform 120ms var(--ease-out);
+  }
+  .nav-burger:active { transform: scale(0.95); }
+  .nav-burger svg { width: 20px; height: 20px; }
+  .nav-burger .i-x { display: none; }
+  nav.open .nav-burger .i-bars { display: none; }
+  nav.open .nav-burger .i-x { display: block; }
+  .nav-menu { display: none; }
   @media (max-width: 720px) {
-    .nav-row { row-gap: 12px; }
-    .brand { order: 1; }
-    .nav-cta { order: 2; margin-left: auto; }
-    .nav-links { order: 3; flex-basis: 100%; }
+    .nav-links, .nav-cta { display: none; }
+    .nav-burger { display: grid; }
+    nav.open .nav-menu {
+      display: flex; flex-direction: column; gap: 2px;
+      padding: 14px 4px 6px; font-size: 17px;
+    }
+    .nav-menu a { padding: 12px 10px; border-radius: 10px; color: var(--ink-soft); }
+    .nav-menu a:active { background: var(--paper-2); }
+    .nav-menu .btn { margin-top: 10px; justify-content: center; color: #1a1205; }
   }
 
   /* ---- hero ---- */
@@ -151,8 +169,49 @@ const {
   .hero-sub { margin-top: 22px; font-size: clamp(17px, 2.2vw, 19px); color: var(--muted); max-width: 34em; }
   .hero-ctas { margin-top: 34px; display: flex; gap: 14px; flex-wrap: wrap; align-items: stretch; min-width: 0; }
   .hero-note { margin-top: 14px; font-size: 13px; color: var(--muted); font-family: var(--mono); }
+  .hero-note a { text-decoration: underline; text-underline-offset: 3px; }
+  .hero-note a:hover { color: var(--ink); }
+  .textme { margin-top: 34px; display: flex; gap: 12px; flex-wrap: wrap; max-width: 460px; }
+  .textme input {
+    flex: 1 1 180px; min-width: 0; font: inherit; font-size: 16.5px;
+    padding: 12px 16px; border-radius: 12px;
+    border: 1px solid var(--card-line); background: var(--card); color: var(--ink);
+    transition: border-color 140ms var(--ease-out), box-shadow 140ms var(--ease-out);
+  }
+  .textme input::placeholder { color: #75787d; }
+  .textme input:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22); }
+  .textme .btn:disabled { opacity: 0.65; cursor: default; }
+  .textme-msg { margin-top: 16px; font-size: 15.5px; color: var(--ink-soft); max-width: 34em; }
+  .textme-msg.ok { color: var(--ink); font-weight: 600; }
+
+  /* ---- iMessage conversation mock ---- */
+  .imsg-phone { max-width: 390px; }
+  .imsg {
+    background: var(--card); border-radius: 35px; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .imsg-head {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 20px 16px 12px; border-bottom: 1px solid var(--card-line);
+  }
+  .imsg-avatar {
+    display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
+    background: var(--amber); color: #1a1205;
+    font-family: var(--mono); font-weight: 700; font-size: 15px;
+  }
+  .imsg-name { font-size: 12.5px; color: var(--muted); }
+  .imsg-chat { display: flex; flex-direction: column; gap: 7px; padding: 18px 14px 24px; }
+  .imsg .b {
+    max-width: 82%; padding: 9px 14px; border-radius: 18px;
+    font-size: 14.5px; line-height: 1.4;
+  }
+  .imsg .b.out { align-self: flex-end; background: #0a84ff; color: #fff; border-bottom-right-radius: 5px; }
+  .imsg .b.in { align-self: flex-start; background: #e9e9eb; color: #111; border-bottom-left-radius: 5px; }
+  .imsg .b.att { font-family: var(--mono); font-size: 13px; }
   .works { margin-top: clamp(48px, 7vw, 72px); }
   .works h4 { font-size: 14px; font-weight: 650; color: var(--ink-soft); margin-bottom: 16px; }
+  .dark .works { margin-top: clamp(36px, 5vw, 48px); }
+  .dark .works h4 { color: var(--dark-muted); }
   .works-row { display: flex; gap: 12px 28px; flex-wrap: wrap; align-items: center; font-weight: 640; font-size: clamp(15px, 2vw, 17px); color: #92948f; }
 
   /* phone frame */

@@ -967,3 +967,17 @@ export const agentMemories = sqliteTable(
   },
   (t) => [index("agent_memories_user_idx").on(t.userEmail)],
 );
+
+// "Text to get started" requests from the landing page: the iMessage agent
+// polls pending rows and sends the first message (shared-pool lines can't
+// receive from strangers, so we always initiate).
+export const textMeRequests = sqliteTable(
+  "text_me_requests",
+  {
+    id: text("id").primaryKey(),
+    phone: text("phone").notNull(),
+    status: text("status", { enum: ["pending", "sent", "failed"] }).notNull().default("pending"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [index("text_me_requests_status_idx").on(t.status), index("text_me_requests_phone_idx").on(t.phone)],
+);

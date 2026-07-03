@@ -328,7 +328,8 @@ app.use("/api/*", async (c, next) => {
     path === "/api/health" ||
     path.startsWith("/api/auth/") ||
     path === "/api/ingest/weight" ||
-    path === "/api/stripe/webhook"
+    path === "/api/stripe/webhook" ||
+    path.startsWith("/api/onboard/")
   ) {
     return next();
   }
@@ -2163,6 +2164,69 @@ app.post("/api/billing/portal", async (c) => {
   } catch (e) {
     return c.json({ error: "portal failed", detail: String(e) }, 502);
   }
+});
+
+// ---- "Text to get started" onboarding queue --------------------------------
+// Public form endpoint (CORS'd for the landing site) + service-token-polled
+// queue the iMessage agent drains to send the first message.
+const TEXTME_CORS: Record<string, string> = {
+  "access-control-allow-origin": "https://skcal.fit",
+  "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-allow-headers": "content-type",
+  vary: "origin",
+};
+function textMeCors(origin: string | undefined): Record<string, string> {
+  const allowed = new Set(["https://skcal.fit", "https://www.skcal.fit", "http://localhost:4321"]);
+  return origin && allowed.has(origin) ? { ...TEXTME_CORS, "access-control-allow-origin": origin } : TEXTME_CORS;
+}
+
+app.options("/api/onboard/text-me", (c) => new Response(null, { status: 204, headers: textMeCors(c.req.header("origin")) }));
+
+app.post("/api/onboard/text-me", async (c) => {
+  const headers = textMeCors(c.req.header("origin"));
+  const b = await c.req.json<{ phone?: string }>().catch(() => ({ phone: "" }));
+  const phone = normalizePhone(b.phone ?? "");
+  if (!phone) return c.json({ error: "enter a valid phone number" }, 400, headers);
+  // Throttle: one request per number per 10 minutes.
+  const recent = await db(c)
+    .select()
+    .from(schema.textMeRequests)
+    .where(eq(schema.textMeRequests.phone, phone))
+    .orderBy(desc(schema.textMeRequests.createdAt))
+    .limit(1);
+  if (recent[0] && Date.now() - recent[0].createdAt.getTime() < 10 * 60_000) {
+    return c.json({ ok: true, throttled: true }, 200, headers);
+  }
+  await db(c).insert(schema.textMeRequests).values({ id: crypto.randomUUID(), phone });
+  return c.json({ ok: true }, 200, headers);
+});
+
+// Agent daemon: list pending sends (service token only).
+app.get("/api/onboard/pending", async (c) => {
+  if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const rows = await db(c)
+    .select()
+    .from(schema.textMeRequests)
+    .where(eq(schema.textMeRequests.status, "pending"))
+    .orderBy(asc(schema.textMeRequests.createdAt))
+    .limit(20);
+  return c.json(rows.map((r) => ({ id: r.id, phone: r.phone })));
+});
+
+// Agent daemon: mark a request handled.
+app.post("/api/onboard/done", async (c) => {
+  if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const b = await c.req.json<{ id?: string; ok?: boolean }>();
+  if (!b.id) return c.json({ error: "id required" }, 400);
+  await db(c)
+    .update(schema.textMeRequests)
+    .set({ status: b.ok === false ? "failed" : "sent" })
+    .where(eq(schema.textMeRequests.id, String(b.id)));
+  return c.json({ ok: true });
 });
 
 // ---- Linked channels (phone numbers for the messaging agent) ---------------

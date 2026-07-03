@@ -16,5 +16,29 @@ const APP = "https://app.skcal.fit";
       <a href="https://github.com/skeptrunedev/telemetry">GitHub</a>
     </div>
     <a class="btn nav-cta" href={APP}>Get started</a>
+    <button class="nav-burger" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <svg class="i-bars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="17" x2="20" y2="17"></line></svg>
+      <svg class="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg>
+    </button>
+  </div>
+  <div class="nav-menu" id="nav-menu">
+    <a href="/features">Features</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/docs">Docs</a>
+    <a href="https://github.com/skeptrunedev/telemetry">GitHub</a>
+    <a class="btn" href={APP}>Get started</a>
   </div>
 </nav>
+
+<script>
+  const nav = document.querySelector("nav");
+  const burger = nav?.querySelector<HTMLButtonElement>(".nav-burger");
+  burger?.addEventListener("click", () => {
+    const open = nav!.classList.toggle("open");
+    burger.setAttribute("aria-expanded", String(open));
+    burger.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && nav?.classList.contains("open")) burger?.click();
+  });
+</script>

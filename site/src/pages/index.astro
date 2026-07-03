@@ -15,35 +15,46 @@ const APP = "https://app.skcal.fit";
     <div class="rings"><i class="r1"></i><i class="r2"></i></div>
     <div class="wrap hero-grid">
       <div>
-        <h1>The calorie tracker built for <span class="hl">vibe coders</span>.</h1>
+        <h1>The <span class="hl">AI-native</span> calorie tracker.</h1>
         <p class="hero-sub">
-          Log meals from a chat with your agent, your terminal, or the app. Photo in, macros out:
-          Claude does the counting, you keep shipping.
+          Manage your diet plan over iMessage. Text a picture of your food, send your
+          measurements, share your weight, and skcal tracks everything for you.
         </p>
-        <div class="hero-ctas">
-          <a class="btn" href="#connect">Connect MCP</a>
-          <CodeChip cmd="npm i -g @skeptrune/skcal" />
-        </div>
-        <p class="hero-note"># no app store. your tools already run it.</p>
-
-        <div class="works">
-          <h4>Works with</h4>
-          <div class="works-row">
-            <span>Claude</span>
-            <span>Claude Code</span>
-            <span>ChatGPT</span>
-            <span>Cursor</span>
-            <span>any MCP client</span>
+        <form class="textme" data-endpoint="https://app.skcal.fit/api/onboard/text-me" novalidate>
+          <input
+            type="tel"
+            name="phone"
+            inputmode="tel"
+            autocomplete="tel"
+            placeholder="(415) 555-0132"
+            aria-label="Your phone number"
+            required
+          />
+          <button class="btn" type="submit">Text to get started</button>
+        </form>
+        <p class="textme-msg" role="status" hidden></p>
+        <p class="hero-note"># we text first: reply and you're tracking. or <a href={APP}>start in the browser</a>.</p>
+      </div>
+      <div class="phone imsg-phone">
+        <div
+          class="imsg"
+          role="img"
+          aria-label="iMessage conversation: a photo of tacos is logged as 640 calories, a weigh-in of 158.2 is logged, and skcal replies with progress"
+        >
+          <div class="imsg-head">
+            <span class="imsg-avatar">sk</span>
+            <span class="imsg-name">skcal</span>
+          </div>
+          <div class="imsg-chat">
+            <div class="b out att">📷 IMG_4211.heic</div>
+            <div class="b out">lunch</div>
+            <div class="b in">Logged: 2 carnitas tacos + rice — 640 cal, 31g protein. You're at 1,410 / 1,850 today.</div>
+            <div class="b out">158.2 this morning</div>
+            <div class="b in">Got it. Down 1.3 lb this week — right on pace.</div>
+            <div class="b out">waist 31.8</div>
+            <div class="b in">Logged. Shoulder-to-waist is 1.52, up from 1.49 last month.</div>
           </div>
         </div>
-      </div>
-      <div class="phone">
-        <img
-          src="/landing/app-today.png"
-          alt="skcal Today dashboard: weight trend, shoulder-to-waist ratio, measurements"
-          width="390"
-          height="800"
-        />
       </div>
     </div>
   </header>
@@ -54,26 +65,19 @@ const APP = "https://app.skcal.fit";
       <div class="band-grid">
         <div class="phone">
           <img
-            src="/landing/app-agent.png"
-            alt="skcal agent moving a logged meal between days with tool calls"
+            src="/landing/app-today.png"
+            alt="skcal web dashboard: weight trend, shoulder-to-waist ratio, measurements, and nutrition"
             width="390"
-            height="460"
+            height="800"
           />
         </div>
         <div>
-          <h2>Log it without leaving your flow.</h2>
-          <p class="lead">skcal was built agent-first, so the fastest way to use it is to just say the thing.</p>
+          <h2>Fully customizable, when you want it.</h2>
+          <p class="lead">
+            Everything the agent does over text is an API you can call yourself. Wire skcal into
+            Claude, your terminal, or your own scripts.
+          </p>
           <div class="feat">
-            <div class="feat-item">
-              <div class="ico">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4V5z"></path></svg>
-              </div>
-              <h3>An agent with real tools</h3>
-              <p>
-                “Move the beef jerky from today to yesterday.” The built-in agent reads your log,
-                edits it, and answers with your real numbers, not vibes about vibes.
-              </p>
-            </div>
             <div class="feat-item">
               <div class="ico">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"></path><path d="M9 8V2"></path><path d="M15 8V2"></path><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8h12z"></path></svg>
@@ -87,13 +91,35 @@ const APP = "https://app.skcal.fit";
             </div>
             <div class="feat-item">
               <div class="ico">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path><circle cx="12" cy="13" r="3"></circle></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
               </div>
-              <h3>Photo → macros</h3>
+              <h3>A real CLI</h3>
               <p>
-                Snap it, paste it, or describe it. Claude estimates calories + protein per item and
-                logs the meal. Correct it in one sentence if it's off.
+                Log weigh-ins, meals, and measurements from your shell. One install, browser or
+                API-key sign-in:
               </p>
+              <CodeChip cmd="npm i -g @skeptrune/skcal" class="chip-sm" />
+            </div>
+            <div class="feat-item">
+              <div class="ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"></path><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"></path></svg>
+              </div>
+              <h3>Typed HTTP API</h3>
+              <p>
+                OpenAPI 3.1 behind every surface, with scoped bearer keys for scripts and a webhook
+                endpoint for your smart scale. It's your data — pull it however you like.
+              </p>
+            </div>
+          </div>
+          <div class="works">
+            <h4>Works with</h4>
+            <div class="works-row">
+              <span>iMessage</span>
+              <span>Claude</span>
+              <span>Claude Code</span>
+              <span>ChatGPT</span>
+              <span>Cursor</span>
+              <span>any MCP client</span>
             </div>
           </div>
         </div>
@@ -105,7 +131,7 @@ const APP = "https://app.skcal.fit";
     <div class="wrap teaser-box">
       <div>
         <h2>One plan. Everything.</h2>
-        <p>No free tier, no feature matrix. Every surface (app, agent, MCP, CLI, API) in one price.</p>
+        <p>No free tier, no feature matrix. Every surface (iMessage, app, agent, MCP, CLI, API) in one price.</p>
       </div>
       <div class="teaser-actions">
         <span class="teaser-price">$100<small>/mo</small></span>
@@ -119,3 +145,41 @@ const APP = "https://app.skcal.fit";
 
   <Footer />
 </Layout>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>(".textme");
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = form.querySelector("input")!;
+    const btn = form.querySelector("button")!;
+    const msg = document.querySelector<HTMLParagraphElement>(".textme-msg")!;
+    const digits = input.value.replace(/\D/g, "");
+    if (digits.length < 10) {
+      msg.hidden = false;
+      msg.classList.remove("ok");
+      msg.textContent = "Enter a valid phone number (US numbers can skip the +1).";
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = "Sending…";
+    try {
+      const res = await fetch(form.dataset.endpoint!, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: input.value }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Something went wrong — try again.");
+      form.hidden = true;
+      msg.hidden = false;
+      msg.classList.add("ok");
+      msg.textContent = "Check your messages: the first text is on its way. Reply to it and you're tracking.";
+    } catch (err) {
+      msg.hidden = false;
+      msg.classList.remove("ok");
+      msg.textContent = err instanceof Error ? err.message : "Something went wrong — try again.";
+      btn.disabled = false;
+      btn.textContent = "Text to get started";
+    }
+  });
+</script>
