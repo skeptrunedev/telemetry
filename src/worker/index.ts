@@ -1935,6 +1935,7 @@ app.post("/api/billing/checkout", async (c) => {
       "line_items[0][quantity]": "1",
       client_reference_id: email,
       "subscription_data[metadata][user_email]": email,
+      allow_promotion_codes: "true",
       success_url: `${origin}/?billing=success`,
       cancel_url: `${origin}/?billing=canceled`,
     });
