@@ -17,6 +17,10 @@ export const MEASUREMENT_SITES = [
   "neck",
   "thigh",
   "glutes",
+  "forearm_l",
+  "forearm_r",
+  "calf_l",
+  "calf_r",
 ] as const;
 export type MeasurementSite = (typeof MEASUREMENT_SITES)[number];
 
@@ -29,6 +33,10 @@ export const SITE_LABELS: Record<string, string> = {
   neck: "Neck",
   thigh: "Thigh",
   glutes: "Glutes",
+  forearm_l: "Forearm (L)",
+  forearm_r: "Forearm (R)",
+  calf_l: "Calf (L)",
+  calf_r: "Calf (R)",
 };
 
 export type Adherence = "under" | "on" | "over";

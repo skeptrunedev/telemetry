@@ -866,7 +866,7 @@ export const measurements = sqliteTable("measurements", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userEmail: text("user_email").notNull().default(""),
   ts: integer("ts", { mode: "timestamp_ms" }).notNull().default(nowMs),
-  site: text("site").notNull(), // shoulders|chest|arm_l|arm_r|waist|neck|thigh|glutes|custom
+  site: text("site").notNull(), // shoulders|chest|arm_l|arm_r|waist|neck|thigh|glutes|forearm_l|forearm_r|calf_l|calf_r|custom
   valueCm: real("value_cm").notNull(),
   source: text("source", { enum: ["tape", "manual"] }).notNull().default("manual"),
 });
