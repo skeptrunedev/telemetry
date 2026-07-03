@@ -128,7 +128,7 @@ const {
   .chip-sm { font-size: 13px; padding: 8px 6px 8px 13px; }
 
   /* ---- nav ---- */
-  nav { padding: clamp(18px, 3.5vw, 26px) 0; }
+  nav.wrap { padding-block: clamp(18px, 3.5vw, 26px); }
   .nav-row { display: flex; align-items: center; gap: clamp(16px, 3vw, 36px); }
   .brand { font-family: var(--mono); font-weight: 700; letter-spacing: 0.16em; font-size: 17px; }
   .brand .dot { color: var(--amber); }
@@ -150,6 +150,7 @@ const {
   nav.open .nav-burger .i-x { display: block; }
   .nav-menu { display: none; }
   @media (max-width: 720px) {
+    nav.wrap { padding-block-start: max(28px, env(safe-area-inset-top)); }
     .nav-links, .nav-cta { display: none; }
     .nav-burger { display: grid; }
     nav.open .nav-menu {
