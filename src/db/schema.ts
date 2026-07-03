@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, integer, real, text, primaryKey, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, integer, real, text, primaryKey, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const nowMs = sql`(unixepoch() * 1000)`;
 
@@ -966,6 +966,43 @@ export const agentMemories = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [index("agent_memories_user_idx").on(t.userEmail)],
+);
+
+// Workout log: today the user describes what happened in their own words and
+// the AI parse best-effort fills the metric fields; the columns mirror the
+// standard fields of Apple Health (HKWorkout), Garmin (FIT session), and
+// Strava (activity) so future platform imports land in the same table.
+// Storage units are metric: meters, seconds, kcal, bpm, watts (weights in the
+// `details` strength breakdown are pounds). Scoped by user_email as usual.
+export const workouts = sqliteTable(
+  "workouts",
+  {
+    id: text("id").primaryKey(), // uuid
+    userEmail: text("user_email").notNull(),
+    source: text("source", { enum: ["manual", "apple_health", "garmin", "strava"] }).notNull().default("manual"),
+    externalId: text("external_id"), // import dedupe key; null for manual rows
+    activityType: text("activity_type"), // normalized snake_case: run|ride|swim|…|other
+    summary: text("summary").notNull(), // short AI-normalized title
+    description: text("description").notNull(), // raw text the user gave
+    startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+    durationS: integer("duration_s"), // elapsed
+    movingDurationS: integer("moving_duration_s"),
+    distanceM: real("distance_m"),
+    elevationGainM: real("elevation_gain_m"),
+    energyKcal: real("energy_kcal"),
+    avgHr: integer("avg_hr"),
+    maxHr: integer("max_hr"),
+    avgPowerW: real("avg_power_w"),
+    avgCadence: real("avg_cadence"),
+    details: text("details"), // JSON: [{exercise, sets, reps, weight_lb, duration_s, distance_m, notes}]
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [
+    index("workouts_user_idx").on(t.userEmail),
+    index("workouts_user_started_idx").on(t.userEmail, t.startedAt),
+    // SQLite unique indexes allow multiple NULLs, so manual rows don't collide.
+    uniqueIndex("workouts_source_external_idx").on(t.source, t.externalId),
+  ],
 );
 
 // "Text to get started" requests from the landing page: the iMessage agent

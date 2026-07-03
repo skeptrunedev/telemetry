@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { and, asc, desc, eq, inArray, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
@@ -277,6 +277,202 @@ const VISION_PROMPT =
 
 const DESCRIBE_PROMPT =
   "The user describes a meal they ate, in their own words. Estimate each distinct food or drink they ACTUALLY ate — respect stated quantities, sides and sauces, and EXCLUDE anything they say they skipped, ignored, or left over. Give kcal and protein (grams) for each item's described portion, sum into total_kcal and total_protein_g, and in `note` state the main assumptions (portion sizes, restaurant defaults).";
+
+// Normalized workout activity types — the same vocabulary future Apple Health /
+// Garmin / Strava imports will map onto.
+const WORKOUT_ACTIVITY_TYPES = [
+  "run",
+  "ride",
+  "swim",
+  "walk",
+  "hike",
+  "strength_training",
+  "yoga",
+  "rowing",
+  "elliptical",
+  "crossfit",
+  "other",
+] as const;
+
+const WORKOUT_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    activity_type: { type: "string", enum: [...WORKOUT_ACTIVITY_TYPES] },
+    duration_s: { type: ["integer", "null"] },
+    moving_duration_s: { type: ["integer", "null"] },
+    distance_m: { type: ["number", "null"] },
+    elevation_gain_m: { type: ["number", "null"] },
+    energy_kcal: { type: ["number", "null"] },
+    avg_hr: { type: ["integer", "null"] },
+    max_hr: { type: ["integer", "null"] },
+    avg_power_w: { type: ["number", "null"] },
+    avg_cadence: { type: ["number", "null"] },
+    exercises: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          exercise: { type: "string" },
+          sets: { type: ["integer", "null"] },
+          reps: { type: ["integer", "null"] },
+          weight_lb: { type: ["number", "null"] },
+          duration_s: { type: ["integer", "null"] },
+          distance_m: { type: ["number", "null"] },
+          notes: { type: ["string", "null"] },
+        },
+        required: ["exercise", "sets", "reps", "weight_lb", "duration_s", "distance_m", "notes"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: [
+    "summary",
+    "activity_type",
+    "duration_s",
+    "moving_duration_s",
+    "distance_m",
+    "elevation_gain_m",
+    "energy_kcal",
+    "avg_hr",
+    "max_hr",
+    "avg_power_w",
+    "avg_cadence",
+    "exercises",
+  ],
+  additionalProperties: false,
+};
+
+const WORKOUT_PROMPT =
+  "The user describes a workout they did, in their own words. Produce a short `summary` title (3–8 words, e.g. '5k run + pullups'), pick the closest `activity_type` from the enum ('strength_training' for lifting; 'other' if nothing fits), and fill the metric fields ONLY where stated or clearly implied — null when unknown. Convert to storage units: distance in METERS, durations in SECONDS, energy in kcal, heart rate in bpm, power in watts (so '5k' → 5000, '45 min' → 2700, '3 miles' → 4828). For lifting/strength work, break it into `exercises` — one entry per exercise with sets, reps, and weight_lb (weight in POUNDS) where given. Never invent numbers the user didn't give.";
+
+type WorkoutExercise = {
+  exercise: string;
+  sets: number | null;
+  reps: number | null;
+  weight_lb: number | null;
+  duration_s: number | null;
+  distance_m: number | null;
+  notes: string | null;
+};
+
+type WorkoutMetrics = {
+  duration_s?: number | null;
+  moving_duration_s?: number | null;
+  distance_m?: number | null;
+  elevation_gain_m?: number | null;
+  energy_kcal?: number | null;
+  avg_hr?: number | null;
+  max_hr?: number | null;
+  avg_power_w?: number | null;
+  avg_cadence?: number | null;
+};
+
+// One logged workout as returned by the API (camelCase mirror of the row).
+type WorkoutOut = {
+  id: string;
+  source: string;
+  activityType: string | null;
+  summary: string;
+  description: string;
+  startedAt: number;
+  durationS: number | null;
+  movingDurationS: number | null;
+  distanceM: number | null;
+  elevationGainM: number | null;
+  energyKcal: number | null;
+  avgHr: number | null;
+  maxHr: number | null;
+  avgPowerW: number | null;
+  avgCadence: number | null;
+  exercises: WorkoutExercise[];
+  createdAt: number;
+};
+
+function workoutOut(r: typeof schema.workouts.$inferSelect): WorkoutOut {
+  return {
+    id: r.id,
+    source: r.source,
+    activityType: r.activityType,
+    summary: r.summary,
+    description: r.description,
+    startedAt: r.startedAt.getTime(),
+    durationS: r.durationS,
+    movingDurationS: r.movingDurationS,
+    distanceM: r.distanceM,
+    elevationGainM: r.elevationGainM,
+    energyKcal: r.energyKcal,
+    avgHr: r.avgHr,
+    maxHr: r.maxHr,
+    avgPowerW: r.avgPowerW,
+    avgCadence: r.avgCadence,
+    exercises: r.details ? (JSON.parse(r.details) as WorkoutExercise[]) : [],
+    createdAt: r.createdAt.getTime(),
+  };
+}
+
+// Shared by the HTTP route, the coach tool, and the MCP tool: parse a freeform
+// workout description into a summary + normalized metrics via Claude and store
+// the row. Throws if the model call fails; callers map that to their error shape.
+async function logDescribedWorkout(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+  text: string,
+  startedAt: Date,
+): Promise<WorkoutOut> {
+  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
+  const msg = await anthropic.messages.create({
+    model: "claude-opus-4-8",
+    max_tokens: 1024,
+    output_config: { format: { type: "json_schema", schema: WORKOUT_SCHEMA } },
+    messages: [{ role: "user", content: `${WORKOUT_PROMPT}\n\nWorkout: ${text}` }],
+  } as Anthropic.MessageCreateParamsNonStreaming);
+  const out = msg.content.filter((bk): bk is Anthropic.TextBlock => bk.type === "text").map((bk) => bk.text).join("");
+  const parsed = JSON.parse(out) as (WorkoutMetrics & { summary?: string; activity_type?: string; exercises?: WorkoutExercise[] });
+  const num = (v: number | null | undefined) => (typeof v === "number" && isFinite(v) && v >= 0 ? v : null);
+  const int = (v: number | null | undefined) => {
+    const n = num(v);
+    return n != null ? Math.round(n) : null;
+  };
+  const summary = String(parsed.summary ?? "").trim().slice(0, 120) || text.slice(0, 120);
+  const activityType = (WORKOUT_ACTIVITY_TYPES as readonly string[]).includes(parsed.activity_type ?? "")
+    ? String(parsed.activity_type)
+    : "other";
+  const exercises = Array.isArray(parsed.exercises) ? parsed.exercises.slice(0, 30) : [];
+  const row = (
+    await db(c)
+      .insert(schema.workouts)
+      .values({
+        id: crypto.randomUUID(),
+        userEmail: email,
+        source: "manual",
+        activityType,
+        summary,
+        description: text,
+        startedAt,
+        durationS: int(parsed.duration_s),
+        movingDurationS: int(parsed.moving_duration_s),
+        distanceM: num(parsed.distance_m),
+        elevationGainM: num(parsed.elevation_gain_m),
+        energyKcal: num(parsed.energy_kcal),
+        avgHr: int(parsed.avg_hr),
+        maxHr: int(parsed.max_hr),
+        avgPowerW: num(parsed.avg_power_w),
+        avgCadence: num(parsed.avg_cadence),
+        details: exercises.length ? JSON.stringify(exercises) : null,
+      })
+      .returning()
+  )[0];
+  return workoutOut(row);
+}
+
+// Resolve a workout start time from an optional YYYY-MM-DD day + tz offset
+// (minutes, as from getTimezoneOffset). No day ⇒ now; a day ⇒ local noon, so
+// day-bounded queries with the same tz find it.
+function workoutTs(date: string | undefined, tzMin: number): Date {
+  if (!date) return new Date();
+  return new Date(Date.parse(`${date}T12:00:00Z`) + tzMin * 60_000);
+}
 
 // nutrition_days totals are derived from nutrition_items (SUM per user+date).
 async function recomputeDay(c: { env: Bindings }, email: string, date: string) {
@@ -1292,6 +1488,52 @@ app.get("/api/nutrition/photo/*", async (c) => {
   });
 });
 
+// ---- workouts: text description -> Claude parse -> log ----------------------
+app.post("/api/workouts/describe", async (c) => {
+  const email = c.get("email");
+  if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "ai not configured" }, 503);
+  const b = await c.req.json<{ text?: string; date?: string; tz?: number }>();
+  const text = (b.text ?? "").trim().slice(0, 2000);
+  if (!text) return c.json({ error: "describe your workout" }, 400);
+  if (b.date && !/^\d{4}-\d{2}-\d{2}$/.test(b.date)) return c.json({ error: "date must be YYYY-MM-DD" }, 400);
+  const startedAt = workoutTs(b.date, Number(b.tz ?? 0) || 0);
+  try {
+    return c.json({ ok: true, ...(await logDescribedWorkout(c, email, text, startedAt)) });
+  } catch (e) {
+    return c.json({ error: "analysis failed", detail: String(e) }, 502);
+  }
+});
+
+// The given local day's workouts (tz = the client's getTimezoneOffset() minutes).
+app.get("/api/workouts", async (c) => {
+  const email = c.get("email");
+  const date = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
+  const tzMin = Number(c.req.query("tz") ?? "0") || 0;
+  const startMs = Date.parse(`${date}T00:00:00Z`);
+  if (!Number.isFinite(startMs)) return c.json({ error: "date must be YYYY-MM-DD" }, 400);
+  const start = new Date(startMs + tzMin * 60_000);
+  const end = new Date(startMs + DAY_MS + tzMin * 60_000);
+  const rows = await db(c)
+    .select()
+    .from(schema.workouts)
+    .where(and(eq(schema.workouts.userEmail, email), gte(schema.workouts.startedAt, start), lt(schema.workouts.startedAt, end)))
+    .orderBy(desc(schema.workouts.startedAt), desc(schema.workouts.createdAt));
+  return c.json(rows.map(workoutOut));
+});
+
+app.delete("/api/workouts/:id", async (c) => {
+  const email = c.get("email");
+  const id = c.req.param("id");
+  const owned = await db(c)
+    .select({ id: schema.workouts.id })
+    .from(schema.workouts)
+    .where(and(eq(schema.workouts.id, id), eq(schema.workouts.userEmail, email)))
+    .limit(1);
+  if (!owned.length) return c.json({ error: "not found" }, 404);
+  await db(c).delete(schema.workouts).where(and(eq(schema.workouts.id, id), eq(schema.workouts.userEmail, email)));
+  return c.json({ ok: true });
+});
+
 // ---- coach: grounded chat over the caller's targets + today's intake -------
 const LB_PER_KG = 2.2046226218;
 const kgToLb = (kg: number) => kg * LB_PER_KG;
@@ -1311,6 +1553,20 @@ async function buildCoachSystem(
     .limit(1);
   const kcalIn = nutToday[0]?.kcal ?? 0;
   const proteinIn = nutToday[0]?.proteinG ?? 0;
+
+  const dayStart = new Date(Date.parse(`${today}T00:00:00Z`));
+  const workoutRows = await db(c)
+    .select()
+    .from(schema.workouts)
+    .where(
+      and(
+        eq(schema.workouts.userEmail, email),
+        gte(schema.workouts.startedAt, dayStart),
+        lt(schema.workouts.startedAt, new Date(dayStart.getTime() + DAY_MS)),
+      ),
+    )
+    .orderBy(desc(schema.workouts.startedAt));
+  const workoutLine = workoutRows.length ? workoutRows.map((w) => w.summary).join("; ") : "none logged yet";
 
   const weightRows = await db(c)
     .select()
@@ -1378,6 +1634,7 @@ async function buildCoachSystem(
     "TODAY SO FAR:",
     `- Logged: ${kcalIn} kcal, ${Math.round(proteinIn)} g protein`,
     `- Remaining budget: ${kcalLeft} kcal, ${Math.round(proteinLeft)} g protein${kcalLeft < 0 ? " (already over on calories)" : ""}`,
+    `- Workouts: ${workoutLine}`,
     "",
     "WEIGHT:",
     `- Latest weigh-in: ${fmtLb(latestKg)}`,
@@ -1484,6 +1741,20 @@ const COACH_TOOLS: Anthropic.Tool[] = [
         note: { type: "string", description: "Optional note, e.g. 'morning, fasted'." },
       },
       required: ["pounds"],
+    },
+  },
+
+  {
+    name: "log_workout",
+    description:
+      "Log a workout from the user's plain-text description of what happened; skcal parses it into a summary + exercises.",
+    input_schema: {
+      type: "object",
+      properties: {
+        description: { type: "string", description: "The workout as the user described it, e.g. 'ran 5k easy, then 3x10 pullups'." },
+        date: { type: "string", description: "Day it happened: YYYY-MM-DD, or 'today'/'yesterday'. Default today." },
+      },
+      required: ["description"],
     },
   },
 
@@ -1608,6 +1879,20 @@ async function executeCoachTool(
     return { ok: true, loggedPounds: pounds };
   }
 
+  if (name === "log_workout") {
+    const text = String(input.description ?? "").trim().slice(0, 2000);
+    if (!text) return { error: "description required" };
+    const day = input.date != null ? resolveToolDate(String(input.date), today) : today;
+    if (!day) return { error: "invalid date" };
+    const startedAt = day === today ? new Date() : workoutTs(day, 0);
+    try {
+      const w = await logDescribedWorkout(c, email, text, startedAt);
+      return { ok: true, workoutId: w.id, date: day, activityType: w.activityType, summary: w.summary, exercises: w.exercises };
+    } catch (e) {
+      return { error: `workout parse failed: ${String(e)}` };
+    }
+  }
+
   if (name === "remember") {
     const content = String(input.content ?? "").trim().slice(0, 500);
     if (!content) return { error: "content required" };
@@ -1718,7 +2003,7 @@ app.post("/api/agent/stream", async (c) => {
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
   const system =
     (await buildCoachSystem(c, email, today)) +
-    `\n\nTools: you can view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); save durable user preferences/facts with remember and remove wrong ones with forget_memory. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
+    `\n\nTools: you can view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
@@ -2488,6 +2773,18 @@ function buildMcpServer(c: Context<{ Bindings: Bindings; Variables: Variables }>
           .orderBy(desc(schema.weightReadings.ts))
           .limit(1)
       )[0];
+      const dayStart = new Date(Date.parse(`${day}T00:00:00Z`));
+      const workoutRows = await db(c)
+        .select()
+        .from(schema.workouts)
+        .where(
+          and(
+            eq(schema.workouts.userEmail, email),
+            gte(schema.workouts.startedAt, dayStart),
+            lt(schema.workouts.startedAt, new Date(dayStart.getTime() + DAY_MS)),
+          ),
+        )
+        .orderBy(desc(schema.workouts.startedAt));
       const kcalIn = nut?.kcal ?? 0;
       const proteinIn = nut?.proteinG ?? 0;
       return ok({
@@ -2495,6 +2792,7 @@ function buildMcpServer(c: Context<{ Bindings: Bindings; Variables: Variables }>
         calories: { logged: kcalIn, target: targets.dailyKcalTarget, remaining: (targets.dailyKcalTarget ?? 0) - kcalIn },
         protein: { loggedG: proteinIn, targetG: targets.proteinTargetG, remainingG: (targets.proteinTargetG ?? 0) - proteinIn },
         latestWeightLb: latest ? Number(kgToLb(latest.weightKg).toFixed(1)) : null,
+        workouts: workoutRows.map((w) => ({ id: w.id, activityType: w.activityType, summary: w.summary })),
       });
     },
   );
@@ -2608,6 +2906,26 @@ function buildMcpServer(c: Context<{ Bindings: Bindings; Variables: Variables }>
         .values({ userEmail: email, mealId, date: day, name, kcal, proteinG, source: "manual" });
       await recomputeDay(c, email, day);
       return ok({ ok: true, mealId, date: day, name, kcal, proteinG }, `Logged ${name} (${kcal} kcal / ${proteinG} g protein) on ${day}.`);
+    },
+  );
+
+  server.registerTool(
+    "skcal_log_workout",
+    {
+      title: "Log a workout",
+      description:
+        "Log a workout from a plain-text description of what happened (e.g. 'ran 5k easy, then 3x10 pullups'); skcal parses it into a summary + normalized metrics.",
+      inputSchema: {
+        description: z.string().min(1).max(2000).describe("The workout, in the user's own words."),
+        date: z.string().optional().describe("Day it happened as YYYY-MM-DD, or 'today'/'yesterday'. Default today."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    async ({ description, date }) => {
+      const day = resolveToolDate(date ?? "today", todayUTC()) ?? todayUTC();
+      const startedAt = day === todayUTC() ? new Date() : workoutTs(day, 0);
+      const w = await logDescribedWorkout(c, email, description.trim(), startedAt);
+      return ok(w, `Logged workout: ${w.summary} (${day}).`);
     },
   );
 

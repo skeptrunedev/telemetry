@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { AreaChart } from "./Chart";
 import { shiftDay, dayLabel, todayLocal } from "./dates";
 import { FoodLog } from "./FoodLog";
+import { WorkoutLog } from "./WorkoutLog";
 import { WeightHistory } from "./WeightHistory";
 
 const f1 = (n: number) => n.toFixed(1);
@@ -195,6 +196,8 @@ export function Dashboard({
         </section>
 
         <FoodLog date={date} refreshKey={refreshKey} onChange={onChange} />
+
+        <WorkoutLog date={date} refreshKey={refreshKey} />
 
         <WeightHistory />
       </div>

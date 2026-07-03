@@ -52,6 +52,19 @@ export type CoachConversation = {
   messages: CoachMessage[];
 };
 export type WeightReading = { id: number; ts: number; weightKg: number; bodyFatPct: number | null; note: string | null; source: string };
+export type Workout = {
+  id: string;
+  source: string;
+  activityType: string | null;
+  summary: string;
+  description: string;
+  startedAt: number;
+  durationS: number | null;
+  distanceM: number | null;
+  energyKcal: number | null;
+  exercises: { exercise: string; sets: number | null; reps: number | null; weight_lb: number | null; notes: string | null }[];
+  createdAt: number;
+};
 export type ApiKey = { id: string; name: string; prefix: string; scopes: string[]; createdAt: number; lastUsedAt: number | null };
 export type Billing = { active: boolean; exempt: boolean; status: string | null; periodEnd: number | null; priceUsd: number };
 export type Channel = { id: string; kind: "phone" | "telegram"; value: string; verified: boolean; createdAt: number };
@@ -121,6 +134,8 @@ export const api = {
     jsend(`/api/agent/conversations/${id}/messages`, "POST", { messages }),
   deleteConversation: (id: string) => jsend(`/api/agent/conversations/${id}`, "DELETE", undefined),
   meals: (date: string) => jget<Meal[]>(`/api/nutrition/meals?date=${date}`),
+  workouts: (date: string) => jget<Workout[]>(`/api/workouts?date=${date}&tz=${new Date().getTimezoneOffset()}`),
+  deleteWorkout: (id: string) => jsend(`/api/workouts/${id}`, "DELETE", undefined),
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),
   deleteItem: (id: number) => jsend(`/api/nutrition/items/${id}`, "DELETE", undefined),
   photoUrl: (key: string) => `/api/nutrition/photo/${key}`,
