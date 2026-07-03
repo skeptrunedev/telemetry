@@ -1868,3 +1868,20 @@ a {
   width: 100%;
   margin-top: 0.6rem;
 }
+
+/* ---- whole-day navigation strip (Today view) ---- */
+.day-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0 0.55rem;
+}
+.day-strip-label {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+  min-width: 6.5rem;
+  text-align: center;
+}

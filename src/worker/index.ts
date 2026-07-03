@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
@@ -788,23 +788,30 @@ app.put("/api/targets", async (c) => {
 app.get("/api/dashboard", async (c) => {
   const email = c.get("email");
   const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
+  // Everything is reported "as of" the requested day: weight, measurements, and
+  // averages only consider readings up to that day's local end (tz = the
+  // client's getTimezoneOffset() minutes; defaults to UTC).
+  const tzMin = Number(c.req.query("tz") ?? "0") || 0;
+  const parsed = Date.parse(`${today}T00:00:00Z`);
+  const cutoffMs = Number.isFinite(parsed) ? parsed + DAY_MS + tzMin * 60_000 : Date.now();
+  const cutoff = new Date(Math.min(cutoffMs, Date.now() + DAY_MS));
 
   const weightRows = await db(c)
     .select()
     .from(schema.weightReadings)
-    .where(eq(schema.weightReadings.userEmail, email))
+    .where(and(eq(schema.weightReadings.userEmail, email), lt(schema.weightReadings.ts, cutoff)))
     .orderBy(desc(schema.weightReadings.ts), desc(schema.weightReadings.id))
     .limit(120);
   const trend = weightRows.map((r) => ({ ts: r.ts.getTime(), kg: r.weightKg })).reverse();
   const latest = weightRows[0] ?? null;
-  const weekCut = Date.now() - 7 * DAY_MS;
+  const weekCut = cutoff.getTime() - 7 * DAY_MS;
   const lastWeek = weightRows.filter((r) => r.ts.getTime() >= weekCut);
   const weeklyAvgKg = lastWeek.length ? lastWeek.reduce((s, r) => s + r.weightKg, 0) / lastWeek.length : null;
 
   const mRows = await db(c)
     .select()
     .from(schema.measurements)
-    .where(eq(schema.measurements.userEmail, email))
+    .where(and(eq(schema.measurements.userEmail, email), lt(schema.measurements.ts, cutoff)))
     .orderBy(desc(schema.measurements.ts), desc(schema.measurements.id))
     .limit(500);
   const seen = new Set<string>();
@@ -2012,6 +2019,17 @@ async function twilioVerify(env: Bindings, path: string, params: Record<string, 
 
 const E164 = /^\+[1-9]\d{6,14}$/;
 
+// Normalize a user-entered phone number to E.164. Strips formatting; numbers
+// without a country code are assumed US/Canada (+1). Returns null if invalid.
+function normalizePhone(input: string): string | null {
+  const s = (input ?? "").replace(/[\s().-]/g, "");
+  if (s.startsWith("+")) return E164.test(s) ? s : null;
+  const digits = s.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return null;
+}
+
 app.get("/api/channels", async (c) => {
   const email = c.get("email");
   const rows = await db(c)
@@ -2029,8 +2047,8 @@ app.post("/api/channels/phone/start", async (c) => {
   const email = c.get("email");
   if (!c.env.TWILIO_VERIFY_SERVICE_SID) return c.json({ error: "phone verification not configured" }, 503);
   const b = await c.req.json<{ phone?: string }>();
-  const phone = (b.phone ?? "").replace(/[\s()-]/g, "");
-  if (!E164.test(phone)) return c.json({ error: "phone must be E.164, e.g. +14155551234" }, 400);
+  const phone = normalizePhone(b.phone ?? "");
+  if (!phone) return c.json({ error: "enter a valid phone number, e.g. 415 555 0123 or +44…" }, 400);
   // Refuse numbers already verified on another account.
   const existing = (
     await db(c)
@@ -2054,9 +2072,9 @@ app.post("/api/channels/phone/start", async (c) => {
 app.post("/api/channels/phone/verify", async (c) => {
   const email = c.get("email");
   const b = await c.req.json<{ phone?: string; code?: string }>();
-  const phone = (b.phone ?? "").replace(/[\s()-]/g, "");
+  const phone = normalizePhone(b.phone ?? "");
   const code = (b.code ?? "").trim();
-  if (!E164.test(phone) || !/^\d{4,10}$/.test(code)) return c.json({ error: "phone and code required" }, 400);
+  if (!phone || !/^\d{4,10}$/.test(code)) return c.json({ error: "phone and code required" }, 400);
   try {
     const check = await twilioVerify(c.env, "VerificationCheck", { To: phone, Code: code });
     if (check.status !== "approved") return c.json({ error: "incorrect code" }, 400);

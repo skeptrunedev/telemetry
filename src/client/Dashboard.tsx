@@ -1,6 +1,8 @@
 import { kgToLb, cmToIn, SITE_LABELS, MEASUREMENT_SITES } from "../shared/types";
 import type { DashboardData } from "../shared/types";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { AreaChart } from "./Chart";
+import { shiftDay, dayLabel, todayLocal } from "./dates";
 import { FoodLog } from "./FoodLog";
 import { WeightHistory } from "./WeightHistory";
 
@@ -9,7 +11,8 @@ const DAY = 86_400_000;
 
 function weeklyDeltaLb(trend: { ts: number; kg: number }[]): number | null {
   if (trend.length < 2) return null;
-  const cut = Date.now() - 7 * DAY;
+  // Anchor the week to the newest visible reading so past days read "as of".
+  const cut = trend[trend.length - 1].ts - 7 * DAY;
   const win = trend.filter((p) => p.ts >= cut);
   const series = win.length >= 2 ? win : trend;
   return kgToLb(series[series.length - 1].kg) - kgToLb(series[0].kg);
@@ -23,7 +26,20 @@ function insight(latestLb: number | null, delta: number | null) {
   return { head: "Holding steady this week", status: ["info", "STEADY"] as [string, string] };
 }
 
-export function Dashboard({ data, refreshKey, onChange }: { data: DashboardData; refreshKey: number; onChange: () => void }) {
+export function Dashboard({
+  data,
+  date,
+  onDateChange,
+  refreshKey,
+  onChange,
+}: {
+  data: DashboardData;
+  date: string;
+  onDateChange: (d: string) => void;
+  refreshKey: number;
+  onChange: () => void;
+}) {
+  const isToday = date === todayLocal();
   const { weight, targets, measurementsLatest, shoulderToWaist, nutritionToday } = data;
   const latestLb = weight.latestKg != null ? kgToLb(weight.latestKg) : null;
   const avgLb = weight.weeklyAvgKg != null ? kgToLb(weight.weeklyAvgKg) : null;
@@ -60,6 +76,17 @@ export function Dashboard({ data, refreshKey, onChange }: { data: DashboardData;
 
   return (
     <>
+      {/* whole-day navigation: everything below reflects this day */}
+      <div className="day-strip">
+        <button className="daynav-btn" onClick={() => onDateChange(shiftDay(date, -1))} aria-label="Previous day">
+          <ChevronLeft />
+        </button>
+        <span className="day-strip-label">{dayLabel(date)}</span>
+        <button className="daynav-btn" onClick={() => onDateChange(shiftDay(date, 1))} disabled={isToday} aria-label="Next day">
+          <ChevronRight />
+        </button>
+      </div>
+
       {/* glance strip */}
       <div className="glance">
         <div className="glance-item">
@@ -143,7 +170,7 @@ export function Dashboard({ data, refreshKey, onChange }: { data: DashboardData;
         {/* NUTRITION */}
         <section className="card">
           <div className="card-head">
-            <p className="label">Nutrition / today</p>
+            <p className="label">Nutrition / {dayLabel(date)}</p>
             {nutStatus && <span className={`status ${nutStatus[0]}`}>{nutStatus[1]}</span>}
           </div>
           {nutritionToday == null ? (
@@ -178,7 +205,7 @@ export function Dashboard({ data, refreshKey, onChange }: { data: DashboardData;
           )}
         </section>
 
-        <FoodLog refreshKey={refreshKey} onChange={onChange} />
+        <FoodLog date={date} refreshKey={refreshKey} onChange={onChange} />
 
         <WeightHistory />
       </div>

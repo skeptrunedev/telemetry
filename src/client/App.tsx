@@ -83,6 +83,8 @@ export default function App() {
   const avatar = avatarOverride ?? session?.user?.image ?? null;
 
   const [data, setData] = useState<DashboardData | null>(null);
+  // The day everything on Today reflects (weight, nutrition, food log).
+  const [day, setDay] = useState(() => todayLocal());
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>(readView);
   const [adding, setAdding] = useState(false);
@@ -173,13 +175,13 @@ export default function App() {
 
   const load = useCallback(() => {
     api
-      .dashboard(todayLocal())
+      .dashboard(day)
       .then((d) => {
         setData(d);
         setError(null);
       })
       .catch((e) => setError(String(e)));
-  }, []);
+  }, [day]);
 
   // refresh dashboard totals AND signal child lists (FoodLog) to refetch
   const reloadAll = useCallback(() => {
@@ -285,7 +287,7 @@ export default function App() {
         <main className={`shell ${view === "coach" ? "shell-coach" : ""}`}>
           {error && <p className="form-err">{error}</p>}
           {!data && !error && <p className="meta">loading…</p>}
-          {data && view === "today" && <Dashboard data={data} refreshKey={tick} onChange={reloadAll} />}
+          {data && view === "today" && <Dashboard data={data} date={day} onDateChange={setDay} refreshKey={tick} onChange={reloadAll} />}
           {data && view === "coach" && (
             <CoachThread
               key={coach.session.key}

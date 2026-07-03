@@ -57,7 +57,7 @@ export type Billing = { active: boolean; exempt: boolean; status: string | null;
 export type Channel = { id: string; kind: "phone" | "telegram"; value: string; verified: boolean; createdAt: number };
 
 export const api = {
-  dashboard: (date: string) => jget<DashboardData>(`/api/dashboard?date=${date}`),
+  dashboard: (date: string) => jget<DashboardData>(`/api/dashboard?date=${date}&tz=${new Date().getTimezoneOffset()}`),
   whoami: () => jget<{ email: string }>(`/api/whoami`),
   targets: () => jget<Targets>(`/api/targets`),
   addWeight: (weightKg: number, bodyFatPct?: number | null, note?: string | null) =>
