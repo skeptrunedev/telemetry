@@ -1875,7 +1875,7 @@ a {
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  padding: 0.15rem 0 0.55rem;
+  padding: 1.1rem 0 0.4rem;
 }
 .day-strip-label {
   font-family: var(--mono);

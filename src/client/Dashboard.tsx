@@ -76,17 +76,6 @@ export function Dashboard({
 
   return (
     <>
-      {/* whole-day navigation: everything below reflects this day */}
-      <div className="day-strip">
-        <button className="daynav-btn" onClick={() => onDateChange(shiftDay(date, -1))} aria-label="Previous day">
-          <ChevronLeft />
-        </button>
-        <span className="day-strip-label">{dayLabel(date)}</span>
-        <button className="daynav-btn" onClick={() => onDateChange(shiftDay(date, 1))} disabled={isToday} aria-label="Next day">
-          <ChevronRight />
-        </button>
-      </div>
-
       {/* glance strip */}
       <div className="glance">
         <div className="glance-item">
@@ -208,6 +197,17 @@ export function Dashboard({
         <FoodLog date={date} refreshKey={refreshKey} onChange={onChange} />
 
         <WeightHistory />
+      </div>
+
+      {/* whole-day navigation: everything above reflects this day */}
+      <div className="day-strip">
+        <button className="daynav-btn" onClick={() => onDateChange(shiftDay(date, -1))} aria-label="Previous day">
+          <ChevronLeft />
+        </button>
+        <span className="day-strip-label">{dayLabel(date)}</span>
+        <button className="daynav-btn" onClick={() => onDateChange(shiftDay(date, 1))} disabled={isToday} aria-label="Next day">
+          <ChevronRight />
+        </button>
       </div>
     </>
   );
