@@ -935,3 +935,21 @@ export const billing = sqliteTable(
   },
   (t) => [index("billing_customer_idx").on(t.stripeCustomerId), index("billing_subscription_idx").on(t.subscriptionId)],
 );
+
+// Channels linked to an account for agent access: verified phone numbers today
+// (iMessage/SMS), telegram later. A channel value maps to exactly one account.
+export const linkedChannels = sqliteTable(
+  "linked_channels",
+  {
+    id: text("id").primaryKey(), // uuid
+    userEmail: text("user_email").notNull(),
+    kind: text("kind", { enum: ["phone", "telegram"] }).notNull(),
+    value: text("value").notNull(), // E.164 phone, or telegram user id
+    verifiedAt: integer("verified_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [
+    index("linked_channels_user_idx").on(t.userEmail),
+    index("linked_channels_value_idx").on(t.kind, t.value),
+  ],
+);

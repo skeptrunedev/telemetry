@@ -9,6 +9,7 @@ import { type View } from "./BottomNav";
 import { NavDrawer } from "./NavDrawer";
 import { McpInstall } from "./McpInstall";
 import { ApiKeys } from "./ApiKeys";
+import { LinkedNumbers } from "./LinkedNumbers";
 import { Subscribe } from "./Subscribe";
 import type { Billing } from "./api";
 import { useCoachHistory, CoachThread } from "./Coach";
@@ -89,6 +90,7 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
+  const [numbersOpen, setNumbersOpen] = useState(false);
   // Subscription state (null while loading). Non-active blocks the app with the
   // Subscribe screen; a ?billing=success return from Stripe forces a refetch.
   const [billing, setBilling] = useState<Billing | null>(null);
@@ -239,6 +241,10 @@ export default function App() {
           setDrawerOpen(false);
           setKeysOpen(true);
         }}
+        onLinkedNumbers={() => {
+          setDrawerOpen(false);
+          setNumbersOpen(true);
+        }}
         onBilling={
           billing.exempt
             ? null
@@ -302,6 +308,7 @@ export default function App() {
 
       {mcpOpen && <McpInstall onClose={() => setMcpOpen(false)} />}
       {keysOpen && <ApiKeys onClose={() => setKeysOpen(false)} />}
+      {numbersOpen && <LinkedNumbers onClose={() => setNumbersOpen(false)} />}
     </div>
   );
 }

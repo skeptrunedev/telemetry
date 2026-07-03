@@ -54,6 +54,7 @@ export type CoachConversation = {
 export type WeightReading = { id: number; ts: number; weightKg: number; bodyFatPct: number | null; note: string | null; source: string };
 export type ApiKey = { id: string; name: string; prefix: string; scopes: string[]; createdAt: number; lastUsedAt: number | null };
 export type Billing = { active: boolean; exempt: boolean; status: string | null; periodEnd: number | null; priceUsd: number };
+export type Channel = { id: string; kind: "phone" | "telegram"; value: string; verified: boolean; createdAt: number };
 
 export const api = {
   dashboard: (date: string) => jget<DashboardData>(`/api/dashboard?date=${date}`),
@@ -123,6 +124,18 @@ export const api = {
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),
   deleteItem: (id: number) => jsend(`/api/nutrition/items/${id}`, "DELETE", undefined),
   photoUrl: (key: string) => `/api/nutrition/photo/${key}`,
+  listChannels: () => jget<Channel[]>(`/api/channels`),
+  startPhoneLink: (phone: string) => jsend(`/api/channels/phone/start`, "POST", { phone }),
+  verifyPhoneLink: async (phone: string, code: string): Promise<Channel> => {
+    const r = await rawFetch(`/api/channels/phone/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone, code }),
+    });
+    if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `verify → ${r.status}`);
+    return r.json() as Promise<Channel>;
+  },
+  deleteChannel: (id: string) => jsend(`/api/channels/${id}`, "DELETE", undefined),
   billing: () => jget<Billing>(`/api/billing`),
   billingCheckout: async (): Promise<{ url: string }> => {
     const r = await rawFetch(`/api/billing/checkout`, { method: "POST" });

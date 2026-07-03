@@ -40,6 +40,14 @@ type Bindings = {
   STRIPE_WEBHOOK_SECRET?: string;
   STRIPE_PRICE_ID?: string;
   BILLING_EXEMPT_EMAILS?: string;
+  // ---- Linked channels (phone verification) + messaging-agent service auth ----
+  TWILIO_API_KEY_SID?: string;
+  TWILIO_API_KEY_SECRET?: string;
+  TWILIO_VERIFY_SERVICE_SID?: string;
+  // Shared secret for the iMessage/Telegram agent daemon: lets it act on behalf
+  // of the account a channel resolves to (Authorization: Bearer <this> +
+  // x-skcal-channel header).
+  AGENT_SERVICE_TOKEN?: string;
 };
 
 type Variables = { email: string };
@@ -335,9 +343,32 @@ app.use("/api/*", async (c, next) => {
     return next();
   };
 
+  const authz = c.req.header("authorization");
+
+  // Messaging-agent service auth: the trusted agent daemon acts on behalf of
+  // whichever account the sender's channel (phone/telegram) is linked to.
+  if (c.env.AGENT_SERVICE_TOKEN && authz === `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
+    const channel = c.req.header("x-skcal-channel") ?? ""; // e.g. "phone:+14155551234"
+    const sep = channel.indexOf(":");
+    const kind = sep > 0 ? channel.slice(0, sep) : "";
+    const value = sep > 0 ? channel.slice(sep + 1).trim() : "";
+    if (kind !== "phone" && kind !== "telegram") return c.json({ error: "bad x-skcal-channel" }, 400);
+    const row = (
+      await db(c)
+        .select()
+        .from(schema.linkedChannels)
+        .where(and(eq(schema.linkedChannels.kind, kind), eq(schema.linkedChannels.value, value)))
+        .limit(1)
+    )[0];
+    if (!row?.verifiedAt) return c.json({ error: "channel not linked", code: "unlinked" }, 404);
+    if (path.startsWith("/api/keys") || path.startsWith("/api/channels")) {
+      return c.json({ error: "agent cannot manage keys or channels" }, 403);
+    }
+    return finish(row.userEmail);
+  }
+
   // Bearer API key (skcal_…): resolve owner + scopes and enforce fine-grained
   // access. Keys can't manage keys, and "*" grants everything.
-  const authz = c.req.header("authorization");
   if (authz?.startsWith("Bearer skcal_")) {
     const key = await resolveApiKey(c, authz.slice("Bearer ".length).trim());
     if (!key) return c.json({ error: "invalid API key" }, 401);
@@ -1961,6 +1992,110 @@ app.post("/api/billing/portal", async (c) => {
   } catch (e) {
     return c.json({ error: "portal failed", detail: String(e) }, 502);
   }
+});
+
+// ---- Linked channels (phone numbers for the messaging agent) ---------------
+// Verified via Twilio Verify; a number maps to exactly one account.
+async function twilioVerify(env: Bindings, path: string, params: Record<string, string>): Promise<Record<string, unknown>> {
+  const res = await fetch(`https://verify.twilio.com/v2/Services/${env.TWILIO_VERIFY_SERVICE_SID}/${path}`, {
+    method: "POST",
+    headers: {
+      authorization: `Basic ${btoa(`${env.TWILIO_API_KEY_SID}:${env.TWILIO_API_KEY_SECRET}`)}`,
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams(params).toString(),
+  });
+  const json = (await res.json()) as Record<string, unknown>;
+  if (!res.ok) throw new Error(String((json as { message?: string }).message ?? `twilio ${path} → ${res.status}`));
+  return json;
+}
+
+const E164 = /^\+[1-9]\d{6,14}$/;
+
+app.get("/api/channels", async (c) => {
+  const email = c.get("email");
+  const rows = await db(c)
+    .select()
+    .from(schema.linkedChannels)
+    .where(eq(schema.linkedChannels.userEmail, email))
+    .orderBy(desc(schema.linkedChannels.createdAt));
+  return c.json(
+    rows.map((r) => ({ id: r.id, kind: r.kind, value: r.value, verified: !!r.verifiedAt, createdAt: r.createdAt.getTime() })),
+  );
+});
+
+// Send an OTP to a phone number the user wants to link.
+app.post("/api/channels/phone/start", async (c) => {
+  const email = c.get("email");
+  if (!c.env.TWILIO_VERIFY_SERVICE_SID) return c.json({ error: "phone verification not configured" }, 503);
+  const b = await c.req.json<{ phone?: string }>();
+  const phone = (b.phone ?? "").replace(/[\s()-]/g, "");
+  if (!E164.test(phone)) return c.json({ error: "phone must be E.164, e.g. +14155551234" }, 400);
+  // Refuse numbers already verified on another account.
+  const existing = (
+    await db(c)
+      .select()
+      .from(schema.linkedChannels)
+      .where(and(eq(schema.linkedChannels.kind, "phone"), eq(schema.linkedChannels.value, phone)))
+      .limit(1)
+  )[0];
+  if (existing?.verifiedAt && existing.userEmail !== email) {
+    return c.json({ error: "this number is linked to another account" }, 409);
+  }
+  try {
+    await twilioVerify(c.env, "Verifications", { To: phone, Channel: "sms" });
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: "could not send code", detail: String(e) }, 502);
+  }
+});
+
+// Check the OTP; on success, link (or re-verify) the number to this account.
+app.post("/api/channels/phone/verify", async (c) => {
+  const email = c.get("email");
+  const b = await c.req.json<{ phone?: string; code?: string }>();
+  const phone = (b.phone ?? "").replace(/[\s()-]/g, "");
+  const code = (b.code ?? "").trim();
+  if (!E164.test(phone) || !/^\d{4,10}$/.test(code)) return c.json({ error: "phone and code required" }, 400);
+  try {
+    const check = await twilioVerify(c.env, "VerificationCheck", { To: phone, Code: code });
+    if (check.status !== "approved") return c.json({ error: "incorrect code" }, 400);
+  } catch (e) {
+    return c.json({ error: "verification failed", detail: String(e) }, 502);
+  }
+  const existing = (
+    await db(c)
+      .select()
+      .from(schema.linkedChannels)
+      .where(and(eq(schema.linkedChannels.kind, "phone"), eq(schema.linkedChannels.value, phone)))
+      .limit(1)
+  )[0];
+  if (existing && existing.userEmail !== email && existing.verifiedAt) {
+    return c.json({ error: "this number is linked to another account" }, 409);
+  }
+  if (existing) {
+    await db(c)
+      .update(schema.linkedChannels)
+      .set({ userEmail: email, verifiedAt: new Date() })
+      .where(eq(schema.linkedChannels.id, existing.id));
+    return c.json({ id: existing.id, kind: "phone", value: phone, verified: true });
+  }
+  const id = crypto.randomUUID();
+  await db(c).insert(schema.linkedChannels).values({ id, userEmail: email, kind: "phone", value: phone, verifiedAt: new Date() });
+  return c.json({ id, kind: "phone", value: phone, verified: true });
+});
+
+app.delete("/api/channels/:id", async (c) => {
+  const email = c.get("email");
+  const id = c.req.param("id");
+  const owned = await db(c)
+    .select({ id: schema.linkedChannels.id })
+    .from(schema.linkedChannels)
+    .where(and(eq(schema.linkedChannels.id, id), eq(schema.linkedChannels.userEmail, email)))
+    .limit(1);
+  if (!owned.length) return c.json({ error: "not found" }, 404);
+  await db(c).delete(schema.linkedChannels).where(eq(schema.linkedChannels.id, id));
+  return c.json({ ok: true });
 });
 
 // Stripe webhook: verify the signature, then mirror subscription state into D1.
