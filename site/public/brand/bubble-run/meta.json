@@ -1,0 +1,115 @@
+[
+ {
+  "file": "runner-01-s7932.svg",
+  "gap": "12",
+  "lean": "-16",
+  "front": "-38",
+  "back": "34",
+  "tail": "left",
+  "seed": 7932
+ },
+ {
+  "file": "runner-02-s5083.svg",
+  "gap": "12",
+  "lean": "-8",
+  "front": "-30",
+  "back": "42",
+  "tail": "None",
+  "seed": 5083
+ },
+ {
+  "file": "runner-03-s6761.svg",
+  "gap": "12",
+  "lean": "-16",
+  "front": "-30",
+  "back": "34",
+  "tail": "left",
+  "dashes": "yes",
+  "seed": 6761
+ },
+ {
+  "file": "runner-04-s2628.svg",
+  "gap": "16",
+  "lean": "-16",
+  "front": "-22",
+  "back": "42",
+  "tail": "None",
+  "seed": 2628
+ },
+ {
+  "file": "runner-05-s8081.svg",
+  "gap": "12",
+  "lean": "-12",
+  "front": "-30",
+  "back": "42",
+  "tail": "None",
+  "dashes": "yes",
+  "seed": 8081
+ },
+ {
+  "file": "runner-06-s6532.svg",
+  "gap": "8",
+  "lean": "-12",
+  "front": "-30",
+  "back": "26",
+  "tail": "left",
+  "seed": 6532
+ },
+ {
+  "file": "runner-07-s2664.svg",
+  "gap": "8",
+  "lean": "-16",
+  "front": "-30",
+  "back": "26",
+  "tail": "None",
+  "dashes": "yes",
+  "seed": 2664
+ },
+ {
+  "file": "runner-08-s3060.svg",
+  "gap": "12",
+  "lean": "-8",
+  "front": "-38",
+  "back": "42",
+  "tail": "None",
+  "seed": 3060
+ },
+ {
+  "file": "runner-09-s8164.svg",
+  "gap": "8",
+  "lean": "-16",
+  "front": "-30",
+  "back": "34",
+  "tail": "left",
+  "seed": 8164
+ },
+ {
+  "file": "runner-10-s3194.svg",
+  "gap": "8",
+  "lean": "-12",
+  "front": "-22",
+  "back": "34",
+  "tail": "None",
+  "dashes": "yes",
+  "seed": 3194
+ },
+ {
+  "file": "runner-11-s3201.svg",
+  "gap": "16",
+  "lean": "-8",
+  "front": "-30",
+  "back": "26",
+  "tail": "left",
+  "seed": 3201
+ },
+ {
+  "file": "runner-12-s1967.svg",
+  "gap": "12",
+  "lean": "-8",
+  "front": "-30",
+  "back": "26",
+  "tail": "left",
+  "dashes": "yes",
+  "seed": 1967
+ }
+]
