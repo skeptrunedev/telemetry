@@ -35,6 +35,11 @@ type Bindings = {
   // When set (local dev + tests), unauthenticated requests fall back to a dev
   // identity instead of being rejected. Unset in production ⇒ 401.
   AUTH_DEV_BYPASS?: string;
+  // ---- Stripe billing (one $100/mo plan) ----
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PRICE_ID?: string;
+  BILLING_EXEMPT_EMAILS?: string;
 };
 
 type Variables = { email: string };
@@ -174,6 +179,55 @@ async function resolveApiKey(
   return { email: row.userEmail, scopes };
 }
 
+// ---- Stripe billing ---------------------------------------------------------
+// One $100/mo plan. The webhook keeps the `billing` table in sync; the guard
+// requires an active subscription for data routes (exempt emails + dev skip).
+async function stripeApi(
+  env: Bindings,
+  path: string,
+  params?: Record<string, string>,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
+    method: params ? "POST" : "GET",
+    headers: {
+      authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      ...(params ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+    },
+    body: params ? new URLSearchParams(params).toString() : undefined,
+  });
+  const json = (await res.json()) as Record<string, unknown>;
+  if (!res.ok) {
+    const err = (json.error as { message?: string } | undefined)?.message ?? `stripe ${path} → ${res.status}`;
+    throw new Error(err);
+  }
+  return json;
+}
+
+function billingExempt(env: Bindings, email: string): boolean {
+  const list = (env.BILLING_EXEMPT_EMAILS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return email === DEV_EMAIL || list.includes(email.toLowerCase());
+}
+
+async function hasActiveSubscription(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+): Promise<boolean> {
+  if (c.env.AUTH_DEV_BYPASS) return true;
+  if (!c.env.STRIPE_SECRET_KEY) return true; // billing not configured — never lock out
+  if (billingExempt(c.env, email)) return true;
+  const row = (await db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email)).limit(1))[0];
+  if (!row?.status) return false;
+  if (row.status === "active" || row.status === "trialing") {
+    // 3-day grace past the recorded period end covers webhook lag on renewals.
+    return !row.currentPeriodEnd || row.currentPeriodEnd.getTime() > Date.now() - 3 * DAY_MS;
+  }
+  // Stripe retries payment during dunning; keep access while it does.
+  return row.status === "past_due";
+}
+
 function bufToBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
   let bin = "";
@@ -262,9 +316,24 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => makeAuth(c.env).handler(c.req.raw)
 // with its own bearer token, so it's excluded from the session requirement.
 app.use("/api/*", async (c, next) => {
   const path = c.req.path;
-  if (path === "/api/health" || path.startsWith("/api/auth/") || path === "/api/ingest/weight") {
+  if (
+    path === "/api/health" ||
+    path.startsWith("/api/auth/") ||
+    path === "/api/ingest/weight" ||
+    path === "/api/stripe/webhook"
+  ) {
     return next();
   }
+
+  // Identity resolved — apply the subscription gate (billing-management routes
+  // stay reachable so an unsubscribed user can subscribe / manage billing).
+  const finish = async (email: string) => {
+    c.set("email", email);
+    if (!path.startsWith("/api/billing") && !(await hasActiveSubscription(c, email))) {
+      return c.json({ error: "subscription required" }, 402);
+    }
+    return next();
+  };
 
   // Bearer API key (skcal_…): resolve owner + scopes and enforce fine-grained
   // access. Keys can't manage keys, and "*" grants everything.
@@ -279,8 +348,7 @@ app.use("/api/*", async (c, next) => {
         return c.json({ error: need ? `insufficient scope: '${need}' required` : "insufficient scope" }, 403);
       }
     }
-    c.set("email", key.email);
-    return next();
+    return finish(key.email);
   }
 
   // OAuth 2.1 access token (from the CLI / other OAuth clients, issued by the
@@ -295,15 +363,13 @@ app.use("/api/*", async (c, next) => {
       await db(c).select({ email: schema.user.email }).from(schema.user).where(eq(schema.user.id, session.userId)).limit(1)
     )[0];
     if (!row) return c.json({ error: "unknown user" }, 401);
-    c.set("email", row.email);
-    return next();
+    return finish(row.email);
   }
 
   // Otherwise fall back to the session cookie (or dev bypass) — full access.
   const email = await userEmail(c);
   if (!email) return c.json({ error: "unauthorized" }, 401);
-  c.set("email", email);
-  return next();
+  return finish(email);
 });
 
 app.get("/api/health", (c) => c.json({ ok: true, service: "skcal", ts: new Date().toISOString() }));
@@ -1832,6 +1898,142 @@ app.delete("/api/keys/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+// ---- Billing (Stripe: one $100/mo plan) -------------------------------------
+app.get("/api/billing", async (c) => {
+  const email = c.get("email");
+  const exempt = !!c.env.AUTH_DEV_BYPASS || !c.env.STRIPE_SECRET_KEY || billingExempt(c.env, email);
+  const row = (await db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email)).limit(1))[0];
+  return c.json({
+    active: await hasActiveSubscription(c, email),
+    exempt,
+    status: row?.status ?? null,
+    periodEnd: row?.currentPeriodEnd?.getTime() ?? null,
+    priceUsd: 100,
+  });
+});
+
+// Create a Stripe Checkout session for the subscription and hand back its URL.
+app.post("/api/billing/checkout", async (c) => {
+  const email = c.get("email");
+  if (!c.env.STRIPE_SECRET_KEY || !c.env.STRIPE_PRICE_ID) return c.json({ error: "billing not configured" }, 503);
+  const origin = new URL(c.req.url).origin;
+  try {
+    const row = (await db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email)).limit(1))[0];
+    let customerId = row?.stripeCustomerId ?? null;
+    if (!customerId) {
+      const customer = await stripeApi(c.env, "customers", { email, "metadata[user_email]": email });
+      customerId = String(customer.id);
+      await db(c)
+        .insert(schema.billing)
+        .values({ userEmail: email, stripeCustomerId: customerId })
+        .onConflictDoUpdate({ target: schema.billing.userEmail, set: { stripeCustomerId: customerId, updatedAt: new Date() } });
+    }
+    const session = await stripeApi(c.env, "checkout/sessions", {
+      mode: "subscription",
+      customer: customerId,
+      "line_items[0][price]": c.env.STRIPE_PRICE_ID,
+      "line_items[0][quantity]": "1",
+      client_reference_id: email,
+      "subscription_data[metadata][user_email]": email,
+      success_url: `${origin}/?billing=success`,
+      cancel_url: `${origin}/?billing=canceled`,
+    });
+    return c.json({ url: session.url });
+  } catch (e) {
+    return c.json({ error: "checkout failed", detail: String(e) }, 502);
+  }
+});
+
+// Stripe Billing Portal (manage / cancel the subscription).
+app.post("/api/billing/portal", async (c) => {
+  const email = c.get("email");
+  if (!c.env.STRIPE_SECRET_KEY) return c.json({ error: "billing not configured" }, 503);
+  const row = (await db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email)).limit(1))[0];
+  if (!row?.stripeCustomerId) return c.json({ error: "no billing account yet" }, 400);
+  const origin = new URL(c.req.url).origin;
+  try {
+    const session = await stripeApi(c.env, "billing_portal/sessions", {
+      customer: row.stripeCustomerId,
+      return_url: origin,
+    });
+    return c.json({ url: session.url });
+  } catch (e) {
+    return c.json({ error: "portal failed", detail: String(e) }, 502);
+  }
+});
+
+// Stripe webhook: verify the signature, then mirror subscription state into D1.
+app.post("/api/stripe/webhook", async (c) => {
+  const secret = c.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) return c.json({ error: "webhook not configured" }, 503);
+  const payload = await c.req.text();
+  const sigHeader = c.req.header("stripe-signature") ?? "";
+  const parts = Object.fromEntries(sigHeader.split(",").map((kv) => kv.split("=") as [string, string]));
+  const t = parts.t;
+  const v1s = sigHeader
+    .split(",")
+    .filter((kv) => kv.startsWith("v1="))
+    .map((kv) => kv.slice(3));
+  if (!t || !v1s.length) return c.json({ error: "bad signature header" }, 400);
+  if (Math.abs(Date.now() / 1000 - Number(t)) > 300) return c.json({ error: "timestamp out of tolerance" }, 400);
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${t}.${payload}`));
+  const expected = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (!v1s.includes(expected)) return c.json({ error: "signature mismatch" }, 400);
+
+  const event = JSON.parse(payload) as { type: string; data: { object: Record<string, unknown> } };
+  const obj = event.data.object;
+
+  if (event.type === "checkout.session.completed") {
+    const email = (obj.client_reference_id as string | null)?.toLowerCase();
+    if (email) {
+      await db(c)
+        .insert(schema.billing)
+        .values({
+          userEmail: email,
+          stripeCustomerId: (obj.customer as string) ?? null,
+          subscriptionId: (obj.subscription as string) ?? null,
+          status: "active",
+        })
+        .onConflictDoUpdate({
+          target: schema.billing.userEmail,
+          set: {
+            stripeCustomerId: (obj.customer as string) ?? null,
+            subscriptionId: (obj.subscription as string) ?? null,
+            status: "active",
+            updatedAt: new Date(),
+          },
+        });
+    }
+  } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+    const subId = obj.id as string;
+    const customerId = obj.customer as string;
+    const status = event.type === "customer.subscription.deleted" ? "canceled" : ((obj.status as string) ?? null);
+    // current_period_end moved onto subscription items in newer API versions.
+    const items = obj.items as { data?: { current_period_end?: number }[] } | undefined;
+    const periodEndSec = (obj.current_period_end as number | undefined) ?? items?.data?.[0]?.current_period_end;
+    const periodEnd = periodEndSec ? new Date(periodEndSec * 1000) : null;
+    const metaEmail = (obj.metadata as { user_email?: string } | undefined)?.user_email?.toLowerCase();
+
+    const bySub = await db(c).select().from(schema.billing).where(eq(schema.billing.subscriptionId, subId)).limit(1);
+    const byCust = bySub.length
+      ? bySub
+      : await db(c).select().from(schema.billing).where(eq(schema.billing.stripeCustomerId, customerId)).limit(1);
+    const email = bySub[0]?.userEmail ?? byCust[0]?.userEmail ?? metaEmail;
+    if (email) {
+      await db(c)
+        .insert(schema.billing)
+        .values({ userEmail: email, stripeCustomerId: customerId, subscriptionId: subId, status, currentPeriodEnd: periodEnd })
+        .onConflictDoUpdate({
+          target: schema.billing.userEmail,
+          set: { stripeCustomerId: customerId, subscriptionId: subId, status, currentPeriodEnd: periodEnd, updatedAt: new Date() },
+        });
+    }
+  }
+
+  return c.json({ received: true });
+});
+
 // ---- MCP server (Streamable HTTP, OAuth 2.1 via Better Auth) ---------------
 // Builds a per-request MCP server bound to the authenticated user's email.
 // Tools mirror the app's core operations so MCP clients can log + query data.
@@ -2059,6 +2261,9 @@ app.all("/mcp", async (c) => {
     await db(c).select({ email: schema.user.email }).from(schema.user).where(eq(schema.user.id, session.userId)).limit(1)
   )[0];
   if (!userRow) return c.json({ error: "unknown user" }, 401);
+  if (!(await hasActiveSubscription(c, userRow.email))) {
+    return c.json({ error: "subscription required — subscribe at https://app.skcal.fit" }, 402);
+  }
 
   const server = buildMcpServer(c, userRow.email);
   const transport = new StreamableHTTPTransport();

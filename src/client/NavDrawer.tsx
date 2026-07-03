@@ -42,6 +42,7 @@ export function NavDrawer({
   onSignOut,
   onInstallMcp,
   onApiKeys,
+  onBilling,
   coach,
 }: {
   view: View;
@@ -55,6 +56,8 @@ export function NavDrawer({
   onSignOut: () => void;
   onInstallMcp: () => void;
   onApiKeys: () => void;
+  // null hides the item (billing-exempt accounts).
+  onBilling: (() => void) | null;
   coach: CoachHistory;
 }) {
   const [profileMenu, setProfileMenu] = useState(false);
@@ -174,6 +177,18 @@ export function NavDrawer({
               >
                 API keys
               </button>
+              {onBilling && (
+                <button
+                  className="profile-menu-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setProfileMenu(false);
+                    onBilling();
+                  }}
+                >
+                  Billing
+                </button>
+              )}
               <button
                 className="profile-menu-item"
                 role="menuitem"

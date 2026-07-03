@@ -920,3 +920,18 @@ export const apiKeys = sqliteTable(
   },
   (t) => [index("api_keys_token_hash_idx").on(t.tokenHash), index("api_keys_user_idx").on(t.userEmail)],
 );
+
+// Stripe billing state, one row per user. Kept in sync by the Stripe webhook;
+// `status` mirrors the subscription status (active/trialing/past_due/canceled…).
+export const billing = sqliteTable(
+  "billing",
+  {
+    userEmail: text("user_email").primaryKey(),
+    stripeCustomerId: text("stripe_customer_id"),
+    subscriptionId: text("subscription_id"),
+    status: text("status"),
+    currentPeriodEnd: integer("current_period_end", { mode: "timestamp_ms" }),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [index("billing_customer_idx").on(t.stripeCustomerId), index("billing_subscription_idx").on(t.subscriptionId)],
+);

@@ -28,6 +28,12 @@
     "run_worker_first": true
   },
   "observability": { "enabled": true },
+  "vars": {
+    // Stripe price for the single $100/mo plan (secret key + webhook signing
+    // secret live in Worker secrets). Exempt emails skip the subscription gate.
+    "STRIPE_PRICE_ID": "price_1TozrdAORpgtf3danYpcO3FA",
+    "BILLING_EXEMPT_EMAILS": "me@skeptrune.com,nick.k@skeptrune.com,dev@local"
+  },
   "d1_databases": [
     {
       "binding": "DB",

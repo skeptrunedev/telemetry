@@ -53,6 +53,7 @@ export type CoachConversation = {
 };
 export type WeightReading = { id: number; ts: number; weightKg: number; bodyFatPct: number | null; note: string | null; source: string };
 export type ApiKey = { id: string; name: string; prefix: string; scopes: string[]; createdAt: number; lastUsedAt: number | null };
+export type Billing = { active: boolean; exempt: boolean; status: string | null; periodEnd: number | null; priceUsd: number };
 
 export const api = {
   dashboard: (date: string) => jget<DashboardData>(`/api/dashboard?date=${date}`),
@@ -122,6 +123,17 @@ export const api = {
   deleteMeal: (id: string) => jsend(`/api/nutrition/meals/${id}`, "DELETE", undefined),
   deleteItem: (id: number) => jsend(`/api/nutrition/items/${id}`, "DELETE", undefined),
   photoUrl: (key: string) => `/api/nutrition/photo/${key}`,
+  billing: () => jget<Billing>(`/api/billing`),
+  billingCheckout: async (): Promise<{ url: string }> => {
+    const r = await rawFetch(`/api/billing/checkout`, { method: "POST" });
+    if (!r.ok) throw new Error(`checkout → ${r.status}: ${await r.text().catch(() => "")}`);
+    return r.json() as Promise<{ url: string }>;
+  },
+  billingPortal: async (): Promise<{ url: string }> => {
+    const r = await rawFetch(`/api/billing/portal`, { method: "POST" });
+    if (!r.ok) throw new Error(`portal → ${r.status}`);
+    return r.json() as Promise<{ url: string }>;
+  },
   listApiKeys: () => jget<ApiKey[]>(`/api/keys`),
   createApiKey: async (name: string, scopes: string[]): Promise<ApiKey & { token: string }> => {
     const r = await rawFetch(`/api/keys`, {

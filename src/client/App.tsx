@@ -9,6 +9,8 @@ import { type View } from "./BottomNav";
 import { NavDrawer } from "./NavDrawer";
 import { McpInstall } from "./McpInstall";
 import { ApiKeys } from "./ApiKeys";
+import { Subscribe } from "./Subscribe";
+import type { Billing } from "./api";
 import { useCoachHistory, CoachThread } from "./Coach";
 import { SignIn } from "./SignIn";
 import { useSession, signOut } from "./auth-client";
@@ -87,6 +89,23 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
+  // Subscription state (null while loading). Non-active blocks the app with the
+  // Subscribe screen; a ?billing=success return from Stripe forces a refetch.
+  const [billing, setBilling] = useState<Billing | null>(null);
+  useEffect(() => {
+    if (!email) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("billing")) {
+      params.delete("billing");
+      const qs = params.toString();
+      history.replaceState(history.state, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    }
+    // Fail open on a fetch error so a transient blip never locks the app.
+    api
+      .billing()
+      .then(setBilling)
+      .catch(() => setBilling({ active: true, exempt: false, status: null, periodEnd: null, priceUsd: 100 }));
+  }, [email]);
   // Desktop: whether the persistent sidebar is collapsed (remembered).
   const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem("skcal-nav-collapsed") === "1");
   const coach = useCoachHistory();
@@ -189,6 +208,10 @@ export default function App() {
     window.location.reload();
   };
 
+  // Signed in but not subscribed → the paywall (hold blank while loading).
+  if (billing === null) return <div className="app" />;
+  if (!billing.active) return <Subscribe billing={billing} email={email} onSignOut={signOutAndReload} />;
+
   return (
     <div className={`app ${navCollapsed ? "nav-collapsed" : ""}`}>
       <NavDrawer
@@ -216,6 +239,20 @@ export default function App() {
           setDrawerOpen(false);
           setKeysOpen(true);
         }}
+        onBilling={
+          billing.exempt
+            ? null
+            : async () => {
+                setDrawerOpen(false);
+                try {
+                  const { url } = await api.billingPortal();
+                  window.location.href = url;
+                } catch {
+                  const { url } = await api.billingCheckout().catch(() => ({ url: "" }));
+                  if (url) window.location.href = url;
+                }
+              }
+        }
         coach={coach}
       />
 
