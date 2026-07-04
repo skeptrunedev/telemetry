@@ -238,6 +238,7 @@ export default function App() {
           setDrawerOpen(false);
           setNavCollapsed(true);
         }}
+        onExpand={() => setNavCollapsed(false)}
         email={email}
         avatar={avatar}
         onAvatarChange={setAvatarOverride}

@@ -1254,13 +1254,60 @@ a {
   flex-direction: column;
   gap: 0.35rem;
   padding: 0.7rem 0.6rem 0.6rem;
-  border-right: 1px solid var(--line);
+  /* very light hairline separating nav from content */
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
   overflow: hidden;
 }
 .sidebar-head {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   padding: 0.1rem 0.1rem 0.3rem;
+}
+/* Brand lockup top-left of the expanded sidebar — mirrors the landing-site brand. */
+.sidebar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 0.35rem;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.14em;
+  color: var(--fg);
+}
+.sidebar-brand-mark {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+/* Collapsed-rail expand control (desktop only): the brand mark swaps to a
+   panel-open icon on hover/focus-visible. */
+.nav-icon-btn.sidebar-expand {
+  /* hidden unless the desktop rail is active (.nav-icon-btn sets display: grid) */
+  display: none;
+  position: relative;
+}
+.sidebar-expand-logo {
+  width: 22px;
+  height: 22px;
+  opacity: 1;
+  transition: opacity 150ms var(--ease-out);
+}
+.sidebar-expand-icon {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transition: opacity 150ms var(--ease-out);
+}
+.sidebar-expand:hover .sidebar-expand-logo,
+.sidebar-expand:focus-visible .sidebar-expand-logo {
+  opacity: 0;
+}
+.sidebar-expand:hover .sidebar-expand-icon,
+.sidebar-expand:focus-visible .sidebar-expand-icon {
+  opacity: 1;
 }
 .sidebar-close {
   display: grid;
@@ -1537,17 +1584,44 @@ a {
   }
 }
 @media (min-width: 781px) {
-  /* Desktop: collapsing hides the persistent sidebar and reveals a slim topbar
-     whose hamburger reopens it. */
+  /* Desktop: collapsing shrinks the sidebar into a slim ChatGPT-style icon
+     rail — logo (expand control) on top, icon-only actions, avatar at the
+     bottom. */
   .app.nav-collapsed .app-sidebar {
+    width: 56px;
+    padding: 0.7rem 0.4rem 0.6rem;
+    overflow: visible; /* let the profile popover escape the rail */
+    z-index: 30;
+  }
+  .app.nav-collapsed .sidebar-head {
+    justify-content: center;
+  }
+  .app.nav-collapsed .sidebar-brand,
+  .app.nav-collapsed .sidebar-close,
+  .app.nav-collapsed .nav-item-label,
+  .app.nav-collapsed .coach-search-wrap,
+  .app.nav-collapsed .coach-recents-label,
+  .app.nav-collapsed .coach-recents,
+  .app.nav-collapsed .coach-empty-list,
+  .app.nav-collapsed .profile-email,
+  .app.nav-collapsed .profile-caret {
     display: none;
   }
-  .app.nav-collapsed .topbar {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.9rem;
-    width: 100%;
+  .app.nav-collapsed .sidebar-expand {
+    display: grid;
+  }
+  .app.nav-collapsed .nav-item {
+    justify-content: center;
+    padding: 0.55rem 0;
+  }
+  .app.nav-collapsed .profile-row {
+    justify-content: center;
+    padding: 0.5rem 0;
+  }
+  /* the popover can't fit inside a 56px rail — anchor it to the left edge */
+  .app.nav-collapsed .profile-menu {
+    right: auto;
+    min-width: 200px;
   }
 }
 .coach {

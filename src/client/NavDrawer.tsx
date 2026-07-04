@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Sun, MessageSquare, Plus, SquarePen, Search, PanelLeft, Trash2, ChevronDown, Plug } from "lucide-react";
+import { Sun, MessageSquare, Plus, SquarePen, Search, PanelLeft, PanelLeftOpen, Trash2, ChevronDown, Plug } from "lucide-react";
 import type { View } from "./BottomNav";
 import type { CoachHistory } from "./Coach";
 import { api } from "./api";
@@ -23,9 +23,14 @@ function NavItem({
   onClick: () => void;
 }) {
   return (
-    <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick} aria-current={active ? "page" : undefined}>
+    <button
+      className={`nav-item ${active ? "active" : ""}`}
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      title={label}
+    >
       <span className="nav-item-icon">{icon}</span>
-      {label}
+      <span className="nav-item-label">{label}</span>
     </button>
   );
 }
@@ -36,6 +41,7 @@ export function NavDrawer({
   onAdd,
   open,
   onClose,
+  onExpand,
   email,
   avatar,
   onAvatarChange,
@@ -51,6 +57,7 @@ export function NavDrawer({
   onAdd: () => void;
   open: boolean;
   onClose: () => void;
+  onExpand: () => void;
   email: string;
   avatar: string | null;
   onAvatarChange: (image: string) => void;
@@ -107,8 +114,18 @@ export function NavDrawer({
       {open && <div className="drawer-backdrop" onClick={onClose} />}
       <aside className={`app-sidebar ${open ? "open" : ""}`}>
         <div className="sidebar-head">
+          <span className="sidebar-brand">
+            <img className="sidebar-brand-mark" src="/brand-mark.svg" alt="" width={22} height={22} />
+            skcal
+          </span>
           <button className="nav-icon-btn sidebar-close" onClick={onClose} aria-label="Collapse sidebar">
             <PanelLeft />
+          </button>
+          {/* Collapsed rail (desktop): the brand mark doubles as the expand
+              control — it swaps to a panel-open icon on hover/focus. */}
+          <button className="nav-icon-btn sidebar-expand" onClick={onExpand} aria-label="Expand sidebar">
+            <img className="sidebar-expand-logo" src="/brand-mark.svg" alt="" width={22} height={22} />
+            <PanelLeftOpen className="sidebar-expand-icon" />
           </button>
         </div>
 
@@ -121,11 +138,11 @@ export function NavDrawer({
 
         <div className="sidebar-divider" />
 
-        <button className="nav-item" onClick={goCoachNew}>
+        <button className="nav-item" onClick={goCoachNew} title="New chat">
           <span className="nav-item-icon">
             <SquarePen />
           </span>
-          New chat
+          <span className="nav-item-label">New chat</span>
         </button>
         <div className="coach-search-wrap">
           <Search className="coach-search-icon" />
