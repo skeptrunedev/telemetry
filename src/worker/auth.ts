@@ -119,6 +119,12 @@ export function makeAuth(env: AuthEnv) {
     database: drizzleAdapter(drizzle(env.DB, { schema }), { provider: "sqlite" }),
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
+    trustedOrigins: ["https://admin.skcal.fit"],
+    // Session cookie is scoped to .skcal.fit so the admin subdomain (same
+    // worker, different hostname) sees the same session.
+    advanced: {
+      crossSubDomainCookies: { enabled: true, domain: ".skcal.fit" },
+    },
     // Magic-link accounts are inherently email-verified (the user proved control
     // of the inbox by clicking the link), so we don't send a separate
     // verification email. Google accounts arrive pre-verified from the provider.

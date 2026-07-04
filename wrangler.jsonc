@@ -15,6 +15,7 @@
   // gives `wrangler deploy` concrete targets so it actually promotes new versions.
   "routes": [
     { "pattern": "app.skcal.fit", "custom_domain": true },
+    { "pattern": "admin.skcal.fit", "custom_domain": true },
     // Legacy hosts: kept attached so they can 301 to app.skcal.fit (and keep
     // serving the API/MCP for existing tokens + the scale ingest).
     { "pattern": "skcal.skeptrune.com", "custom_domain": true },

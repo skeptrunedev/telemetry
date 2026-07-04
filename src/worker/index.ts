@@ -89,6 +89,12 @@ const LEGACY_HOSTS = new Set(["telemetry.skeptrune.com", "skcal.skeptrune.com"])
 
 app.use("*", async (c, next) => {
   const url = new URL(c.req.url);
+  if (url.hostname === "admin.skcal.fit") {
+    const path = url.pathname;
+    if (!path.startsWith("/api/") && path !== "/favicon.svg") {
+      return new Response(ADMIN_HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+    }
+  }
   if (LEGACY_HOSTS.has(url.hostname)) {
     // Don't redirect the SW script — serve the kill-switch so stale installs
     // can tear themselves down (a redirected /sw.js just fails the update).
@@ -107,6 +113,139 @@ app.use("*", async (c, next) => {
   }
   return next();
 });
+
+// Standalone admin dashboard served at admin.skcal.fit. Self-contained HTML +
+// vanilla JS against /api/admin/* — same worker, same session cookie
+// (.skcal.fit scope), no SPA build involved.
+const ADMIN_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>skcal admin</title>
+<link rel="icon" href="https://app.skcal.fit/favicon.svg">
+<style>
+  :root { --bg:#141517; --card:#1c1d20; --line:#2c2e31; --fg:#ececec; --muted:#a3a5aa; --amber:#f59e0b; --red:#c9482f; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .wrap { max-width:880px; margin:0 auto; padding:28px 18px 60px; }
+  h1 { font-size:17px; letter-spacing:.14em; margin:0 0 4px; } h1 .dot { color:var(--amber); }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin:30px 0 10px; }
+  .meta { color:var(--muted); font-size:12.5px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  input[type=tel] { flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); border-radius:9px; color:var(--fg); font:inherit; padding:9px 12px; }
+  input[type=tel]:focus { outline:none; border-color:var(--amber); }
+  button { font:inherit; border:0; border-radius:9px; padding:9px 16px; cursor:pointer; background:var(--amber); color:#1a1205; font-weight:600; }
+  button.danger { background:var(--red); color:#fff; }
+  button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:10px; margin:10px 0; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th { text-align:left; color:var(--muted); font-weight:500; padding:6px 8px; border-bottom:1px solid var(--line); }
+  td { padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:11px; border:1px solid var(--line); color:var(--muted); }
+  .pill.temp { border-color:var(--amber); color:var(--amber); }
+  ul.report { margin:10px 0 0; padding-left:18px; }
+  #err { color:#ff8a70; }
+  a { color:var(--amber); }
+  label { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted); margin:8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>skcal<span class="dot">.</span>admin</h1>
+  <p class="meta" id="who">checking session…</p>
+  <div id="gate" style="display:none">
+    <p>No admin session. <a href="https://app.skcal.fit">Sign in at app.skcal.fit</a> with your phone number, then come back.</p>
+  </div>
+  <div id="dash" style="display:none">
+    <h2>Reset a number</h2>
+    <div class="card">
+      <p class="meta">Kills a phone number everywhere — Photon registration (releases the line mapping), linked channel, phone sign-in, onboarding queue — so onboarding can be tested again from scratch.</p>
+      <div class="row">
+        <input type="tel" id="phone" placeholder="(415) 555-0132">
+        <button id="inspect">Inspect</button>
+      </div>
+      <div id="info" style="display:none">
+        <ul id="infolist" class="report"></ul>
+        <label><input type="checkbox" id="wipe" checked> also wipe the account (temp phone-signup accounts only)</label>
+        <button class="danger" id="reset">Reset this number</button>
+      </div>
+      <ul id="report" class="report" style="display:none"></ul>
+      <p id="err"></p>
+    </div>
+    <h2>Accounts</h2>
+    <div class="card"><table id="users"><thead><tr><th>email</th><th>phone</th><th>channels</th><th>created</th><th></th></tr></thead><tbody></tbody></table></div>
+    <h2>Onboarding queue (latest 20)</h2>
+    <div class="card"><table id="queue"><thead><tr><th>phone</th><th>status</th><th>when</th></tr></thead><tbody></tbody></table></div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (ms) => new Date(ms).toLocaleString();
+async function j(url, init) {
+  const r = await fetch(url, init);
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.error || (url + " → " + r.status));
+  return b;
+}
+async function loadUsers() {
+  const d = await j("/api/admin/users");
+  $("users").tBodies[0].innerHTML = d.users.map((u) =>
+    "<tr><td>" + u.email + (u.temp ? ' <span class=\\"pill temp\\">temp</span>' : "") + "</td><td>" + (u.phone || "—") +
+    "</td><td>" + (u.channels.join("<br>") || "—") + "</td><td>" + fmt(u.createdAt) +
+    "</td><td>" + (u.phone || u.channels[0] ? '<button class=\\"ghost\\" onclick=\\"prefill(&quot;' + (u.phone || u.channels[0]) + '&quot;)\\">reset…</button>' : "") + "</td></tr>"
+  ).join("");
+  $("queue").tBodies[0].innerHTML = d.queue.map((q) =>
+    "<tr><td>" + q.phone + "</td><td>" + q.status + "</td><td>" + fmt(q.createdAt) + "</td></tr>"
+  ).join("") || "<tr><td colspan=3 class=meta>empty</td></tr>";
+}
+function prefill(p) { $("phone").value = p; $("inspect").click(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+$("inspect").onclick = async () => {
+  $("err").textContent = ""; $("report").style.display = "none";
+  try {
+    const d = await j("/api/admin/phone?number=" + encodeURIComponent($("phone").value.trim()));
+    $("infolist").innerHTML =
+      "<li>linked channel: " + (d.linkedChannel ? d.linkedChannel.userEmail + (d.linkedChannel.verified ? " (verified)" : "") : "none") + "</li>" +
+      "<li>phone sign-in: " + (d.authUser ? d.authUser.email + (d.authUser.tempAccount ? " (temp)" : "") : "none") + "</li>" +
+      "<li>photon: " + (d.photon ? "registered → " + (d.photon.assignedNumber || "?") : (d.photonError || "not registered")) + "</li>" +
+      "<li>queue rows: " + d.pendingTextMe + "</li>" +
+      (d.counts ? "<li>data (" + d.accountEmail + "): " + d.counts.weights + " weights · " + d.counts.meals + " meals · " + d.counts.workouts + " workouts · " + d.counts.measurements + " measurements · " + d.counts.memories + " memories</li>" : "");
+    $("info").style.display = "block";
+    $("info").dataset.phone = d.phone;
+  } catch (e) { $("err").textContent = String(e.message || e); $("info").style.display = "none"; }
+};
+$("reset").onclick = async () => {
+  const phone = $("info").dataset.phone;
+  if (!confirm("Reset " + phone + " everywhere" + ($("wipe").checked ? " AND wipe its temp account" : "") + "?")) return;
+  $("err").textContent = "";
+  try {
+    const d = await j("/api/admin/phone/reset", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone, wipeAccount: $("wipe").checked }),
+    });
+    $("report").innerHTML = d.report.map((l) => "<li>" + l + "</li>").join("");
+    $("report").style.display = "block";
+    $("info").style.display = "none";
+    loadUsers().catch(() => {});
+  } catch (e) { $("err").textContent = String(e.message || e); }
+};
+(async () => {
+  try {
+    await j("/api/admin/users");
+    const me = await j("/api/whoami").catch(() => null);
+    $("who").textContent = me && me.email ? "signed in as " + me.email : "signed in";
+    $("dash").style.display = "block";
+    loadUsers().catch((e) => { $("err").textContent = String(e.message || e); });
+  } catch {
+    $("who").textContent = "";
+    $("gate").style.display = "block";
+  }
+})();
+</script>
+</body>
+</html>`;
 
 const DEV_EMAIL = "dev@local";
 
@@ -2853,6 +2992,28 @@ app.get("/api/admin/phone", async (c) => {
     pendingTextMe: textMe.length,
     accountEmail,
     counts,
+  });
+});
+
+app.get("/api/admin/users", async (c) => {
+  if (!ADMIN_EMAILS.has(c.get("email"))) return c.json({ error: "admin only" }, 403);
+  const users = await db(c).select().from(schema.user).orderBy(desc(schema.user.createdAt)).limit(100);
+  const channels = await db(c).select().from(schema.linkedChannels);
+  const queue = await db(c)
+    .select()
+    .from(schema.textMeRequests)
+    .orderBy(desc(schema.textMeRequests.createdAt))
+    .limit(20);
+  return c.json({
+    users: users.map((u) => ({
+      email: u.email,
+      name: u.name,
+      phone: u.phoneNumber,
+      temp: u.email.endsWith("@phone.skcal.fit"),
+      createdAt: u.createdAt.getTime(),
+      channels: channels.filter((ch) => ch.userEmail === u.email).map((ch) => ch.value),
+    })),
+    queue: queue.map((q) => ({ phone: q.phone, status: q.status, createdAt: q.createdAt.getTime() })),
   });
 });
 
