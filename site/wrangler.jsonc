@@ -10,7 +10,10 @@
   "main": "worker.ts",
   "routes": [
     { "pattern": "skcal.fit", "custom_domain": true },
-    { "pattern": "www.skcal.fit", "custom_domain": true }
+    { "pattern": "www.skcal.fit", "custom_domain": true },
+    { "pattern": "docs.skcal.fit", "custom_domain": true }
   ],
-  "assets": { "directory": "./dist", "binding": "ASSETS" }
+  // run_worker_first: asset paths like "/" would otherwise be served straight
+  // from static assets, skipping the docs.skcal.fit -> skcal.fit/docs redirect.
+  "assets": { "directory": "./dist", "binding": "ASSETS", "run_worker_first": true }
 }
