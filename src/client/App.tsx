@@ -156,6 +156,10 @@ export default function App() {
 
   // Seed the first entry, then keep its scroll up to date as the user scrolls.
   useEffect(() => {
+    // We restore scroll ourselves on Back/Forward; the browser's native restore
+    // fires against the OLD view's DOM (clamping to 0) and its scroll event
+    // would clobber the entry's saved position before we read it.
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
     const cur = (history.state ?? null) as Partial<HistoryState> | null;
     if (cur?.view == null) history.replaceState({ view: viewRef.current, scroll: 0 } satisfies HistoryState, "");
     let raf = 0;
@@ -163,6 +167,9 @@ export default function App() {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         const st = (history.state ?? {}) as Partial<HistoryState>;
+        // Only record scroll for the view that's actually on screen — during a
+        // swap, stray scroll events must not overwrite another entry's memory.
+        if (st.view != null && st.view !== viewRef.current) return;
         history.replaceState({ view: st.view ?? viewRef.current, scroll: window.scrollY } satisfies HistoryState, "");
       });
     };

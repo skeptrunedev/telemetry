@@ -86,6 +86,13 @@ a {
     gap: 0.5rem;
     padding: 0.5rem 0.9rem;
     width: 100%;
+    /* stays reachable while scrolled — navigation shouldn't cost your place */
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
   }
 }
 .brand {
@@ -1185,11 +1192,24 @@ a {
 }
 
 /* ---- reduced motion (Emil): keep meaning, drop movement ---- */
-/* cross-fade between views (View Transitions API) */
-::view-transition-old(root),
+/* view swap (View Transitions API): old fades, new rises in — subtle
+   directionality so navigation reads as movement, not a blink */
+::view-transition-old(root) {
+  animation: vt-fade-out 160ms var(--ease-out) both;
+}
 ::view-transition-new(root) {
-  animation-duration: 200ms;
-  animation-timing-function: var(--ease-out);
+  animation: vt-rise-in 220ms var(--ease-out) both;
+}
+@keyframes vt-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes vt-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
