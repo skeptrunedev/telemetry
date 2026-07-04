@@ -1191,6 +1191,45 @@ a {
   }
 }
 
+/* ---- admin sheet ---- */
+.admin-row {
+  display: flex;
+  gap: 0.6rem;
+  margin: 0.9rem 0;
+}
+.admin-row input {
+  flex: 1;
+  min-width: 0;
+}
+.admin-info {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.9rem;
+  font-size: 0.9rem;
+}
+.admin-info ul {
+  margin: 0 0 0.6rem;
+  padding-left: 1.1rem;
+}
+.admin-info li {
+  margin: 0.2rem 0;
+}
+.admin-wipe {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  margin-bottom: 0.8rem;
+}
+.admin-danger {
+  background: #b3402a;
+  color: #fff;
+}
+.admin-danger:hover {
+  background: #c9482f;
+}
+
 /* ---- reduced motion (Emil): keep meaning, drop movement ---- */
 /* view swap (View Transitions API): old fades, new rises in — subtle
    directionality so navigation reads as movement, not a blink */

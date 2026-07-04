@@ -10,7 +10,7 @@ function reauth(): never {
 
 // Use redirect:"manual" so an Access login redirect surfaces as an
 // opaqueredirect response we can detect, rather than a thrown CORS error.
-async function rawFetch(url: string, init?: RequestInit): Promise<Response> {
+export async function rawFetch(url: string, init?: RequestInit): Promise<Response> {
   const r = await fetch(url, { ...init, redirect: "manual" });
   if (r.type === "opaqueredirect" || r.status === 0) reauth();
   return r;

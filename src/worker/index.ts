@@ -616,8 +616,8 @@ app.use("/api/*", async (c, next) => {
         .limit(1)
     )[0];
     if (!row?.verifiedAt) return c.json({ error: "channel not linked", code: "unlinked" }, 404);
-    if (path.startsWith("/api/keys") || path.startsWith("/api/channels")) {
-      return c.json({ error: "agent cannot manage keys or channels" }, 403);
+    if (path.startsWith("/api/keys") || path.startsWith("/api/channels") || path.startsWith("/api/admin")) {
+      return c.json({ error: "agent cannot manage keys, channels, or admin" }, 403);
     }
     return finish(row.userEmail);
   }
@@ -2790,6 +2790,175 @@ app.post("/api/billing/portal", async (c) => {
   } catch (e) {
     return c.json({ error: "portal failed", detail: String(e) }, 502);
   }
+});
+
+// ---- Admin: onboarding test tooling -----------------------------------------
+// Inspect and fully reset a phone number across every system that knows it
+// (Photon registration, linked channels, phone-auth user, onboarding queue),
+// optionally wiping a temp phone-signup account's data. Admins only.
+const ADMIN_EMAILS = new Set(["me@skeptrune.com", "nick.k@skeptrune.com", "dev@local"]);
+
+async function photonUsers(env: Bindings): Promise<{ id: string; phoneNumber: string; assignedPhoneNumber?: string }[]> {
+  if (!env.PHOTON_PROJECT_ID || !env.PHOTON_ACCESS_TOKEN) return [];
+  const res = await fetch(`https://app.photon.codes/api/projects/${env.PHOTON_PROJECT_ID}/spectrum/users`, {
+    headers: { authorization: `Bearer ${env.PHOTON_ACCESS_TOKEN}` },
+  });
+  if (!res.ok) throw new Error(`photon list → ${res.status}`);
+  const body = (await res.json()) as { users?: { id: string; phoneNumber: string; assignedPhoneNumber?: string }[] };
+  return body.users ?? [];
+}
+
+app.get("/api/admin/phone", async (c) => {
+  if (!ADMIN_EMAILS.has(c.get("email"))) return c.json({ error: "admin only" }, 403);
+  const phone = normalizePhone(c.req.query("number") ?? "");
+  if (!phone) return c.json({ error: "invalid phone" }, 400);
+  const channel = (
+    await db(c)
+      .select()
+      .from(schema.linkedChannels)
+      .where(and(eq(schema.linkedChannels.kind, "phone"), eq(schema.linkedChannels.value, phone)))
+      .limit(1)
+  )[0];
+  const phoneUser = (
+    await db(c).select().from(schema.user).where(eq(schema.user.phoneNumber, phone)).limit(1)
+  )[0];
+  let photon: { id: string; assignedPhoneNumber?: string } | null = null;
+  let photonError: string | null = null;
+  try {
+    photon = (await photonUsers(c.env)).find((u) => u.phoneNumber === phone) ?? null;
+  } catch (e) {
+    photonError = String(e);
+  }
+  const textMe = await db(c)
+    .select({ id: schema.textMeRequests.id })
+    .from(schema.textMeRequests)
+    .where(eq(schema.textMeRequests.phone, phone));
+  const accountEmail = channel?.userEmail ?? phoneUser?.email ?? null;
+  let counts: Record<string, number> | null = null;
+  if (accountEmail) {
+    counts = {
+      weights: (await db(c).select({ id: schema.weightReadings.id }).from(schema.weightReadings).where(eq(schema.weightReadings.userEmail, accountEmail))).length,
+      meals: (await db(c).select({ id: schema.meals.id }).from(schema.meals).where(eq(schema.meals.userEmail, accountEmail))).length,
+      workouts: (await db(c).select({ id: schema.workouts.id }).from(schema.workouts).where(eq(schema.workouts.userEmail, accountEmail))).length,
+      measurements: (await db(c).select({ id: schema.measurements.id }).from(schema.measurements).where(eq(schema.measurements.userEmail, accountEmail))).length,
+      memories: (await db(c).select({ id: schema.agentMemories.id }).from(schema.agentMemories).where(eq(schema.agentMemories.userEmail, accountEmail))).length,
+    };
+  }
+  return c.json({
+    phone,
+    linkedChannel: channel ? { userEmail: channel.userEmail, verified: !!channel.verifiedAt } : null,
+    authUser: phoneUser ? { email: phoneUser.email, name: phoneUser.name, tempAccount: phoneUser.email.endsWith("@phone.skcal.fit") } : null,
+    photon: photon ? { id: photon.id, assignedNumber: photon.assignedPhoneNumber ?? null } : null,
+    photonError,
+    pendingTextMe: textMe.length,
+    accountEmail,
+    counts,
+  });
+});
+
+app.post("/api/admin/phone/reset", async (c) => {
+  if (!ADMIN_EMAILS.has(c.get("email"))) return c.json({ error: "admin only" }, 403);
+  const b = await c.req.json<{ phone?: string; wipeAccount?: boolean }>();
+  const phone = normalizePhone(b.phone ?? "");
+  if (!phone) return c.json({ error: "invalid phone" }, 400);
+  const report: string[] = [];
+
+  // 1. Photon registration — removing it releases the pool-number mapping.
+  try {
+    const pu = (await photonUsers(c.env)).find((u) => u.phoneNumber === phone);
+    if (pu && c.env.PHOTON_PROJECT_ID && c.env.PHOTON_ACCESS_TOKEN) {
+      const res = await fetch(
+        `https://app.photon.codes/api/projects/${c.env.PHOTON_PROJECT_ID}/spectrum/users/${pu.id}`,
+        { method: "DELETE", headers: { authorization: `Bearer ${c.env.PHOTON_ACCESS_TOKEN}` } },
+      );
+      report.push(res.ok ? "photon: registration removed" : `photon: delete failed (${res.status})`);
+    } else {
+      report.push("photon: not registered");
+    }
+  } catch (e) {
+    report.push(`photon: ${String(e)}`);
+  }
+
+  // 2. Onboarding queue rows.
+  await db(c).delete(schema.textMeRequests).where(eq(schema.textMeRequests.phone, phone));
+  report.push("onboarding queue: cleared");
+
+  // 3. Linked channel.
+  const channel = (
+    await db(c)
+      .select()
+      .from(schema.linkedChannels)
+      .where(and(eq(schema.linkedChannels.kind, "phone"), eq(schema.linkedChannels.value, phone)))
+      .limit(1)
+  )[0];
+  if (channel) {
+    await db(c).delete(schema.linkedChannels).where(eq(schema.linkedChannels.id, channel.id));
+    report.push(`linked channel: removed (was → ${channel.userEmail})`);
+  } else {
+    report.push("linked channel: none");
+  }
+
+  // 4. Phone-auth user: detach the number.
+  const phoneUser = (
+    await db(c).select().from(schema.user).where(eq(schema.user.phoneNumber, phone)).limit(1)
+  )[0];
+  if (phoneUser) {
+    await db(c)
+      .update(schema.user)
+      .set({ phoneNumber: null, phoneNumberVerified: null })
+      .where(eq(schema.user.id, phoneUser.id));
+    report.push(`auth: phone detached from ${phoneUser.email}`);
+  } else {
+    report.push("auth: no user had this number");
+  }
+
+  // 5. Optional account wipe — temp phone-signup accounts only, never admins.
+  const accountEmail = channel?.userEmail ?? phoneUser?.email ?? null;
+  if (b.wipeAccount && accountEmail) {
+    if (ADMIN_EMAILS.has(accountEmail)) {
+      report.push("wipe: refused (admin account)");
+    } else if (!accountEmail.endsWith("@phone.skcal.fit")) {
+      report.push("wipe: refused (not a temp phone account)");
+    } else {
+      // stored meal photos in R2 first
+      const mealRows = await db(c).select().from(schema.meals).where(eq(schema.meals.userEmail, accountEmail));
+      for (const m of mealRows) {
+        const keys: string[] = m.photoKeys ? JSON.parse(m.photoKeys) : [];
+        await Promise.all(keys.map((k) => c.env.PHOTOS.delete(k).catch(() => {})));
+      }
+      const convs = await db(c)
+        .select({ id: schema.coachConversations.id })
+        .from(schema.coachConversations)
+        .where(eq(schema.coachConversations.userEmail, accountEmail));
+      for (const cv of convs) {
+        await db(c).delete(schema.coachMessages).where(eq(schema.coachMessages.conversationId, cv.id));
+      }
+      await db(c).delete(schema.coachConversations).where(eq(schema.coachConversations.userEmail, accountEmail));
+      await db(c).delete(schema.weightReadings).where(eq(schema.weightReadings.userEmail, accountEmail));
+      await db(c).delete(schema.measurements).where(eq(schema.measurements.userEmail, accountEmail));
+      await db(c).delete(schema.photos).where(eq(schema.photos.userEmail, accountEmail));
+      await db(c).delete(schema.targets).where(eq(schema.targets.userEmail, accountEmail));
+      await db(c).delete(schema.nutritionDays).where(eq(schema.nutritionDays.userEmail, accountEmail));
+      await db(c).delete(schema.nutritionItems).where(eq(schema.nutritionItems.userEmail, accountEmail));
+      await db(c).delete(schema.meals).where(eq(schema.meals.userEmail, accountEmail));
+      await db(c).delete(schema.workouts).where(eq(schema.workouts.userEmail, accountEmail));
+      await db(c).delete(schema.agentMemories).where(eq(schema.agentMemories.userEmail, accountEmail));
+      await db(c).delete(schema.apiKeys).where(eq(schema.apiKeys.userEmail, accountEmail));
+      await db(c).delete(schema.billing).where(eq(schema.billing.userEmail, accountEmail));
+      await db(c).delete(schema.linkedChannels).where(eq(schema.linkedChannels.userEmail, accountEmail));
+      const authUser = (
+        await db(c).select().from(schema.user).where(eq(schema.user.email, accountEmail)).limit(1)
+      )[0];
+      if (authUser) {
+        await db(c).delete(schema.session).where(eq(schema.session.userId, authUser.id));
+        await db(c).delete(schema.account).where(eq(schema.account.userId, authUser.id));
+        await db(c).delete(schema.user).where(eq(schema.user.id, authUser.id));
+      }
+      report.push(`wipe: ${accountEmail} deleted (data, sessions, account)`);
+    }
+  }
+
+  return c.json({ ok: true, phone, report });
 });
 
 // ---- "Text to get started" onboarding queue --------------------------------

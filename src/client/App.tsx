@@ -10,6 +10,7 @@ import { NavDrawer } from "./NavDrawer";
 import { McpInstall } from "./McpInstall";
 import { ApiKeys } from "./ApiKeys";
 import { LinkedNumbers } from "./LinkedNumbers";
+import { Admin } from "./Admin";
 import { Subscribe } from "./Subscribe";
 import type { Billing } from "./api";
 import { useCoachHistory, CoachThread } from "./Coach";
@@ -93,6 +94,7 @@ export default function App() {
   const [mcpOpen, setMcpOpen] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
   const [numbersOpen, setNumbersOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   // Subscription state (null while loading). Non-active blocks the app with the
   // Subscribe screen; a ?billing=success return from Stripe forces a refetch.
   const [billing, setBilling] = useState<Billing | null>(null);
@@ -254,6 +256,14 @@ export default function App() {
           setDrawerOpen(false);
           setNumbersOpen(true);
         }}
+        onAdmin={
+          ["me@skeptrune.com", "nick.k@skeptrune.com", "dev@local"].includes(email)
+            ? () => {
+                setDrawerOpen(false);
+                setAdminOpen(true);
+              }
+            : undefined
+        }
         onBilling={
           billing.exempt
             ? null
@@ -318,6 +328,7 @@ export default function App() {
       {mcpOpen && <McpInstall onClose={() => setMcpOpen(false)} />}
       {keysOpen && <ApiKeys onClose={() => setKeysOpen(false)} />}
       {numbersOpen && <LinkedNumbers onClose={() => setNumbersOpen(false)} />}
+      {adminOpen && <Admin onClose={() => setAdminOpen(false)} />}
     </div>
   );
 }
