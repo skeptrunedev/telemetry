@@ -129,7 +129,7 @@ const ADMIN_HTML = `<!doctype html>
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
   .wrap { max-width:880px; margin:0 auto; padding:28px 18px 60px; }
-  h1 { font-size:17px; letter-spacing:.14em; margin:0 0 4px; } h1 .dot { color:var(--amber); }
+  h1 { font-size:17px; letter-spacing:.14em; margin:0 0 4px; }
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin:30px 0 10px; }
   .meta { color:var(--muted); font-size:12.5px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
@@ -150,11 +150,13 @@ const ADMIN_HTML = `<!doctype html>
   #err { color:#ff8a70; }
   a { color:var(--amber); }
   label { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted); margin:8px 0; }
+  .danger-zone { border:1px solid var(--red); border-radius:12px; padding:12px 14px; margin-top:14px; }
+  .dz-label { color:var(--red); text-transform:uppercase; letter-spacing:.12em; font-size:11px; font-weight:600; margin:0 0 6px; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>skcal<span class="dot">.</span>admin</h1>
+  <h1>skcal admin</h1>
   <p class="meta" id="who">checking session…</p>
   <div id="gate" style="display:none">
     <p>No admin session. <a href="https://app.skcal.fit">Sign in at app.skcal.fit</a> with your phone number, then come back.</p>
@@ -169,8 +171,16 @@ const ADMIN_HTML = `<!doctype html>
       </div>
       <div id="info" style="display:none">
         <ul id="infolist" class="report"></ul>
-        <label><input type="checkbox" id="wipe" checked> also wipe the account (temp phone-signup accounts only)</label>
-        <button class="danger" id="reset">Reset this number</button>
+        <div class="row"><button id="reset">Reset number (keep account)</button></div>
+        <p class="meta" id="realnote" style="display:none">real account — wipe unavailable; reset only detaches the number</p>
+        <div id="dangerzone" class="danger-zone" style="display:none">
+          <p class="dz-label">danger zone</p>
+          <p class="meta">Deletes the temp account and all its data, then resets the number. Type <b id="dzphone"></b> to confirm.</p>
+          <div class="row">
+            <input type="tel" id="confirmphone" placeholder="type the phone number" autocomplete="off">
+            <button class="danger" id="wipebtn" disabled>Wipe temp account + reset number</button>
+          </div>
+        </div>
       </div>
       <ul id="report" class="report" style="display:none"></ul>
       <p id="err"></p>
@@ -214,22 +224,44 @@ $("inspect").onclick = async () => {
       (d.counts ? "<li>data (" + d.accountEmail + "): " + d.counts.weights + " weights · " + d.counts.meals + " meals · " + d.counts.workouts + " workouts · " + d.counts.measurements + " measurements · " + d.counts.memories + " memories</li>" : "");
     $("info").style.display = "block";
     $("info").dataset.phone = d.phone;
+    var isTemp = !!(d.authUser && d.authUser.tempAccount) || /@phone\\.skcal\\.fit$/.test(d.accountEmail || "");
+    var hasAccount = !!d.accountEmail;
+    $("dangerzone").style.display = hasAccount && isTemp ? "block" : "none";
+    $("realnote").style.display = hasAccount && !isTemp ? "block" : "none";
+    $("dzphone").textContent = d.phone;
+    $("confirmphone").value = "";
+    $("wipebtn").disabled = true;
   } catch (e) { $("err").textContent = String(e.message || e); $("info").style.display = "none"; }
 };
-$("reset").onclick = async () => {
-  const phone = $("info").dataset.phone;
-  if (!confirm("Reset " + phone + " everywhere" + ($("wipe").checked ? " AND wipe its temp account" : "") + "?")) return;
+$("confirmphone").oninput = () => {
+  $("wipebtn").disabled = $("confirmphone").value.trim() !== $("info").dataset.phone;
+};
+async function doReset(body, confirmMsg) {
+  if (!confirm(confirmMsg)) return;
   $("err").textContent = "";
   try {
     const d = await j("/api/admin/phone/reset", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone, wipeAccount: $("wipe").checked }),
+      body: JSON.stringify(body),
     });
     $("report").innerHTML = d.report.map((l) => "<li>" + l + "</li>").join("");
     $("report").style.display = "block";
     $("info").style.display = "none";
     loadUsers().catch(() => {});
   } catch (e) { $("err").textContent = String(e.message || e); }
+}
+$("reset").onclick = () => {
+  const phone = $("info").dataset.phone;
+  doReset({ phone }, "Reset " + phone + " everywhere? The account is kept.");
+};
+$("wipebtn").onclick = () => {
+  const phone = $("info").dataset.phone;
+  const confirmPhone = $("confirmphone").value.trim();
+  if (confirmPhone !== phone) return;
+  doReset(
+    { phone, wipeAccount: true, confirmPhone },
+    "WIPE the temp account for " + phone + " (all data, sessions, account) and reset the number?",
+  );
 };
 (async () => {
   try {
@@ -3053,9 +3085,14 @@ app.get("/api/admin/users", async (c) => {
 
 app.post("/api/admin/phone/reset", async (c) => {
   if (!ADMIN_EMAILS.has(c.get("email"))) return c.json({ error: "admin only" }, 403);
-  const b = await c.req.json<{ phone?: string; wipeAccount?: boolean }>();
+  const b = await c.req.json<{ phone?: string; wipeAccount?: boolean; confirmPhone?: string }>();
   const phone = normalizePhone(b.phone ?? "");
   if (!phone) return c.json({ error: "invalid phone" }, 400);
+  // Wiping is never implicit: it must be re-stated by echoing the exact
+  // normalized phone number back in confirmPhone.
+  if (b.wipeAccount && b.confirmPhone !== phone) {
+    return c.json({ error: "wipe requires confirmPhone" }, 400);
+  }
   const report: string[] = [];
 
   // 1. Photon registration — removing it releases the pool-number mapping.
