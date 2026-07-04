@@ -3290,7 +3290,7 @@ app.post("/api/onboard/signup", async (c) => {
   if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
     return c.json({ error: "unauthorized" }, 401);
   }
-  const b = await c.req.json<{ phone?: string; weightLb?: number; heightIn?: number }>();
+  const b = await c.req.json<{ phone?: string; weightLb?: number; heightIn?: number; sex?: string }>();
   const phone = normalizePhone(b.phone ?? "");
   if (!phone) return c.json({ error: "invalid phone" }, 400);
 
@@ -3349,6 +3349,12 @@ app.post("/api/onboard/signup", async (c) => {
       .insert(schema.targets)
       .values({ userEmail: email, heightCm: inToCm(heightIn) })
       .onConflictDoUpdate({ target: schema.targets.userEmail, set: { heightCm: inToCm(heightIn) } });
+  }
+  if (b.sex === "male" || b.sex === "female") {
+    await db(c)
+      .insert(schema.targets)
+      .values({ userEmail: email, sex: b.sex })
+      .onConflictDoUpdate({ target: schema.targets.userEmail, set: { sex: b.sex } });
   }
   return c.json({ ok: true, email, created });
 });
