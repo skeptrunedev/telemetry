@@ -707,7 +707,41 @@ async function recomputeDay(c: { env: Bindings }, email: string, date: string) {
 // Mounted BEFORE the data routes + the guard + the SPA fallback so the auth
 // endpoints (sign-in/social, magic-link, callback, get-session, sign-out, …)
 // are served directly by Better Auth and never gated by our own session guard.
-app.on(["GET", "POST"], "/api/auth/*", (c) => makeAuth(c.env).handler(c.req.raw));
+// The July 2026 move to Domain=.skcal.fit session cookies left older browsers
+// holding a host-only cookie under the SAME name. Browsers send both; the
+// stale (signed-out) one wins the parse, so sessions look dead right after a
+// successful sign-in. Self-heal: whenever an auth response mints a domain
+// cookie, or a session lookup comes back empty while a session cookie was
+// presented, expire the host-only variant alongside.
+const SESSION_COOKIE_RE = /(__Secure-)?better-auth\.session_token=/;
+app.on(["GET", "POST"], "/api/auth/*", async (c) => {
+  const res = await makeAuth(c.env).handler(c.req.raw);
+  const reqCookies = c.req.header("cookie") ?? "";
+  if (!SESSION_COOKIE_RE.test(reqCookies)) return res;
+  const setCookieHeader = res.headers.get("set-cookie") ?? "";
+  const mintsDomainCookie = /session_token=/.test(setCookieHeader) && /Domain=/i.test(setCookieHeader);
+  const isNullSession =
+    c.req.method === "GET" &&
+    new URL(c.req.url).pathname.endsWith("/get-session") &&
+    (res.headers.get("content-type") ?? "").includes("json") &&
+    res.status === 200;
+  let sessionEmpty = false;
+  let out = res;
+  if (isNullSession && !mintsDomainCookie) {
+    const body = await res.text();
+    sessionEmpty = body === "null" || body === "";
+    out = new Response(body, res);
+  }
+  if (mintsDomainCookie || sessionEmpty) {
+    if (out === res) out = new Response(res.body, res);
+    const secure = new URL(c.req.url).protocol === "https:" ? "__Secure-" : "";
+    out.headers.append(
+      "set-cookie",
+      `${secure}better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`,
+    );
+  }
+  return out;
+});
 
 // ---- session guard ---------------------------------------------------------
 // Every /api/* data route (i.e. everything except /api/auth/* handled above and
