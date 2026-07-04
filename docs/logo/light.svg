@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 200" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 200" fill="none">
   <!-- skcal lockup, light mode: amber mark + ink wordmark -->
   <g transform="translate(-35 -24)">
     <g transform="rotate(-16 128 102)">
@@ -7,5 +7,5 @@
       <path d="M 149.36 158.00 L 165.33 181.69 L 156.47 199.86" fill="none" stroke="#f59e0b" stroke-width="22.00" stroke-linecap="round" stroke-linejoin="round"/>
     </g>
   </g>
-  <text x="204" y="100" dominant-baseline="central" textLength="540" lengthAdjust="spacingAndGlyphs" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="100" font-weight="600" fill="#16181a">skcal.fit</text>
+  <text x="204" y="100" dominant-baseline="central" textLength="300" lengthAdjust="spacingAndGlyphs" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="100" font-weight="600" fill="#16181a">skcal</text>
 </svg>
