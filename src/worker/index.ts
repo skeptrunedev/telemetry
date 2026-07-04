@@ -211,7 +211,7 @@ async function loadUsers() {
   ).join("");
   $("photononly").tBodies[0].innerHTML = (d.photonOnly || []).map((u) =>
     "<tr><td>" + u.phone + "</td><td>" + (u.assignedNumber || "—") +
-    "</td><td><button class=\"ghost\" onclick=\"prefill(&quot;" + u.phone + "&quot;)\">reset…</button></td></tr>"
+    '</td><td><button class="ghost" onclick="prefill(&quot;' + u.phone + '&quot;)">reset…</button></td></tr>'
   ).join("") || "<tr><td colspan=3 class=meta>" + (d.photonError ? "photon: " + d.photonError : "none") + "</td></tr>";
   $("queue").tBodies[0].innerHTML = d.queue.map((q) =>
     "<tr><td>" + q.phone + "</td><td>" + q.status + "</td><td>" + fmt(q.createdAt) + "</td></tr>"
