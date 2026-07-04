@@ -3403,6 +3403,82 @@ app.post("/api/onboard/signup", async (c) => {
   return c.json({ ok: true, email, created });
 });
 
+// Agent daemon: record the user's goal during onboarding — target weight and
+// (optionally) computed daily targets; free-text goals become a memory both
+// agents honor.
+app.post("/api/onboard/goal", async (c) => {
+  if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const b = await c.req.json<{ phone?: string; goalWeightLb?: number; dailyKcal?: number; proteinG?: number; note?: string }>();
+  const phone = normalizePhone(b.phone ?? "");
+  if (!phone) return c.json({ error: "invalid phone" }, 400);
+  const chan = (
+    await db(c)
+      .select()
+      .from(schema.linkedChannels)
+      .where(and(eq(schema.linkedChannels.kind, "phone"), eq(schema.linkedChannels.value, phone)))
+      .limit(1)
+  )[0];
+  if (!chan?.verifiedAt) return c.json({ error: "not linked", code: "unlinked" }, 404);
+  const email = chan.userEmail;
+
+  const set: Record<string, unknown> = {};
+  const goalLb = Number(b.goalWeightLb);
+  if (goalLb >= 30 && goalLb <= 700) set.goalWeightKg = lbToKg(goalLb);
+  const kcal = Number(b.dailyKcal);
+  if (kcal >= 800 && kcal <= 6000) set.dailyKcalTarget = Math.round(kcal);
+  const protein = Number(b.proteinG);
+  if (protein >= 30 && protein <= 400) set.proteinTargetG = Math.round(protein);
+  if (Object.keys(set).length) {
+    await db(c)
+      .insert(schema.targets)
+      .values({ userEmail: email, ...set })
+      .onConflictDoUpdate({ target: schema.targets.userEmail, set });
+  }
+  const note = typeof b.note === "string" ? b.note.trim().slice(0, 500) : "";
+  if (note) {
+    await db(c).insert(schema.agentMemories).values({ id: crypto.randomUUID(), userEmail: email, content: `Goal: ${note}` });
+  }
+  return c.json({ ok: true, email, applied: Object.keys(set), notedGoal: !!note });
+});
+
+// Agent daemon: store a progress photo sent during onboarding (current
+// physique or goal/inspiration shot).
+app.post("/api/onboard/photo", async (c) => {
+  if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const phone = normalizePhone(c.req.query("phone") ?? "");
+  if (!phone) return c.json({ error: "invalid phone" }, 400);
+  const kind = c.req.query("kind") === "goal" ? "goal" : "current";
+  const chan = (
+    await db(c)
+      .select()
+      .from(schema.linkedChannels)
+      .where(and(eq(schema.linkedChannels.kind, "phone"), eq(schema.linkedChannels.value, phone)))
+      .limit(1)
+  )[0];
+  if (!chan?.verifiedAt) return c.json({ error: "not linked", code: "unlinked" }, 404);
+  const email = chan.userEmail;
+
+  const form = await c.req.formData();
+  const fileRaw = form.get("photo");
+  type UploadFile = { type: string; arrayBuffer: () => Promise<ArrayBuffer> };
+  const isFile = (f: unknown): f is UploadFile =>
+    typeof f === "object" && f !== null && typeof (f as UploadFile).arrayBuffer === "function";
+  if (!isFile(fileRaw)) return c.json({ error: "no photo uploaded" }, 400);
+  const mt = fileRaw.type || "image/jpeg";
+  if (!/^image\/(jpeg|png|webp|gif)$/.test(mt)) return c.json({ error: `unsupported image type ${mt}` }, 400);
+  const buf = await fileRaw.arrayBuffer();
+  if (buf.byteLength > 8_000_000) return c.json({ error: "image too large (max 8MB)" }, 400);
+
+  const r2Key = `${email}/progress/${crypto.randomUUID()}`;
+  await c.env.PHOTOS.put(r2Key, buf, { httpMetadata: { contentType: mt } });
+  await db(c).insert(schema.photos).values({ userEmail: email, r2Key, notes: `${kind} photo (onboarding)` });
+  return c.json({ ok: true, kind });
+});
+
 // Agent daemon: Stripe checkout link for a linked (but unsubscribed) number.
 app.post("/api/onboard/checkout", async (c) => {
   if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
