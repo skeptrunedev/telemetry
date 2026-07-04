@@ -20,24 +20,10 @@ const APP = "https://app.skcal.fit";
           Manage your diet plan over iMessage. Text a picture of your food, send your
           measurements, share your weight, and skcal tracks everything for you.
         </p>
-        <form class="textme" data-endpoint="https://app.skcal.fit/api/onboard/text-me" novalidate>
-          <input
-            type="tel"
-            name="phone"
-            inputmode="tel"
-            autocomplete="tel"
-            placeholder="(415) 555-0132"
-            aria-label="Your phone number"
-            required
-          />
-          <button class="btn" type="submit">Text to get started</button>
-        </form>
-        <div class="textme-done" role="status" hidden>
-          <p class="textme-msg ok">Your line is ready. Text anything to get started:</p>
-          <a class="btn textme-number" href="#">…</a>
+        <div class="textme-static">
+          <a class="btn textme-number" href="sms:+16283166355?&body=hi">Text +1 (628) 316-6355</a>
         </div>
-        <p class="textme-msg" role="status" hidden></p>
-        <p class="hero-note"># text your food, weight, and measurements. or <a href={APP}>start in the browser</a>.</p>
+        <p class="hero-note"># text anything to start — your food, weight, or just "hi". or <a href={APP}>start in the browser</a>.</p>
       </div>
       <div class="phone imsg-phone">
         <div
@@ -150,43 +136,3 @@ const APP = "https://app.skcal.fit";
   <Footer />
 </Layout>
 
-<script>
-  const form = document.querySelector<HTMLFormElement>(".textme");
-  form?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const input = form.querySelector("input")!;
-    const btn = form.querySelector("button")!;
-    const msg = document.querySelector<HTMLParagraphElement>(".textme-msg")!;
-    const digits = input.value.replace(/\D/g, "");
-    if (digits.length < 10) {
-      msg.hidden = false;
-      msg.classList.remove("ok");
-      msg.textContent = "Enter a valid phone number (US numbers can skip the +1).";
-      return;
-    }
-    btn.disabled = true;
-    btn.textContent = "Sending…";
-    try {
-      const res = await fetch(form.dataset.endpoint!, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ phone: input.value }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.number) throw new Error(body.error ?? "Something went wrong — try again.");
-      form.hidden = true;
-      const done = document.querySelector<HTMLDivElement>(".textme-done")!;
-      const link = done.querySelector<HTMLAnchorElement>(".textme-number")!;
-      const pretty = body.number.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "+1 ($1) $2-$3");
-      link.href = `sms:${body.number}?&body=${encodeURIComponent("hi")}`;
-      link.textContent = `Text ${pretty}`;
-      done.hidden = false;
-    } catch (err) {
-      msg.hidden = false;
-      msg.classList.remove("ok");
-      msg.textContent = err instanceof Error ? err.message : "Something went wrong — try again.";
-      btn.disabled = false;
-      btn.textContent = "Text to get started";
-    }
-  });
-</script>
