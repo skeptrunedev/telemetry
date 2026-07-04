@@ -56,7 +56,7 @@
     }
   },
   "contextual": {
-    "options": ["copy", "view", "chatgpt", "claude", "mcp"]
+    "options": ["copy", "view", "download-spec", "chatgpt", "claude", "mcp"]
   },
   "footer": {
     "socials": {

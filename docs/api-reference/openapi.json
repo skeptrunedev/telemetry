@@ -51,6 +51,10 @@
       "description": "AI coach chat grounded in the caller's targets, intake, and weight trend."
     },
     {
+      "name": "Workouts",
+      "description": "Free-text and photo workout logging, normalized to platform-standard fields."
+    },
+    {
       "name": "Dashboard",
       "description": "Pre-aggregated snapshot powering the home screen."
     },
@@ -556,6 +560,92 @@
         }
       }
     },
+    "/api/log/analyze": {
+      "post": {
+        "tags": [
+          "Nutrition"
+        ],
+        "summary": "Log a meal or workout from photos",
+        "description": "Uploads 1–5 photos, classifies what they show — food, workout evidence (machine console, app/watch summary, whiteboard), a scale readout, or a tape-measure/measuring-app reading — and logs the matching entry (meal, workout, weigh-in, or body measurement). Returns the classification in `kind`.",
+        "operationId": "analyzeAny",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Day to log against (YYYY-MM-DD). Defaults to today.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "required": false,
+            "description": "Timezone offset in minutes (as from getTimezoneOffset), used to anchor a dated workout.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The photos (multipart field `photos`), plus an optional `note` caption for context.",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "photos"
+                ],
+                "properties": {
+                  "photos": {
+                    "type": "array",
+                    "description": "1–5 photos of one meal or one workout (JPEG, PNG, WebP, or GIF; max 8MB each).",
+                    "example": [
+                      "@treadmill.jpg"
+                    ],
+                    "items": {
+                      "type": "string",
+                      "format": "binary",
+                      "example": "@treadmill.jpg"
+                    }
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Optional caption; trusted over the pixels when they disagree.",
+                    "example": "today's treadmill session"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The photos were classified and, unless `kind` is `other`, logged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnyAnalysis"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
     "/api/nutrition/describe": {
       "post": {
         "tags": [
@@ -759,6 +849,135 @@
           },
           "404": {
             "description": "No photo exists at that key."
+          }
+        }
+      }
+    },
+    "/api/workouts/describe": {
+      "post": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Log a workout from a description",
+        "description": "Parses a freeform description of a workout into a normalized row (activity type, duration, distance, heart rate, strength exercises) and logs it.",
+        "operationId": "describeWorkout",
+        "requestBody": {
+          "required": true,
+          "description": "The workout description and optional local day.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DescribeWorkout"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The workout was parsed and logged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workout"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/workouts": {
+      "get": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "List a day's workouts",
+        "description": "Returns the caller's workouts whose start time falls on the given local day, newest first.",
+        "operationId": "listWorkouts",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Local day (YYYY-MM-DD). Defaults to today.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "required": false,
+            "description": "Client timezone offset in minutes (getTimezoneOffset) used to bound the local day.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The day's workouts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "description": "Workouts started on the requested local day.",
+                  "items": {
+                    "$ref": "#/components/schemas/Workout"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/api/workouts/{id}": {
+      "delete": {
+        "tags": [
+          "Workouts"
+        ],
+        "summary": "Delete a workout",
+        "description": "Removes one of the caller's workouts.",
+        "operationId": "deleteWorkout",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Workout identifier (UUID).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workout was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -1744,6 +1963,368 @@
               "type": "string",
               "example": "nick@mintlify.com/2026-06-29/3f8b1c2a"
             }
+          }
+        }
+      },
+      "WorkoutExercise": {
+        "type": "object",
+        "description": "One exercise inside a strength-style workout; null fields were not stated.",
+        "additionalProperties": false,
+        "required": [
+          "exercise",
+          "sets",
+          "reps",
+          "weightLb",
+          "durationS",
+          "distanceM",
+          "notes"
+        ],
+        "properties": {
+          "exercise": {
+            "type": "string",
+            "description": "Exercise name as the user gave it.",
+            "example": "bench press"
+          },
+          "sets": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Number of sets, when stated.",
+            "example": 3
+          },
+          "reps": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Reps per set, when stated.",
+            "example": 8
+          },
+          "weightLb": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Working weight in pounds, when stated.",
+            "example": 135
+          },
+          "durationS": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Duration in seconds for timed pieces, when stated.",
+            "example": null
+          },
+          "distanceM": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Distance in meters for distance pieces, when stated.",
+            "example": null
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Anything else the user said about the exercise.",
+            "example": "paused reps"
+          }
+        }
+      },
+      "Workout": {
+        "type": "object",
+        "description": "A logged workout, normalized to the standard fields of Apple Health, Garmin, and Strava; metric fields are null when the user didn't state them.",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "source",
+          "activityType",
+          "summary",
+          "description",
+          "startedAt",
+          "durationS",
+          "movingDurationS",
+          "distanceM",
+          "elevationGainM",
+          "energyKcal",
+          "avgHr",
+          "maxHr",
+          "avgPowerW",
+          "avgCadence",
+          "exercises",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Workout identifier.",
+            "example": "9c2d1e4f-7a8b-4c5d-9e0f-1a2b3c4d5e6f"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "apple_health",
+              "garmin",
+              "strava"
+            ],
+            "description": "Where the workout came from; manual for described/photographed logs.",
+            "example": "manual"
+          },
+          "activityType": {
+            "type": "string",
+            "description": "Normalized activity type (run, ride, swim, walk, hike, strength_training, yoga, rowing, elliptical, crossfit, other).",
+            "example": "run"
+          },
+          "summary": {
+            "type": "string",
+            "description": "Short AI-generated title.",
+            "example": "5k run + pullups"
+          },
+          "description": {
+            "type": "string",
+            "description": "The user's original words (or the summary for photo-only logs).",
+            "example": "ran 5k easy, then 3x10 pullups"
+          },
+          "startedAt": {
+            "type": "integer",
+            "description": "Start time as Unix milliseconds.",
+            "example": 1783100000000
+          },
+          "durationS": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Elapsed duration in seconds.",
+            "example": 1680
+          },
+          "movingDurationS": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Moving time in seconds, when distinct from elapsed.",
+            "example": null
+          },
+          "distanceM": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Distance in meters.",
+            "example": 5000
+          },
+          "elevationGainM": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Elevation gain in meters.",
+            "example": null
+          },
+          "energyKcal": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Active energy in kilocalories.",
+            "example": 320
+          },
+          "avgHr": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Average heart rate in bpm.",
+            "example": 148
+          },
+          "maxHr": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Max heart rate in bpm.",
+            "example": null
+          },
+          "avgPowerW": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Average power in watts.",
+            "example": null
+          },
+          "avgCadence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Average cadence (spm or rpm as reported).",
+            "example": null
+          },
+          "exercises": {
+            "type": "array",
+            "description": "Strength breakdown; empty for pure cardio.",
+            "example": [
+              {
+                "exercise": "pullups",
+                "sets": 3,
+                "reps": 10,
+                "weightLb": null,
+                "durationS": null,
+                "distanceM": null,
+                "notes": null
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/WorkoutExercise"
+            }
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Row creation time as Unix milliseconds.",
+            "example": 1783100001000
+          }
+        }
+      },
+      "DescribeWorkout": {
+        "type": "object",
+        "description": "Body for logging a workout from a freeform text description.",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "The workout in the user's own words.",
+            "example": "ran 5k easy in 28 minutes, then 3x10 pullups"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Local day to log against (YYYY-MM-DD); defaults to now.",
+            "example": "2026-07-02"
+          },
+          "tz": {
+            "type": "integer",
+            "description": "Timezone offset in minutes, as from getTimezoneOffset.",
+            "example": 420
+          }
+        }
+      },
+      "AnyAnalysis": {
+        "type": "object",
+        "description": "Result of classify-and-log. `kind` says what the photos showed; food results carry the MealAnalysis fields, workout results carry `workout`, and `other` logs nothing.",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "food",
+              "workout",
+              "weight",
+              "measurement",
+              "other"
+            ],
+            "description": "What the photos were classified as.",
+            "example": "workout"
+          },
+          "ok": {
+            "type": "boolean",
+            "description": "True when something was logged.",
+            "example": true
+          },
+          "mealId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Created meal id (food only).",
+            "example": "3f8b1c2a-5d6e-4f70-8a1b-2c3d4e5f6071"
+          },
+          "items": {
+            "type": "array",
+            "description": "Estimated food items (food only).",
+            "example": [
+              {
+                "name": "grilled chicken breast",
+                "kcal": 284,
+                "proteinG": 53.4
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AnalyzedItem"
+            }
+          },
+          "totalKcal": {
+            "type": "integer",
+            "description": "Summed calories (food only).",
+            "example": 374
+          },
+          "totalProteinG": {
+            "type": "integer",
+            "description": "Summed protein grams (food only).",
+            "example": 54
+          },
+          "note": {
+            "type": "string",
+            "description": "Model assumptions note (food only).",
+            "example": "assumed a single chicken breast"
+          },
+          "photoKeys": {
+            "type": "array",
+            "description": "Stored photo keys (food only).",
+            "example": [
+              "nick@mintlify.com/2026-06-29/3f8b1c2a"
+            ],
+            "items": {
+              "type": "string",
+              "example": "nick@mintlify.com/2026-06-29/3f8b1c2a"
+            }
+          },
+          "workout": {
+            "$ref": "#/components/schemas/Workout"
+          },
+          "pounds": {
+            "type": "number",
+            "description": "Logged body weight in pounds (weight only).",
+            "example": 158.2
+          },
+          "weightKg": {
+            "type": "number",
+            "description": "Logged body weight in kilograms (weight only).",
+            "example": 71.8
+          },
+          "bodyFatPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Body-fat percentage when the scale showed one (weight only).",
+            "example": 17.2
+          },
+          "site": {
+            "type": "string",
+            "description": "Body site the measurement was logged against (measurement only).",
+            "example": "waist"
+          },
+          "inches": {
+            "type": "number",
+            "description": "Measured value in inches (measurement only).",
+            "example": 31.8
+          },
+          "needSite": {
+            "type": "boolean",
+            "description": "True when a measurement was read but the body site could not be identified — nothing was logged; resubmit with a caption naming the site.",
+            "example": false
           }
         }
       },
