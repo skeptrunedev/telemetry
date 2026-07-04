@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import type { BetterAuthPlugin } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { magicLink, mcp, phoneNumber } from "better-auth/plugins";
@@ -156,7 +157,21 @@ export function makeAuth(env: AuthEnv) {
       // verifyOTP checks against Twilio instead.
       phoneNumber({
         sendOTP: async ({ phoneNumber: phone }) => {
-          await twilioVerify(env, "Verifications", { To: phone, Channel: "sms" });
+          try {
+            await twilioVerify(env, "Verifications", { To: phone, Channel: "sms" });
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            // Twilio Verify rate limit: ~5 sends per number, then locked ~10 min.
+            if (/max send attempts/i.test(msg) || /60203|20429/.test(msg)) {
+              throw new APIError("TOO_MANY_REQUESTS", {
+                message: "Too many codes requested for this number — wait about 10 minutes and try again.",
+              });
+            }
+            console.error("send-otp failed:", msg);
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+              message: "Couldn't send the code — try again in a minute.",
+            });
+          }
         },
         verifyOTP: async ({ phoneNumber: phone, code }) => {
           try {
