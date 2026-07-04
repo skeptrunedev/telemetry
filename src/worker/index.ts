@@ -187,6 +187,8 @@ const ADMIN_HTML = `<!doctype html>
     </div>
     <h2>Accounts</h2>
     <div class="card"><table id="users"><thead><tr><th>email</th><th>phone</th><th>channels</th><th>created</th><th></th></tr></thead><tbody></tbody></table></div>
+    <h2>Photon-only numbers <span class="meta" style="text-transform:none;letter-spacing:0">(texted in, no skcal account)</span></h2>
+    <div class="card"><table id="photononly"><thead><tr><th>phone</th><th>line</th><th></th></tr></thead><tbody></tbody></table></div>
     <h2>Onboarding queue (latest 20)</h2>
     <div class="card"><table id="queue"><thead><tr><th>phone</th><th>status</th><th>when</th></tr></thead><tbody></tbody></table></div>
   </div>
@@ -207,6 +209,10 @@ async function loadUsers() {
     "</td><td>" + (u.channels.join("<br>") || "—") + "</td><td>" + fmt(u.createdAt) +
     "</td><td>" + (u.phone || u.channels[0] ? '<button class=\\"ghost\\" onclick=\\"prefill(&quot;' + (u.phone || u.channels[0]) + '&quot;)\\">reset…</button>' : "") + "</td></tr>"
   ).join("");
+  $("photononly").tBodies[0].innerHTML = (d.photonOnly || []).map((u) =>
+    "<tr><td>" + u.phone + "</td><td>" + (u.assignedNumber || "—") +
+    "</td><td><button class=\"ghost\" onclick=\"prefill(&quot;" + u.phone + "&quot;)\">reset…</button></td></tr>"
+  ).join("") || "<tr><td colspan=3 class=meta>" + (d.photonError ? "photon: " + d.photonError : "none") + "</td></tr>";
   $("queue").tBodies[0].innerHTML = d.queue.map((q) =>
     "<tr><td>" + q.phone + "</td><td>" + q.status + "</td><td>" + fmt(q.createdAt) + "</td></tr>"
   ).join("") || "<tr><td colspan=3 class=meta>empty</td></tr>";
@@ -3070,6 +3076,21 @@ app.get("/api/admin/users", async (c) => {
     .from(schema.textMeRequests)
     .orderBy(desc(schema.textMeRequests.createdAt))
     .limit(20);
+  // Numbers Photon knows (texted the line / were registered) that never became
+  // a skcal account — the interesting set when testing onboarding.
+  let photonOnly: { phone: string; assignedNumber: string | null }[] = [];
+  let photonError: string | null = null;
+  try {
+    const known = new Set<string>([
+      ...users.map((u) => u.phoneNumber).filter((p2): p2 is string => !!p2),
+      ...channels.map((ch) => ch.value),
+    ]);
+    photonOnly = (await photonUsers(c.env))
+      .filter((pu) => !known.has(pu.phoneNumber))
+      .map((pu) => ({ phone: pu.phoneNumber, assignedNumber: pu.assignedPhoneNumber ?? null }));
+  } catch (e) {
+    photonError = String(e);
+  }
   return c.json({
     users: users.map((u) => ({
       email: u.email,
@@ -3079,6 +3100,8 @@ app.get("/api/admin/users", async (c) => {
       createdAt: u.createdAt.getTime(),
       channels: channels.filter((ch) => ch.userEmail === u.email).map((ch) => ch.value),
     })),
+    photonOnly,
+    photonError,
     queue: queue.map((q) => ({ phone: q.phone, status: q.status, createdAt: q.createdAt.getTime() })),
   });
 });
