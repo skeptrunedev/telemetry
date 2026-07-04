@@ -3403,6 +3403,28 @@ app.post("/api/onboard/signup", async (c) => {
   return c.json({ ok: true, email, created });
 });
 
+// Agent daemon: set the account's display name (e.g. from a shared contact
+// card or the user introducing themselves during onboarding).
+app.post("/api/onboard/name", async (c) => {
+  if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const b = await c.req.json<{ phone?: string; name?: string }>();
+  const phone = normalizePhone(b.phone ?? "");
+  const name = (b.name ?? "").trim().slice(0, 80);
+  if (!phone || !name) return c.json({ error: "phone and name required" }, 400);
+  const chan = (
+    await db(c)
+      .select()
+      .from(schema.linkedChannels)
+      .where(and(eq(schema.linkedChannels.kind, "phone"), eq(schema.linkedChannels.value, phone)))
+      .limit(1)
+  )[0];
+  if (!chan?.verifiedAt) return c.json({ error: "not linked", code: "unlinked" }, 404);
+  await db(c).update(schema.user).set({ name }).where(eq(schema.user.email, chan.userEmail));
+  return c.json({ ok: true, name });
+});
+
 // Agent daemon: record the user's goal during onboarding — target weight and
 // (optionally) computed daily targets; free-text goals become a memory both
 // agents honor.
