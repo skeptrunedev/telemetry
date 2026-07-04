@@ -215,15 +215,15 @@ describe("AI guard rails (no model call)", () => {
     expect(await res.text()).toContain("no photos uploaded");
   });
 
-  it("POST /api/coach with empty messages → 400 (never calls the model)", async () => {
+  it("POST /api/agent with empty messages → 400 (never calls the model)", async () => {
     // The empty-messages check runs before the missing-key guard, so this is a
     // deterministic 400 regardless of whether a key is present in the env.
-    const res = await jsonPost(user, "/api/coach", { messages: [] });
+    const res = await jsonPost(user, "/api/agent", { messages: [] });
     expect(res.status).toBe(400);
   });
 
-  it("POST /api/coach with a message but no key → 503 (never calls the model)", async () => {
-    const res = await jsonPost(user, "/api/coach", {
+  it("POST /api/agent with a message but no key → 503 (never calls the model)", async () => {
+    const res = await jsonPost(user, "/api/agent", {
       messages: [{ role: "user", content: "what do you think of a meat pie for breakfast?" }],
     });
     // Valid body, but ANTHROPIC_API_KEY is empty → guard-rail, no model call.
