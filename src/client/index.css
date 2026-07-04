@@ -1052,6 +1052,11 @@ a {
   font-size: 0.85rem;
   margin: 0.5rem 0 0;
 }
+.form-warn {
+  color: var(--accent);
+  font-size: 0.88rem;
+  margin: 0.6rem 0 0;
+}
 .sheet-actions {
   display: flex;
   gap: 0.6rem;

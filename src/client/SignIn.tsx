@@ -19,7 +19,23 @@ export function SignIn() {
   const [stage, setStage] = useState<"phone" | "code">("phone");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [throttled, setThrottled] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
   const normalized = useRef<string>("");
+
+  // Local cooldown after a rate-limit so retries don't burn more attempts.
+  function startCooldown(seconds: number) {
+    setCooldown(seconds);
+    const t = setInterval(() => {
+      setCooldown((c) => {
+        if (c <= 1) {
+          clearInterval(t);
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+  }
 
   const sendCode = async (ev: React.FormEvent) => {
     ev.preventDefault();
@@ -30,11 +46,21 @@ export function SignIn() {
     }
     normalized.current = e164;
     setError(null);
+    setThrottled(false);
     setBusy(true);
     const { error: err } = await authClient.phoneNumber.sendOtp({ phoneNumber: e164 });
     setBusy(false);
     if (err) {
-      setError(err.message ?? "Couldn't send the code. Try again.");
+      if (err.status === 429) {
+        setThrottled(true);
+        setError(
+          err.message ??
+            "Too many codes requested for this number — wait about 10 minutes and try again.",
+        );
+        startCooldown(60);
+      } else {
+        setError(err.message ?? "Couldn't send the code. Try again.");
+      }
       return;
     }
     setCode("");
@@ -84,8 +110,8 @@ export function SignIn() {
               autoFocus
               required
             />
-            <button className="btn" type="submit" disabled={busy || !phone.trim()}>
-              {busy ? "Sending…" : "Text me a code"}
+            <button className="btn" type="submit" disabled={busy || cooldown > 0 || !phone.trim()}>
+              {busy ? "Sending…" : cooldown > 0 ? `Wait ${cooldown}s` : "Text me a code"}
             </button>
           </form>
         ) : (
@@ -122,7 +148,7 @@ export function SignIn() {
           </>
         )}
 
-        {error && <p className="form-err">{error}</p>}
+        {error && <p className={throttled ? "form-warn" : "form-err"}>{error}</p>}
         <p className="signin-legal">
           <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
         </p>

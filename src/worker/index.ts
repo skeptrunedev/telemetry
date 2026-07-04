@@ -3339,7 +3339,11 @@ app.post("/api/channels/phone/start", async (c) => {
     await twilioVerify(c.env, "Verifications", { To: phone, Channel: "sms" });
     return c.json({ ok: true });
   } catch (e) {
-    return c.json({ error: "could not send code", detail: String(e) }, 502);
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/max send attempts/i.test(msg) || /60203|20429/.test(msg)) {
+      return c.json({ error: "Too many codes requested for this number — wait about 10 minutes and try again." }, 429);
+    }
+    return c.json({ error: "could not send code", detail: msg }, 502);
   }
 });
 
