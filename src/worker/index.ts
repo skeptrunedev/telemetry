@@ -3260,6 +3260,122 @@ app.post("/api/onboard/text-me", async (c) => {
   return c.json({ ok: true, number }, 200, headers);
 });
 
+// Agent daemon: create an account for a number that texted in (they proved
+// ownership by sending from it). Idempotent — an already-linked number returns
+// its account. Optionally records starting weight (lb) and height (in).
+app.post("/api/onboard/signup", async (c) => {
+  if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const b = await c.req.json<{ phone?: string; weightLb?: number; heightIn?: number }>();
+  const phone = normalizePhone(b.phone ?? "");
+  if (!phone) return c.json({ error: "invalid phone" }, 400);
+
+  const existing = (
+    await db(c)
+      .select()
+      .from(schema.linkedChannels)
+      .where(and(eq(schema.linkedChannels.kind, "phone"), eq(schema.linkedChannels.value, phone)))
+      .limit(1)
+  )[0];
+  let email: string;
+  let created = false;
+  if (existing?.verifiedAt) {
+    email = existing.userEmail;
+  } else {
+    email = `${phone.replace(/\D/g, "")}@phone.skcal.fit`;
+    const userRow = (await db(c).select().from(schema.user).where(eq(schema.user.email, email)).limit(1))[0];
+    if (!userRow) {
+      await db(c).insert(schema.user).values({
+        id: crypto.randomUUID(),
+        name: phone,
+        email,
+        emailVerified: false,
+        phoneNumber: phone,
+        phoneNumberVerified: true,
+      });
+      created = true;
+    }
+    if (existing) {
+      await db(c)
+        .update(schema.linkedChannels)
+        .set({ userEmail: email, verifiedAt: new Date() })
+        .where(eq(schema.linkedChannels.id, existing.id));
+    } else {
+      await db(c).insert(schema.linkedChannels).values({
+        id: crypto.randomUUID(),
+        userEmail: email,
+        kind: "phone",
+        value: phone,
+        verifiedAt: new Date(),
+      });
+    }
+  }
+
+  const weightLb = Number(b.weightLb);
+  if (weightLb >= 30 && weightLb <= 700) {
+    await db(c).insert(schema.weightReadings).values({ userEmail: email, weightKg: lbToKg(weightLb), source: "manual", note: "starting weight (onboarding)" });
+    await db(c)
+      .insert(schema.targets)
+      .values({ userEmail: email, startWeightKg: lbToKg(weightLb), startDate: new Date() })
+      .onConflictDoUpdate({ target: schema.targets.userEmail, set: { startWeightKg: lbToKg(weightLb), startDate: new Date() } });
+  }
+  const heightIn = Number(b.heightIn);
+  if (heightIn >= 36 && heightIn <= 96) {
+    await db(c)
+      .insert(schema.targets)
+      .values({ userEmail: email, heightCm: inToCm(heightIn) })
+      .onConflictDoUpdate({ target: schema.targets.userEmail, set: { heightCm: inToCm(heightIn) } });
+  }
+  return c.json({ ok: true, email, created });
+});
+
+// Agent daemon: Stripe checkout link for a linked (but unsubscribed) number.
+app.post("/api/onboard/checkout", async (c) => {
+  if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  if (!c.env.STRIPE_SECRET_KEY || !c.env.STRIPE_PRICE_ID) return c.json({ error: "billing not configured" }, 503);
+  const b = await c.req.json<{ phone?: string }>();
+  const phone = normalizePhone(b.phone ?? "");
+  if (!phone) return c.json({ error: "invalid phone" }, 400);
+  const chan = (
+    await db(c)
+      .select()
+      .from(schema.linkedChannels)
+      .where(and(eq(schema.linkedChannels.kind, "phone"), eq(schema.linkedChannels.value, phone)))
+      .limit(1)
+  )[0];
+  if (!chan?.verifiedAt) return c.json({ error: "not linked", code: "unlinked" }, 404);
+  const email = chan.userEmail;
+  try {
+    const row = (await db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email)).limit(1))[0];
+    let customerId = row?.stripeCustomerId ?? null;
+    if (!customerId) {
+      const customer = await stripeApi(c.env, "customers", { email, "metadata[user_email]": email });
+      customerId = String(customer.id);
+      await db(c)
+        .insert(schema.billing)
+        .values({ userEmail: email, stripeCustomerId: customerId })
+        .onConflictDoUpdate({ target: schema.billing.userEmail, set: { stripeCustomerId: customerId, updatedAt: new Date() } });
+    }
+    const session = await stripeApi(c.env, "checkout/sessions", {
+      mode: "subscription",
+      customer: customerId,
+      "line_items[0][price]": c.env.STRIPE_PRICE_ID,
+      "line_items[0][quantity]": "1",
+      client_reference_id: email,
+      "subscription_data[metadata][user_email]": email,
+      allow_promotion_codes: "true",
+      success_url: "https://app.skcal.fit/?billing=success",
+      cancel_url: "https://app.skcal.fit/?billing=canceled",
+    });
+    return c.json({ url: session.url, email });
+  } catch (e) {
+    return c.json({ error: "checkout failed", detail: String(e) }, 502);
+  }
+});
+
 // Agent daemon: list pending sends (service token only).
 app.get("/api/onboard/pending", async (c) => {
   if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {

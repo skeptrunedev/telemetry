@@ -890,6 +890,7 @@ export const targets = sqliteTable("targets", {
   startDate: integer("start_date", { mode: "timestamp_ms" }),
   dailyKcalTarget: integer("daily_kcal_target").default(1850),
   proteinTargetG: integer("protein_target_g").default(160),
+  heightCm: real("height_cm"),
 });
 
 // Per-day nutrition, one row per (user, date).
