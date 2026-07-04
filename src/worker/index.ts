@@ -227,6 +227,7 @@ $("inspect").onclick = async () => {
       "<li>phone sign-in: " + (d.authUser ? d.authUser.email + (d.authUser.tempAccount ? " (temp)" : "") : "none") + "</li>" +
       "<li>photon: " + (d.photon ? "registered → " + (d.photon.assignedNumber || "?") : (d.photonError || "not registered")) + "</li>" +
       "<li>queue rows: " + d.pendingTextMe + "</li>" +
+      "<li>conversation history: " + (d.thread && d.thread.exists ? d.thread.messageCount + " messages" : "none") + "</li>" +
       (d.counts ? "<li>data (" + d.accountEmail + "): " + d.counts.weights + " weights · " + d.counts.meals + " meals · " + d.counts.workouts + " workouts · " + d.counts.measurements + " measurements · " + d.counts.memories + " memories</li>" : "");
     $("info").style.display = "block";
     $("info").dataset.phone = d.phone;
@@ -794,7 +795,8 @@ app.use("/api/*", async (c, next) => {
     path.startsWith("/api/auth/") ||
     path === "/api/ingest/weight" ||
     path === "/api/stripe/webhook" ||
-    path.startsWith("/api/onboard/")
+    path.startsWith("/api/onboard/") ||
+    path === "/api/agent-thread" // service-token auth in the handler
   ) {
     return next();
   }
@@ -3045,6 +3047,21 @@ app.get("/api/admin/phone", async (c) => {
     .from(schema.textMeRequests)
     .where(eq(schema.textMeRequests.phone, phone));
   const accountEmail = channel?.userEmail ?? phoneUser?.email ?? null;
+  const threadRow = (
+    await db(c)
+      .select({ messages: schema.agentThreads.messages })
+      .from(schema.agentThreads)
+      .where(eq(schema.agentThreads.phone, phone))
+      .limit(1)
+  )[0];
+  let threadMessages = 0;
+  if (threadRow) {
+    try {
+      threadMessages = (JSON.parse(threadRow.messages) as unknown[]).length;
+    } catch {
+      /* corrupt blob still counts as an existing thread */
+    }
+  }
   let counts: Record<string, number> | null = null;
   if (accountEmail) {
     counts = {
@@ -3062,6 +3079,7 @@ app.get("/api/admin/phone", async (c) => {
     photon: photon ? { id: photon.id, assignedNumber: photon.assignedPhoneNumber ?? null } : null,
     photonError,
     pendingTextMe: textMe.length,
+    thread: { exists: !!threadRow, messageCount: threadMessages },
     accountEmail,
     counts,
   });
@@ -3138,6 +3156,21 @@ app.post("/api/admin/phone/reset", async (c) => {
   await db(c).delete(schema.textMeRequests).where(eq(schema.textMeRequests.phone, phone));
   report.push("onboarding queue: cleared");
 
+  // 2b. Agent conversation history — always, so a reset number greets fresh.
+  const thread = (
+    await db(c)
+      .select({ id: schema.agentThreads.id })
+      .from(schema.agentThreads)
+      .where(eq(schema.agentThreads.phone, phone))
+      .limit(1)
+  )[0];
+  if (thread) {
+    await db(c).delete(schema.agentThreads).where(eq(schema.agentThreads.phone, phone));
+    report.push("conversation history: cleared");
+  } else {
+    report.push("conversation history: none");
+  }
+
   // 3. Linked channel.
   const channel = (
     await db(c)
@@ -3200,6 +3233,17 @@ app.post("/api/admin/phone/reset", async (c) => {
       await db(c).delete(schema.agentMemories).where(eq(schema.agentMemories.userEmail, accountEmail));
       await db(c).delete(schema.apiKeys).where(eq(schema.apiKeys.userEmail, accountEmail));
       await db(c).delete(schema.billing).where(eq(schema.billing.userEmail, accountEmail));
+      // Conversation history for every number linked to the account (the reset
+      // phone itself was already handled above).
+      const acctPhones = (
+        await db(c)
+          .select({ value: schema.linkedChannels.value })
+          .from(schema.linkedChannels)
+          .where(and(eq(schema.linkedChannels.userEmail, accountEmail), eq(schema.linkedChannels.kind, "phone")))
+      ).map((r) => r.value);
+      if (acctPhones.length) {
+        await db(c).delete(schema.agentThreads).where(inArray(schema.agentThreads.phone, acctPhones));
+      }
       await db(c).delete(schema.linkedChannels).where(eq(schema.linkedChannels.userEmail, accountEmail));
       const authUser = (
         await db(c).select().from(schema.user).where(eq(schema.user.email, accountEmail)).limit(1)
@@ -3209,7 +3253,7 @@ app.post("/api/admin/phone/reset", async (c) => {
         await db(c).delete(schema.account).where(eq(schema.account.userId, authUser.id));
         await db(c).delete(schema.user).where(eq(schema.user.id, authUser.id));
       }
-      report.push(`wipe: ${accountEmail} deleted (data, sessions, account)`);
+      report.push(`wipe: ${accountEmail} deleted (data, conversation history, sessions, account)`);
     }
   }
 
@@ -3403,6 +3447,39 @@ app.post("/api/onboard/checkout", async (c) => {
   } catch (e) {
     return c.json({ error: "checkout failed", detail: String(e) }, 502);
   }
+});
+
+// ---- Agent conversation threads ---------------------------------------------
+// Durable per-phone iMessage history for the agent daemon (service token
+// only): the daemon seeds its in-process cache from GET on the first message
+// after a restart and writes the pruned history back after every reply.
+app.get("/api/agent-thread", async (c) => {
+  if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const phone = normalizePhone(c.req.query("phone") ?? "");
+  if (!phone) return c.json({ error: "invalid phone" }, 400);
+  const row = (
+    await db(c).select().from(schema.agentThreads).where(eq(schema.agentThreads.phone, phone)).limit(1)
+  )[0];
+  return c.json({ messages: row ? JSON.parse(row.messages) : [] });
+});
+
+app.put("/api/agent-thread", async (c) => {
+  if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const b = await c.req.json<{ phone?: string; messages?: unknown }>();
+  const phone = normalizePhone(b.phone ?? "");
+  if (!phone || !Array.isArray(b.messages)) return c.json({ error: "phone and messages[] required" }, 400);
+  const blob = JSON.stringify(b.messages);
+  // The daemon prunes to ≤ ~200KB before every PUT; anything bigger is a bug.
+  if (blob.length > 512_000) return c.json({ error: "messages blob too large" }, 413);
+  await db(c)
+    .insert(schema.agentThreads)
+    .values({ id: crypto.randomUUID(), phone, messages: blob, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: schema.agentThreads.phone, set: { messages: blob, updatedAt: new Date() } });
+  return c.json({ ok: true });
 });
 
 // Agent daemon: list pending sends (service token only).

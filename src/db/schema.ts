@@ -1211,6 +1211,22 @@ export const workouts = sqliteTable(
   ],
 );
 
+// Rolling iMessage conversation per phone number: the agent daemon's
+// write-through history store, so restarts don't wipe the conversation.
+// `messages` is the pruned Anthropic MessageParam[] JSON (capped at 24
+// entries, images collapsed to text placeholders, blob ≤ ~200KB — the daemon
+// prunes before every PUT). One thread per number, upserted on phone.
+export const agentThreads = sqliteTable(
+  "agent_threads",
+  {
+    id: text("id").primaryKey(), // uuid
+    phone: text("phone").notNull(), // E.164, e.g. "+17379832612"
+    messages: text("messages").notNull(), // JSON: Anthropic MessageParam[]
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [uniqueIndex("agent_threads_phone_idx").on(t.phone)],
+);
+
 // "Text to get started" requests from the landing page: the iMessage agent
 // polls pending rows and sends the first message (shared-pool lines can't
 // receive from strangers, so we always initiate).
