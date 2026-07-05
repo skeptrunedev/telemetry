@@ -1,0 +1,42 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+---
+
+<Layout title="Privacy Policy — skcal" description="What skcal collects, how it's used, and how to export or delete your data.">
+  <Nav />
+  <article class="wrap legal">
+    <h1>Privacy Policy</h1>
+    <p class="legal-date">Last updated: 2026-07-05</p>
+    <p>skcal ("we") is a personal calorie and body-composition tracker. This policy explains what we collect and how it's used.</p>
+
+    <h2>What we collect</h2>
+    <ul>
+      <li><strong>Account</strong>: your phone number, and optionally an email, name, or profile image if provided by Google sign-in or Gravatar.</li>
+      <li><strong>Your data</strong>: weigh-ins, body-fat %, measurements, nutrition entries, meal and progress photos, workouts, targets, and messages you send to the skcal agent (in the app or over iMessage).</li>
+    </ul>
+
+    <h2>How we use it</h2>
+    <ul>
+      <li>To provide the tracking features and show your dashboard.</li>
+      <li>Meal photos/descriptions, voice notes, and agent messages are sent to <strong>Anthropic</strong> (Claude) to estimate macros and answer questions, and voice notes are transcribed by <strong>Cloudflare Workers AI</strong>. We do not use your data to train models.</li>
+      <li>Access via the API/MCP server happens only with an OAuth token or API key you explicitly authorize; revoke it any time.</li>
+    </ul>
+
+    <h2>Storage &amp; processors</h2>
+    <p>
+      Your data is stored on <strong>Cloudflare</strong> (D1 and R2). We share data only with the processors needed to
+      run skcal: Cloudflare (hosting/storage/AI transcription), Anthropic (AI features), Twilio (sign-in codes),
+      Photon (iMessage delivery), Stripe (billing), Google (optional sign-in), and Fastmail (email). We do not sell
+      your data.
+    </p>
+
+    <h2>Retention &amp; deletion</h2>
+    <p>Data is kept until you delete it. Email <a href="mailto:support@skcal.fit">support@skcal.fit</a> to export or delete your account and data.</p>
+
+    <h2>Contact</h2>
+    <p>Questions or requests: <a href="mailto:support@skcal.fit">support@skcal.fit</a>.</p>
+  </article>
+  <Footer />
+</Layout>
