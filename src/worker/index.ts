@@ -3395,7 +3395,7 @@ app.post("/api/onboard/signup", async (c) => {
       .values({ userEmail: email, heightCm: inToCm(heightIn) })
       .onConflictDoUpdate({ target: schema.targets.userEmail, set: { heightCm: inToCm(heightIn) } });
   }
-  if (b.sex === "male" || b.sex === "female") {
+  if (b.sex === "male" || b.sex === "female" || b.sex === "other") {
     await db(c)
       .insert(schema.targets)
       .values({ userEmail: email, sex: b.sex })

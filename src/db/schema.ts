@@ -891,7 +891,7 @@ export const targets = sqliteTable("targets", {
   dailyKcalTarget: integer("daily_kcal_target").default(1850),
   proteinTargetG: integer("protein_target_g").default(160),
   heightCm: real("height_cm"),
-  sex: text("sex", { enum: ["male", "female"] }),
+  sex: text("sex", { enum: ["male", "female", "other"] }),
 });
 
 // Per-day nutrition, one row per (user, date).
