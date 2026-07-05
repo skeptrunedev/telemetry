@@ -325,7 +325,21 @@ export function CoachThread({
           })
           .filter((m) => (typeof m.content === "string" ? m.content.trim().length > 0 : m.content.length > 0));
 
-        const res = await api.coachStream(history, todayLocal(), abortSignal);
+        // The worker caps history at 20 messages; send the newest window,
+        // opened on a user message, so long conversations keep working.
+        let window = history.slice(-20);
+        while (window.length && window[0]?.role !== "user") window = window.slice(1);
+
+        let res: Response;
+        try {
+          res = await api.coachStream(window, todayLocal(), abortSignal);
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") throw err;
+          yield {
+            content: [{ type: "text", text: "That message didn't go through, give it another try in a moment." }],
+          } as unknown as ChatModelRunResult;
+          return;
+        }
         const reader = res.body?.getReader();
         if (!reader) throw new Error("coach stream unavailable");
         const decoder = new TextDecoder();

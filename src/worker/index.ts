@@ -2226,9 +2226,16 @@ const AGENT_PHOTO_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 const AGENT_PHOTO_URL_RE = /^\/api\/agent\/photos\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 function parseCoachMessages(raw: unknown): { messages: CoachMsg[] } | { error: string } {
-  const arr = Array.isArray(raw) ? (raw as { role?: string; content?: unknown }[]) : [];
+  let arr = Array.isArray(raw) ? (raw as { role?: string; content?: unknown }[]) : [];
   if (!arr.length) return { error: "messages required" };
-  if (arr.length > 20) return { error: "too many messages (max 20)" };
+  // Long conversations send their whole history; keep the newest window
+  // rather than rejecting the turn. Anthropic wants the window to open on a
+  // user message, so drop leading assistant messages after slicing.
+  if (arr.length > 20) {
+    arr = arr.slice(-20);
+    while (arr.length && arr[0]?.role !== "user") arr = arr.slice(1);
+    if (!arr.length) return { error: "messages required" };
+  }
   const messages: CoachMsg[] = [];
   for (const m of arr) {
     if (m.role !== "user" && m.role !== "assistant") return { error: "each message needs role user or assistant" };
