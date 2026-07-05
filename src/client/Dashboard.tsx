@@ -109,7 +109,7 @@ export function Dashboard({
             {latestLb != null ? f1(latestLb) : "—"}
             <span className="unit"> lb</span>
           </p>
-          <AreaChart points={weight.trend.map((p) => kgToLb(p.kg))} />
+          <AreaChart points={weight.trend.map((p) => kgToLb(p.kg))} timestamps={weight.trend.map((p) => p.ts)} />
           {progressPct != null && (
             <>
               <div className="rangebar">
