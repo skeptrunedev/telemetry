@@ -195,7 +195,8 @@ const {
   }
   .imsg-head {
     display: flex; flex-direction: column; align-items: center; gap: 6px;
-    padding: 20px 16px 12px; border-bottom: 1px solid var(--card-line);
+    /* top padding clears the phone frame's notch pill */
+    padding: 62px 16px 12px; border-bottom: 1px solid var(--card-line);
   }
   .imsg-avatar {
     display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
@@ -228,7 +229,12 @@ const {
     content: ""; position: absolute; top: 24px; left: 50%; transform: translateX(-50%);
     width: 104px; height: 25px; border-radius: 14px; background: #0d0e10; z-index: 2;
   }
-  .phone img { border-radius: 35px; width: 100%; }
+  .phone img {
+    border-radius: 35px; width: 100%;
+    /* screenshots are viewport-height captures — fade the cut edge */
+    -webkit-mask-image: linear-gradient(to bottom, #000 82%, transparent 99%);
+    mask-image: linear-gradient(to bottom, #000 82%, transparent 99%);
+  }
   .rings { position: absolute; inset: 0; pointer-events: none; }
   .rings i { position: absolute; border: 1px solid rgba(0, 0, 0, 0.07); border-radius: 50%; }
   .dark .rings i { border-color: rgba(255, 255, 255, 0.06); }
