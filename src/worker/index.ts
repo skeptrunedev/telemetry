@@ -50,6 +50,7 @@ type Bindings = {
   AGENT_SERVICE_TOKEN?: string;
   PHOTON_PROJECT_ID?: string;
   PHOTON_ACCESS_TOKEN?: string;
+  AI?: { run: (model: string, inputs: Record<string, unknown>) => Promise<unknown> };
 };
 
 type Variables = { email: string };
@@ -3401,6 +3402,23 @@ app.post("/api/onboard/signup", async (c) => {
       .onConflictDoUpdate({ target: schema.targets.userEmail, set: { sex: b.sex } });
   }
   return c.json({ ok: true, email, created });
+});
+
+// Agent daemon: transcribe an iMessage voice note (Workers AI Whisper).
+app.post("/api/onboard/transcribe", async (c) => {
+  if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  if (!c.env.AI) return c.json({ error: "transcription not configured" }, 503);
+  const buf = await c.req.arrayBuffer();
+  if (!buf.byteLength) return c.json({ error: "no audio" }, 400);
+  if (buf.byteLength > 24_000_000) return c.json({ error: "audio too large" }, 400);
+  try {
+    const out = (await c.env.AI.run("@cf/openai/whisper", { audio: [...new Uint8Array(buf)] })) as { text?: string };
+    return c.json({ text: (out.text ?? "").trim() });
+  } catch (e) {
+    return c.json({ error: "transcription failed", detail: String(e) }, 502);
+  }
 });
 
 // Agent daemon: set the account's display name (e.g. from a shared contact

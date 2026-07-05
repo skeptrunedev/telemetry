@@ -38,6 +38,7 @@
     // token from `photon login`) lives in Worker secrets as PHOTON_ACCESS_TOKEN.
     "PHOTON_PROJECT_ID": "85c139f6-e026-448a-b273-461ce205a322"
   },
+  "ai": { "binding": "AI" },
   "d1_databases": [
     {
       "binding": "DB",
