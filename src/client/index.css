@@ -1260,6 +1260,75 @@ a {
   }
 }
 
+/* ---- agent chat photos ---- */
+.composer-attach {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: var(--fg-soft, #a3a5aa);
+  cursor: pointer;
+  transition: color 140ms var(--ease-out), background 140ms var(--ease-out);
+}
+.composer-attach:hover {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.07);
+}
+.composer-attach svg {
+  width: 19px;
+  height: 19px;
+}
+.attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 210px;
+  padding: 4px 6px 4px 4px;
+  margin: 0 6px 6px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 12.5px;
+  color: var(--fg-soft, #a3a5aa);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.attach-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: none;
+}
+.attach-remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.attach-remove svg {
+  width: 13px;
+  height: 13px;
+}
+.bubble-photo {
+  display: block;
+  max-width: 220px;
+  max-height: 260px;
+  border-radius: 12px;
+  margin-bottom: 6px;
+  object-fit: cover;
+}
+
 /* ---- reduced motion (Emil): keep meaning, drop movement ---- */
 /* view swap (View Transitions API): old fades, new rises in — subtle
    directionality so navigation reads as movement, not a blink */
@@ -1843,6 +1912,7 @@ a {
 /* ChatGPT-style pill: textarea + send control share one rounded container. */
 .composer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
   background: var(--input-bg);

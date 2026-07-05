@@ -5,11 +5,14 @@ import {
   ThreadPrimitive,
   MessagePrimitive,
   ComposerPrimitive,
+  AttachmentPrimitive,
+  useAttachment,
+  SimpleImageAttachmentAdapter,
   type ChatModelAdapter,
   type ChatModelRunResult,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { ArrowUp, Square, Check, Loader2 } from "lucide-react";
+import { ArrowUp, Square, Check, Loader2, ImagePlus, X } from "lucide-react";
 import { api, todayLocal } from "./api";
 import type { CoachMessage, CoachConversation } from "./api";
 
@@ -64,7 +67,9 @@ export function useCoachHistory() {
   const q = search.trim().toLowerCase();
   const filtered = q
     ? conversations.filter(
-        (c) => c.title.toLowerCase().includes(q) || c.messages.some((m) => m.content.toLowerCase().includes(q)),
+        (c) =>
+          c.title.toLowerCase().includes(q) ||
+          c.messages.some((m) => typeof m.content === "string" && m.content.toLowerCase().includes(q)),
       )
     : conversations;
 
@@ -102,10 +107,26 @@ function ToolFallback({ toolName, result }: { toolName: string; result?: unknown
   );
 }
 
+function ImagePart({ image }: { image?: string }) {
+  if (!image) return null;
+  return <img className="bubble-photo" src={image} alt="attached photo" />;
+}
+
+// Sent photos live on message.attachments (not content parts), so the bubble
+// needs its own renderer to show them.
+function SentPhoto() {
+  const attachment = useAttachment();
+  const image = attachment.content?.find(
+    (p): p is { type: "image"; image: string } => p.type === "image",
+  )?.image;
+  return <ImagePart image={image} />;
+}
+
 function UserMessage() {
   return (
     <MessagePrimitive.Root className="bubble bubble-user">
-      <MessagePrimitive.Parts />
+      <MessagePrimitive.Attachments components={{ Attachment: SentPhoto }} />
+      <MessagePrimitive.Parts components={{ Image: ImagePart }} />
     </MessagePrimitive.Root>
   );
 }
@@ -119,9 +140,25 @@ function AssistantMessage() {
 }
 
 // ChatGPT-style pill: textarea + send/stop control share one rounded container.
+function AttachmentChip() {
+  return (
+    <AttachmentPrimitive.Root className="attach-chip">
+      <AttachmentPrimitive.unstable_Thumb className="attach-thumb" />
+      <AttachmentPrimitive.Name />
+      <AttachmentPrimitive.Remove className="attach-remove" aria-label="Remove photo">
+        <X />
+      </AttachmentPrimitive.Remove>
+    </AttachmentPrimitive.Root>
+  );
+}
+
 function Composer() {
   return (
     <ComposerPrimitive.Root className="composer">
+      <ComposerPrimitive.Attachments components={{ Attachment: AttachmentChip }} />
+      <ComposerPrimitive.AddAttachment className="composer-attach" aria-label="Add a photo">
+        <ImagePlus />
+      </ComposerPrimitive.AddAttachment>
       <ComposerPrimitive.Input className="chat-input" placeholder="What are you thinking of eating?" autoFocus />
       <ThreadPrimitive.If running={false}>
         <ComposerPrimitive.Send className="composer-send" aria-label="Send">
@@ -158,14 +195,32 @@ export function CoachThread({
       async *run({ messages, abortSignal }) {
         const history: CoachMessage[] = messages
           .filter((m) => m.role === "user" || m.role === "assistant")
-          .map((m) => ({
-            role: m.role as "user" | "assistant",
-            content: m.content
-              .filter((p) => p.type === "text")
-              .map((p) => p.text)
-              .join("\n"),
-          }))
-          .filter((m) => m.content.trim());
+          .map((m) => {
+            const parts: ({ type: "text"; text: string } | { type: "image"; image: string })[] = [];
+            const seenImages = new Set<string>();
+            const pushImage = (image: string) => {
+              if (seenImages.has(image)) return;
+              seenImages.add(image);
+              parts.push({ type: "image", image });
+            };
+            for (const p of m.content) {
+              if (p.type === "text" && p.text.trim()) parts.push({ type: "text", text: p.text });
+              else if (p.type === "image" && typeof p.image === "string") pushImage(p.image);
+            }
+            // attachments carry their content parts separately on some paths
+            const atts = (m as { attachments?: { content?: { type?: string; image?: string }[] }[] }).attachments ?? [];
+            for (const a of atts) for (const p of a.content ?? []) {
+              if (p.type === "image" && typeof p.image === "string") pushImage(p.image);
+            }
+            const hasImage = parts.some((p) => p.type === "image");
+            return {
+              role: m.role as "user" | "assistant",
+              content: hasImage
+                ? parts
+                : parts.filter((p): p is { type: "text"; text: string } => p.type === "text").map((p) => p.text).join("\n"),
+            };
+          })
+          .filter((m) => (typeof m.content === "string" ? m.content.trim().length > 0 : m.content.length > 0));
 
         const res = await api.coachStream(history, todayLocal(), abortSignal);
         const reader = res.body?.getReader();
@@ -246,11 +301,18 @@ export function CoachThread({
           .map((p) => p.text)
           .join("\n")
           .trim();
+        const lastUserText =
+          typeof lastUser?.content === "string"
+            ? lastUser.content
+            : (lastUser?.content ?? [])
+                .map((p) => (p.type === "text" ? p.text : "[photo]"))
+                .join(" ")
+                .trim();
         if (lastUser?.role === "user" && reply) {
           const turn: CoachMessage[] = [lastUser, { role: "assistant", content: reply }];
           try {
             if (!convIdRef.current) {
-              const { id } = await api.createConversation(lastUser.content, turn);
+              const { id } = await api.createConversation(lastUserText, turn);
               convIdRef.current = id;
             } else {
               await api.appendMessages(convIdRef.current, turn);
@@ -267,6 +329,7 @@ export function CoachThread({
 
   const runtime = useLocalRuntime(adapter, {
     initialMessages: initialMessages.map((m) => ({ role: m.role, content: m.content })),
+    adapters: { attachments: new SimpleImageAttachmentAdapter() },
   });
 
   return (

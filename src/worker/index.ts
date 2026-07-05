@@ -1731,29 +1731,24 @@ app.post("/api/log/analyze", async (c) => {
  *       '503':
  *         $ref: '#/components/responses/ServiceUnavailable'
  */
-app.post("/api/nutrition/describe", async (c) => {
-  const email = c.get("email");
-  if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "ai not configured" }, 503);
-  const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
-  const b = await c.req.json<{ text?: string }>();
-  const text = (b.text ?? "").trim().slice(0, 2000);
-  if (!text) return c.json({ error: "describe what you ate" }, 400);
-
+// Shared by /api/nutrition/describe and the web coach's log_meal tool: parse
+// a plain-text meal description into items and log it.
+async function logDescribedMeal(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+  text: string,
+  today: string,
+) {
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   type Macro = { items: { name: string; kcal: number; protein_g: number }[]; total_kcal: number; total_protein_g: number; note: string };
-  let parsed: Macro;
-  try {
-    const msg = await anthropic.messages.create({
-      model: "claude-opus-4-8",
-      max_tokens: 1024,
-      output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
-      messages: [{ role: "user", content: `${DESCRIBE_PROMPT}\n\nMeal: ${text}` }],
-    } as Anthropic.MessageCreateParamsNonStreaming);
-    const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
-    parsed = JSON.parse(out);
-  } catch (e) {
-    return c.json({ error: "analysis failed", detail: String(e) }, 502);
-  }
+  const msg = await anthropic.messages.create({
+    model: "claude-opus-4-8",
+    max_tokens: 1024,
+    output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
+    messages: [{ role: "user", content: `${DESCRIBE_PROMPT}\n\nMeal: ${text}` }],
+  } as Anthropic.MessageCreateParamsNonStreaming);
+  const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
+  const parsed: Macro = JSON.parse(out);
 
   const mealId = crypto.randomUUID();
   await db(c).insert(schema.meals).values({ id: mealId, userEmail: email, date: today, note: text, photoKeys: null });
@@ -1767,14 +1762,28 @@ app.post("/api/nutrition/describe", async (c) => {
   if (items.length) await db(c).insert(schema.nutritionItems).values(items);
   await recomputeDay(c, email, today);
 
-  return c.json({
+  return {
     ok: true,
     mealId,
     items: items.map((i) => ({ name: i.name, kcal: i.kcal, proteinG: i.proteinG })),
     totalKcal: items.reduce((s, i) => s + i.kcal, 0),
     totalProteinG: Math.round(items.reduce((s, i) => s + i.proteinG, 0)),
     note: parsed.note,
-  });
+  };
+}
+
+app.post("/api/nutrition/describe", async (c) => {
+  const email = c.get("email");
+  if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "ai not configured" }, 503);
+  const today = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
+  const b = await c.req.json<{ text?: string }>();
+  const text = (b.text ?? "").trim().slice(0, 2000);
+  if (!text) return c.json({ error: "describe what you ate" }, 400);
+  try {
+    return c.json(await logDescribedMeal(c, email, text, today));
+  } catch (e) {
+    return c.json({ error: "analysis failed", detail: String(e) }, 502);
+  }
 });
 
 /**
@@ -2204,21 +2213,66 @@ async function buildCoachSystem(
 }
 
 // Validates and normalizes the posted chat history for either coach route.
-function parseCoachMessages(
-  raw: unknown,
-): { messages: { role: "user" | "assistant"; content: string }[] } | { error: string } {
-  const arr = Array.isArray(raw) ? (raw as { role?: string; content?: string }[]) : [];
+// Content is a plain string, or an array of text/image parts (images as data
+// URLs from the web composer's attachments).
+type CoachBlock = { type: "text"; text: string } | { type: "image"; mediaType: string; data: string };
+type CoachMsg = { role: "user" | "assistant"; content: string | CoachBlock[] };
+
+const DATA_URL_RE = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/;
+
+function parseCoachMessages(raw: unknown): { messages: CoachMsg[] } | { error: string } {
+  const arr = Array.isArray(raw) ? (raw as { role?: string; content?: unknown }[]) : [];
   if (!arr.length) return { error: "messages required" };
   if (arr.length > 20) return { error: "too many messages (max 20)" };
-  const messages: { role: "user" | "assistant"; content: string }[] = [];
+  const messages: CoachMsg[] = [];
   for (const m of arr) {
     if (m.role !== "user" && m.role !== "assistant") return { error: "each message needs role user or assistant" };
-    const content = typeof m.content === "string" ? m.content : "";
-    if (!content.trim()) return { error: "each message needs content" };
-    if (content.length > 2000) return { error: "message content too long (max 2000 chars)" };
-    messages.push({ role: m.role, content });
+    if (typeof m.content === "string") {
+      if (!m.content.trim()) return { error: "each message needs content" };
+      if (m.content.length > 2000) return { error: "message content too long (max 2000 chars)" };
+      messages.push({ role: m.role, content: m.content });
+      continue;
+    }
+    if (Array.isArray(m.content)) {
+      const blocks: CoachBlock[] = [];
+      let images = 0;
+      for (const part of m.content as { type?: string; text?: string; image?: string }[]) {
+        if (part.type === "text" && typeof part.text === "string") {
+          if (part.text.length > 2000) return { error: "message content too long (max 2000 chars)" };
+          if (part.text.trim()) blocks.push({ type: "text", text: part.text });
+        } else if (part.type === "image" && typeof part.image === "string") {
+          if (++images > 4) return { error: "too many images (max 4 per message)" };
+          if (part.image.length > 11_000_000) return { error: "image too large (max ~8MB)" };
+          const match = DATA_URL_RE.exec(part.image);
+          if (!match) return { error: "images must be jpeg/png/webp/gif data URLs" };
+          blocks.push({ type: "image", mediaType: match[1], data: match[2] });
+        }
+      }
+      if (!blocks.length) return { error: "each message needs content" };
+      messages.push({ role: m.role, content: blocks });
+      continue;
+    }
+    return { error: "each message needs content" };
   }
   return { messages };
+}
+
+// Flatten a parsed coach message to plain text for persistence/titles.
+function coachText(m: CoachMsg): string {
+  if (typeof m.content === "string") return m.content;
+  const text = m.content.filter((b): b is Extract<CoachBlock, { type: "text" }> => b.type === "text").map((b) => b.text).join("\n");
+  const photos = m.content.filter((b) => b.type === "image").length;
+  return [photos ? `[photo${photos > 1 ? ` x${photos}` : ""}]` : "", text].filter(Boolean).join(" ");
+}
+
+// A parsed coach message as Anthropic content.
+function coachContent(m: CoachMsg): Anthropic.MessageParam["content"] {
+  if (typeof m.content === "string") return m.content;
+  return m.content.map((b) =>
+    b.type === "text"
+      ? ({ type: "text", text: b.text } satisfies Anthropic.TextBlockParam)
+      : ({ type: "image", source: { type: "base64", media_type: b.mediaType as "image/jpeg", data: b.data } } satisfies Anthropic.ImageBlockParam),
+  );
 }
 
 // ---- Coach tools: let the coach view + reorganize the food log ------------
@@ -2281,6 +2335,19 @@ const COACH_TOOLS: Anthropic.Tool[] = [
         inches: { type: "number", description: "Circumference in inches." },
       },
       required: ["site", "inches"],
+    },
+  },
+  {
+    name: "log_meal",
+    description:
+      "Log food the user ate from a plain-text description; skcal's AI estimates calories + protein per item and writes the entries. For a PHOTO the user sent, describe exactly what you see in the photo (foods + portions) and pass that as text.",
+    input_schema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "What they ate, e.g. 'chipotle double chicken bowl' or your description of their photo" },
+        date: { type: "string", description: "YYYY-MM-DD or today/yesterday. Default today." },
+      },
+      required: ["text"],
     },
   },
   {
@@ -2423,6 +2490,13 @@ async function executeCoachTool(
     return { ok: true, site, inches };
   }
 
+  if (name === "log_meal") {
+    const text = String(input.text ?? "").trim().slice(0, 2000);
+    if (!text) return { error: "text required" };
+    const day = resolveToolDate(String(input.date ?? "today"), today) ?? today;
+    return await logDescribedMeal(c, email, text, day);
+  }
+
   if (name === "log_weight") {
     const pounds = Number(input.pounds);
     if (!(pounds >= 30 && pounds <= 700)) return { error: "pounds must be 30-700" };
@@ -2528,7 +2602,7 @@ app.post("/api/agent", async (c) => {
       model: "claude-opus-4-8",
       max_tokens: 600,
       system,
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: messages.map((m) => ({ role: m.role, content: coachContent(m) })),
     } as Anthropic.MessageCreateParamsNonStreaming);
     reply = msg.content
       .filter((bk) => bk.type === "text")
@@ -2557,13 +2631,13 @@ app.post("/api/agent/stream", async (c) => {
   const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
   const system =
     (await buildCoachSystem(c, email, today, tzMin)) +
-    `\n\nTools: you can view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
+    `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
   // NDJSON event protocol so the client renders tool calls as real parts rather
   // than mashing each turn's text together: {t:"text",v} / {t:"tool"} / {t:"result"}.
-  const convo: Anthropic.MessageParam[] = messages.map((m) => ({ role: m.role, content: m.content }));
+  const convo: Anthropic.MessageParam[] = messages.map((m) => ({ role: m.role, content: coachContent(m) }));
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
@@ -2712,11 +2786,12 @@ app.post("/api/agent/conversations", async (c) => {
   const parsed = parseCoachMessages(b.messages);
   if ("error" in parsed) return c.json({ error: parsed.error }, 400);
   const id = crypto.randomUUID();
-  const title = (typeof b.title === "string" && b.title.trim() ? b.title.trim() : deriveConversationTitle(parsed.messages)).slice(0, 120);
+  const flat = parsed.messages.map((m) => ({ role: m.role, content: coachText(m) }));
+  const title = (typeof b.title === "string" && b.title.trim() ? b.title.trim() : deriveConversationTitle(flat)).slice(0, 120);
   await db(c).insert(schema.coachConversations).values({ id, userEmail: email, title });
   await db(c)
     .insert(schema.coachMessages)
-    .values(parsed.messages.map((m) => ({ conversationId: id, role: m.role, content: m.content })));
+    .values(flat.map((m) => ({ conversationId: id, role: m.role, content: m.content })));
   return c.json({ id, title });
 });
 
@@ -2735,7 +2810,7 @@ app.post("/api/agent/conversations/:id/messages", async (c) => {
   if (!owned.length) return c.json({ error: "not found" }, 404);
   await db(c)
     .insert(schema.coachMessages)
-    .values(parsed.messages.map((m) => ({ conversationId: id, role: m.role, content: m.content })));
+    .values(parsed.messages.map((m) => ({ conversationId: id, role: m.role, content: coachText(m) })));
   await db(c).update(schema.coachConversations).set({ updatedAt: new Date() }).where(eq(schema.coachConversations.id, id));
   return c.json({ ok: true });
 });

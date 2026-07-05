@@ -43,7 +43,8 @@ export type MealAnalysis = {
   photoKeys: string[];
 };
 export type Meal = { id: string; note: string | null; createdAt: number; photoKeys: string[]; items: LoggedItem[] };
-export type CoachMessage = { role: "user" | "assistant"; content: string };
+export type CoachPart = { type: "text"; text: string } | { type: "image"; image: string };
+export type CoachMessage = { role: "user" | "assistant"; content: string | CoachPart[] };
 export type CoachConversation = {
   id: string;
   title: string;
