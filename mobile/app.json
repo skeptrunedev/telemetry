@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "skcal",
+    "slug": "skcal",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "fit.skcal.app",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "fit.skcal.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ],
+    "scheme": "skcal",
+    "backgroundColor": "#141517",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#141517"
+    }
+  }
+}
