@@ -12,7 +12,8 @@ import { ApiKeys } from "./ApiKeys";
 import { LinkedNumbers } from "./LinkedNumbers";
 import { Subscribe } from "./Subscribe";
 import type { Billing } from "./api";
-import { useCoachHistory, CoachThread } from "./Coach";
+import { useCoachHistory, CoachThread, type CoachHistory } from "./Coach";
+import type { CoachConversation } from "./api";
 import { SignIn } from "./SignIn";
 import { useSession, signOut } from "./auth-client";
 
@@ -29,12 +30,18 @@ type HistoryState = { view: View; scroll: number };
 // unsupported or reduced motion is requested. `apply` must mutate the DOM
 // synchronously (we flushSync inside it), so the transition captures it.
 function viewTransition(apply: () => void) {
-  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  const doc = document as Document & {
+    startViewTransition?: (cb: () => void) => { ready?: Promise<void>; finished?: Promise<void> };
+  };
   if (REDUCE_MOTION || typeof doc.startViewTransition !== "function") {
     apply();
     return;
   }
-  doc.startViewTransition(apply);
+  // A rapid second navigation (e.g. Back then Forward) skips the in-flight
+  // transition, rejecting these promises with a benign AbortError — swallow it.
+  const t = doc.startViewTransition(apply);
+  t?.ready?.catch(() => {});
+  t?.finished?.catch(() => {});
 }
 
 // Re-apply a target scroll across a few frames: async content (e.g. the food
@@ -70,7 +77,15 @@ function readView(): View {
 }
 
 // Real URL path for a view (root is Today; the coach view is branded "agent").
-const viewPath = (v: View) => (v === "coach" ? "/agent" : "/");
+// An open conversation is addressable at /agent/c/:id so refresh/deep links
+// land back in it.
+const viewPath = (v: View, convId: string | null = null) =>
+  v === "coach" ? (convId ? `/agent/c/${encodeURIComponent(convId)}` : "/agent") : "/";
+
+const convIdFromPath = (path: string): string | null => {
+  const m = /^\/agent\/c\/([^/]+)/.exec(path);
+  return m ? decodeURIComponent(m[1]) : null;
+};
 
 export default function App() {
   // Better Auth session gates the whole app: signed out → the sign-in screen,
@@ -116,6 +131,72 @@ export default function App() {
   const viewRef = useRef(view);
   viewRef.current = view;
 
+  // Conversation id the URL currently reflects. A ref (not state): `navigate`
+  // and the popstate handler need the fresh value before React re-renders the
+  // new coach session.
+  const urlConvIdRef = useRef<string | null>(convIdFromPath(location.pathname));
+
+  // Push a history entry for a conversation switch while already on the coach
+  // view (cross-view swaps get their URL from `navigate` instead).
+  const pushConvUrl = useCallback(() => {
+    const url = viewPath("coach", urlConvIdRef.current);
+    if (location.pathname === url) return;
+    history.replaceState({ view: "coach", scroll: window.scrollY } satisfies HistoryState, "");
+    history.pushState({ view: "coach", scroll: 0 } satisfies HistoryState, "", url);
+  }, []);
+
+  // Coach handlers wrapped with URL upkeep (the hook itself stays URL-free).
+  const openConversation = useCallback(
+    (conv: CoachConversation) => {
+      urlConvIdRef.current = conv.id;
+      coach.openConversation(conv);
+      if (viewRef.current === "coach") pushConvUrl();
+    },
+    [coach.openConversation, pushConvUrl],
+  );
+  const newChat = useCallback(() => {
+    urlConvIdRef.current = null;
+    coach.newChat();
+    if (viewRef.current === "coach") pushConvUrl();
+  }, [coach.newChat, pushConvUrl]);
+  // First turn persisted: the session gained an id — reflect it in the URL
+  // without adding a history entry mid-conversation.
+  const onPersisted = useCallback(
+    (id: string) => {
+      coach.onPersisted(id);
+      if (urlConvIdRef.current == null && viewRef.current === "coach") {
+        urlConvIdRef.current = id;
+        history.replaceState(history.state, "", viewPath("coach", id));
+      }
+    },
+    [coach.onPersisted],
+  );
+  const removeConversation = useCallback(
+    async (id: string) => {
+      await coach.removeConversation(id);
+      // Deleting the open conversation resets the session to a fresh chat;
+      // rewrite (not push) the URL to match.
+      if (urlConvIdRef.current === id) {
+        urlConvIdRef.current = null;
+        if (viewRef.current === "coach") history.replaceState(history.state, "", viewPath("coach"));
+      }
+    },
+    [coach.removeConversation],
+  );
+  const coachNav: CoachHistory = { ...coach, openConversation, newChat, onPersisted, removeConversation };
+
+  // Deep link (/agent/c/:id on load): open that conversation once the list
+  // arrives; a bad/foreign id falls back to the fresh chat and a clean /agent
+  // URL. Skipped if the user already started chatting.
+  useEffect(() => {
+    const id = urlConvIdRef.current;
+    if (!coach.loaded || !id || coach.session.convId) return;
+    if (!coach.openById(id)) {
+      urlConvIdRef.current = null;
+      history.replaceState(history.state, "", viewPath("coach"));
+    }
+  }, [coach.loaded, coach.openById, coach.session.convId]);
+
   useEffect(() => {
     localStorage.setItem("skcal-nav-collapsed", navCollapsed ? "1" : "0");
   }, [navCollapsed]);
@@ -136,7 +217,7 @@ export default function App() {
       setDrawerOpen(false);
       if (next === viewRef.current) return;
       history.replaceState({ view: viewRef.current, scroll: window.scrollY } satisfies HistoryState, "");
-      history.pushState({ view: next, scroll: 0 } satisfies HistoryState, "", viewPath(next));
+      history.pushState({ view: next, scroll: 0 } satisfies HistoryState, "", viewPath(next, urlConvIdRef.current));
       swapView(next, 0);
     },
     [swapView],
@@ -149,10 +230,17 @@ export default function App() {
       const next: View =
         st?.view === "today" || st?.view === "coach" ? st.view : readView();
       swapView(next, st?.scroll ?? 0);
+      // Best-effort: sync the open conversation to what the URL points at
+      // (plain /agent, or an id no longer in the list, means a fresh chat).
+      const id = convIdFromPath(location.pathname);
+      if (next === "coach" && id !== urlConvIdRef.current) {
+        urlConvIdRef.current = id;
+        if (!id || !coach.openById(id)) coach.newChat();
+      }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [swapView]);
+  }, [swapView, coach.openById, coach.newChat]);
 
   // Seed the first entry, then keep its scroll up to date as the user scrolls.
   useEffect(() => {
@@ -269,7 +357,7 @@ export default function App() {
                 }
               }
         }
-        coach={coach}
+        coach={coachNav}
       />
 
       <div className="app-body">
@@ -301,7 +389,7 @@ export default function App() {
               key={coach.session.key}
               initialMessages={coach.session.messages}
               initialConversationId={coach.session.convId}
-              onPersisted={coach.onPersisted}
+              onPersisted={onPersisted}
             />
           )}
         </main>

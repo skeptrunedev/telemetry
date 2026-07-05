@@ -22,6 +22,9 @@ export type CoachSession = { key: string; convId: string | null; messages: Coach
 
 export function useCoachHistory() {
   const [conversations, setConversations] = useState<CoachConversation[]>([]);
+  // True once the first listConversations attempt settles — deep links wait on
+  // this before deciding whether the URL's conversation id exists.
+  const [loaded, setLoaded] = useState(false);
   const [search, setSearch] = useState("");
   const nonceRef = useRef(0);
   const [session, setSession] = useState<CoachSession>({ key: "new-0", convId: null, messages: [] });
@@ -31,6 +34,8 @@ export function useCoachHistory() {
       setConversations(await api.listConversations());
     } catch {
       /* history is best-effort */
+    } finally {
+      setLoaded(true);
     }
   }, []);
   useEffect(() => {
@@ -44,6 +49,17 @@ export function useCoachHistory() {
   const openConversation = useCallback((conv: CoachConversation) => {
     setSession({ key: conv.id, convId: conv.id, messages: conv.messages });
   }, []);
+  // Open a conversation by id (URL deep links / Back-Forward). Looks in the
+  // full (unfiltered) list; false when the id is unknown so the caller can
+  // fall back to a fresh chat.
+  const openById = useCallback(
+    (id: string) => {
+      const conv = conversations.find((x) => x.id === id);
+      if (conv) openConversation(conv);
+      return conv !== undefined;
+    },
+    [conversations, openConversation],
+  );
   const onPersisted = useCallback(
     (id: string) => {
       setSession((s) => (s.convId ? s : { ...s, convId: id }));
@@ -76,12 +92,14 @@ export function useCoachHistory() {
   return {
     conversations: filtered,
     activeId: session.convId,
+    loaded,
     session,
     search,
     setSearch,
     hasQuery: !!q,
     newChat,
     openConversation,
+    openById,
     onPersisted,
     removeConversation,
   };
