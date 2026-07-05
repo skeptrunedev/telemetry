@@ -180,6 +180,32 @@ function AttachmentChip() {
   );
 }
 
+// Phone camera JPEGs routinely exceed the worker's ~8MB image cap and 400 the
+// whole turn, so photos are downscaled before they enter the composer. Large
+// files re-encode to JPEG capped at 1600px on the long edge; anything small,
+// undecodable (e.g. HEIC), or that fails mid-resize passes through unchanged.
+const PHOTO_BYTE_LIMIT = 2_500_000;
+const PHOTO_MAX_EDGE = 1600;
+async function downscalePhoto(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || file.size <= PHOTO_BYTE_LIMIT) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
+}
+
 // One visible attach button that opens our own source sheet instead of the
 // native picker. iOS hides "Take Photo" for multi-select file inputs, so a
 // single input can't offer both the camera and library multi-select — each
@@ -199,7 +225,7 @@ function AttachButton() {
 
   const onPicked = async (e: ChangeEvent<HTMLInputElement>) => {
     const input = e.target;
-    for (const file of Array.from(input.files ?? [])) await composer.addAttachment(file);
+    for (const file of Array.from(input.files ?? [])) await composer.addAttachment(await downscalePhoto(file));
     input.value = ""; // so re-picking the same file fires change again
   };
 
