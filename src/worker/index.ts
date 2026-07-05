@@ -2215,10 +2215,15 @@ async function buildCoachSystem(
 // Validates and normalizes the posted chat history for either coach route.
 // Content is a plain string, or an array of text/image parts (images as data
 // URLs from the web composer's attachments).
-type CoachBlock = { type: "text"; text: string } | { type: "image"; mediaType: string; data: string };
+type CoachBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; mediaType: string; data: string }
+  | { type: "image_ref"; id: string }; // stored chat photo, R2 key {email}/agent/{id}
 type CoachMsg = { role: "user" | "assistant"; content: string | CoachBlock[] };
 
 const DATA_URL_RE = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/;
+const AGENT_PHOTO_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const AGENT_PHOTO_URL_RE = /^\/api\/agent\/photos\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 function parseCoachMessages(raw: unknown): { messages: CoachMsg[] } | { error: string } {
   const arr = Array.isArray(raw) ? (raw as { role?: string; content?: unknown }[]) : [];
@@ -2243,6 +2248,11 @@ function parseCoachMessages(raw: unknown): { messages: CoachMsg[] } | { error: s
         } else if (part.type === "image" && typeof part.image === "string") {
           if (++images > 4) return { error: "too many images (max 4 per message)" };
           if (part.image.length > 11_000_000) return { error: "image too large (max ~8MB)" };
+          const ref = AGENT_PHOTO_URL_RE.exec(part.image);
+          if (ref) {
+            blocks.push({ type: "image_ref", id: ref[1] });
+            continue;
+          }
           const match = DATA_URL_RE.exec(part.image);
           if (!match) return { error: "images must be jpeg/png/webp/gif data URLs" };
           blocks.push({ type: "image", mediaType: match[1], data: match[2] });
@@ -2261,8 +2271,85 @@ function parseCoachMessages(raw: unknown): { messages: CoachMsg[] } | { error: s
 function coachText(m: CoachMsg): string {
   if (typeof m.content === "string") return m.content;
   const text = m.content.filter((b): b is Extract<CoachBlock, { type: "text" }> => b.type === "text").map((b) => b.text).join("\n");
-  const photos = m.content.filter((b) => b.type === "image").length;
+  const photos = m.content.filter((b) => b.type !== "text").length;
   return [photos ? `[photo${photos > 1 ? ` x${photos}` : ""}]` : "", text].filter(Boolean).join(" ");
+}
+
+// Serialize a parsed coach message for persistence. Plain text stays a plain
+// string (and legacy rows already are); a turn with stored photo references
+// persists as a JSON parts array so the photos render again on reload. Raw
+// data-URL images (client upload fallback) still flatten to a "[photo]" marker
+// rather than ballooning D1.
+type StoredCoachPart = { type: "text"; text: string } | { type: "image"; image: string };
+function coachStoredContent(m: CoachMsg): string {
+  if (typeof m.content === "string" || !m.content.some((b) => b.type === "image_ref")) return coachText(m);
+  const parts: StoredCoachPart[] = m.content.map((b) =>
+    b.type === "text"
+      ? { type: "text", text: b.text }
+      : b.type === "image_ref"
+        ? { type: "image", image: `/api/agent/photos/${b.id}` }
+        : { type: "text", text: "[photo]" },
+  );
+  return JSON.stringify(parts);
+}
+
+// Decode stored message content for the client: either legacy/plain text or a
+// JSON parts array (see coachStoredContent).
+function parseStoredCoachContent(s: string): string | StoredCoachPart[] {
+  if (!s.startsWith("[{")) return s;
+  try {
+    const arr: unknown = JSON.parse(s);
+    if (
+      Array.isArray(arr) &&
+      arr.length &&
+      arr.every(
+        (p: { type?: string; text?: unknown; image?: unknown }) =>
+          (p?.type === "text" && typeof p.text === "string") || (p?.type === "image" && typeof p.image === "string"),
+      )
+    ) {
+      return arr as StoredCoachPart[];
+    }
+  } catch {
+    /* a legacy plain-text message that happens to start with "[{" */
+  }
+  return s;
+}
+
+// Resolve stored photo references in a parsed history into base64 blocks for
+// the model (a continued conversation replays `/api/agent/photos/<id>` parts).
+// Keys are owner-prefixed, so callers can only resolve their own photos;
+// missing objects degrade to a text marker instead of failing the turn.
+async function resolveCoachImageRefs(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+  messages: CoachMsg[],
+): Promise<CoachMsg[]> {
+  const out: CoachMsg[] = [];
+  for (const m of messages) {
+    if (typeof m.content === "string" || !m.content.some((b) => b.type === "image_ref")) {
+      out.push(m);
+      continue;
+    }
+    const blocks: CoachBlock[] = [];
+    for (const b of m.content) {
+      if (b.type !== "image_ref") {
+        blocks.push(b);
+        continue;
+      }
+      const obj = await c.env.PHOTOS.get(`${email}/agent/${b.id}`);
+      if (!obj) {
+        blocks.push({ type: "text", text: "[photo unavailable]" });
+        continue;
+      }
+      blocks.push({
+        type: "image",
+        mediaType: obj.httpMetadata?.contentType ?? "image/jpeg",
+        data: bufToBase64(await obj.arrayBuffer()),
+      });
+    }
+    out.push({ role: m.role, content: blocks });
+  }
+  return out;
 }
 
 // A parsed coach message as Anthropic content.
@@ -2271,7 +2358,10 @@ function coachContent(m: CoachMsg): Anthropic.MessageParam["content"] {
   return m.content.map((b) =>
     b.type === "text"
       ? ({ type: "text", text: b.text } satisfies Anthropic.TextBlockParam)
-      : ({ type: "image", source: { type: "base64", media_type: b.mediaType as "image/jpeg", data: b.data } } satisfies Anthropic.ImageBlockParam),
+      : b.type === "image"
+        ? ({ type: "image", source: { type: "base64", media_type: b.mediaType as "image/jpeg", data: b.data } } satisfies Anthropic.ImageBlockParam)
+        : // image_ref: resolved via resolveCoachImageRefs before reaching here
+          ({ type: "text", text: "[photo unavailable]" } satisfies Anthropic.TextBlockParam),
   );
 }
 
@@ -2588,8 +2678,8 @@ app.post("/api/agent", async (c) => {
   const b = await c.req.json<{ messages?: unknown; date?: string; tz?: number }>();
   const parsed = parseCoachMessages(b.messages);
   if ("error" in parsed) return c.json({ error: parsed.error }, 400);
-  const messages = parsed.messages;
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "coach not configured" }, 503);
+  const messages = await resolveCoachImageRefs(c, email, parsed.messages);
 
   const tzMin = Number(b.tz ?? 0) || 0;
   const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
@@ -2624,8 +2714,8 @@ app.post("/api/agent/stream", async (c) => {
   const b = await c.req.json<{ messages?: unknown; date?: string; tz?: number }>();
   const parsed = parseCoachMessages(b.messages);
   if ("error" in parsed) return c.json({ error: parsed.error }, 400);
-  const messages = parsed.messages;
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "coach not configured" }, 503);
+  const messages = await resolveCoachImageRefs(c, email, parsed.messages);
 
   const tzMin = Number(b.tz ?? 0) || 0;
   const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
@@ -2744,6 +2834,38 @@ app.delete("/api/agent/memories/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+// ---- Coach chat photos (web-composer attachments persisted to R2) ----------
+// Upload a chat photo; returns the same-origin URL the saved conversation
+// embeds as an image part (and the coach routes resolve back to bytes).
+app.post("/api/agent/photos", async (c) => {
+  const email = c.get("email");
+  const form = await c.req.formData();
+  const fileRaw = form.get("photo");
+  type UploadFile = { type: string; arrayBuffer: () => Promise<ArrayBuffer> };
+  const isFile = (f: unknown): f is UploadFile =>
+    typeof f === "object" && f !== null && typeof (f as UploadFile).arrayBuffer === "function";
+  if (!isFile(fileRaw)) return c.json({ error: "no photo uploaded" }, 400);
+  const mt = fileRaw.type || "image/jpeg";
+  if (!/^image\/(jpeg|png|webp|gif)$/.test(mt)) return c.json({ error: `unsupported image type ${mt}` }, 400);
+  const buf = await fileRaw.arrayBuffer();
+  if (buf.byteLength > 8_000_000) return c.json({ error: "image too large (max 8MB)" }, 400);
+  const id = crypto.randomUUID();
+  await c.env.PHOTOS.put(`${email}/agent/${id}`, buf, { httpMetadata: { contentType: mt } });
+  return c.json({ url: `/api/agent/photos/${id}` });
+});
+
+// Serve a chat photo from R2, scoped to the requesting user's own keys.
+app.get("/api/agent/photos/:id", async (c) => {
+  const email = c.get("email");
+  const id = c.req.param("id");
+  if (!AGENT_PHOTO_ID_RE.test(id)) return c.json({ error: "bad id" }, 400);
+  const obj = await c.env.PHOTOS.get(`${email}/agent/${id}`);
+  if (!obj) return c.notFound();
+  return new Response(obj.body, {
+    headers: { "content-type": obj.httpMetadata?.contentType ?? "image/jpeg", "cache-control": "private, max-age=86400" },
+  });
+});
+
 // ---- Coach conversation history (saved threads + local-search source) ------
 // List the caller's conversations, newest first, each with its full message
 // list so the client can render history and search it locally.
@@ -2762,10 +2884,10 @@ app.get("/api/agent/conversations", async (c) => {
         .where(inArray(schema.coachMessages.conversationId, ids))
         .orderBy(asc(schema.coachMessages.id))
     : [];
-  const byConv = new Map<string, { role: string; content: string }[]>();
+  const byConv = new Map<string, { role: string; content: string | StoredCoachPart[] }[]>();
   for (const m of rows) {
     const arr = byConv.get(m.conversationId) ?? [];
-    arr.push({ role: m.role, content: m.content });
+    arr.push({ role: m.role, content: parseStoredCoachContent(m.content) });
     byConv.set(m.conversationId, arr);
   }
   return c.json(
@@ -2791,7 +2913,7 @@ app.post("/api/agent/conversations", async (c) => {
   await db(c).insert(schema.coachConversations).values({ id, userEmail: email, title });
   await db(c)
     .insert(schema.coachMessages)
-    .values(flat.map((m) => ({ conversationId: id, role: m.role, content: m.content })));
+    .values(parsed.messages.map((m) => ({ conversationId: id, role: m.role, content: coachStoredContent(m) })));
   return c.json({ id, title });
 });
 
@@ -2810,7 +2932,7 @@ app.post("/api/agent/conversations/:id/messages", async (c) => {
   if (!owned.length) return c.json({ error: "not found" }, 404);
   await db(c)
     .insert(schema.coachMessages)
-    .values(parsed.messages.map((m) => ({ conversationId: id, role: m.role, content: coachText(m) })));
+    .values(parsed.messages.map((m) => ({ conversationId: id, role: m.role, content: coachStoredContent(m) })));
   await db(c).update(schema.coachConversations).set({ updatedAt: new Date() }).where(eq(schema.coachConversations.id, id));
   return c.json({ ok: true });
 });

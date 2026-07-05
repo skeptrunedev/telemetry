@@ -178,6 +178,27 @@ function Composer() {
   );
 }
 
+// Swap data-URL photos in a completed user turn for uploaded R2 URLs before
+// persisting, so saved conversations stay small and the photos render again on
+// reload. An upload failure keeps the data URL (the server flattens it to a
+// "[photo]" marker, matching the old behavior).
+async function uploadTurnPhotos(m: CoachMessage): Promise<CoachMessage> {
+  if (typeof m.content === "string") return m;
+  const content = await Promise.all(
+    m.content.map(async (p) => {
+      if (p.type !== "image" || !p.image.startsWith("data:")) return p;
+      try {
+        const blob = await (await fetch(p.image)).blob();
+        const { url } = await api.uploadAgentPhoto(blob);
+        return { type: "image" as const, image: url };
+      } catch {
+        return p;
+      }
+    }),
+  );
+  return { ...m, content };
+}
+
 // The live coach thread. Seeded from a saved conversation (or empty for a new
 // chat); streams from the coach endpoint and persists each completed turn.
 // The parent applies `key={session.key}` so switching threads remounts it.
@@ -313,7 +334,7 @@ export function CoachThread({
                 .join(" ")
                 .trim();
         if (lastUser?.role === "user" && reply) {
-          const turn: CoachMessage[] = [lastUser, { role: "assistant", content: reply }];
+          const turn: CoachMessage[] = [await uploadTurnPhotos(lastUser), { role: "assistant", content: reply }];
           try {
             if (!convIdRef.current) {
               const { id } = await api.createConversation(lastUserText, turn);

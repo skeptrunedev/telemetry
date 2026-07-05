@@ -120,6 +120,15 @@ export const api = {
     if (!r.ok) throw new Error(`coach → ${r.status}: ${await r.text().catch(() => "")}`);
     return r;
   },
+  // Store a chat photo in R2; the returned same-origin URL goes into the
+  // persisted conversation so the photo renders again on reload.
+  uploadAgentPhoto: async (file: Blob): Promise<{ url: string }> => {
+    const fd = new FormData();
+    fd.append("photo", file, "photo.jpg");
+    const r = await rawFetch(`/api/agent/photos`, { method: "POST", body: fd });
+    if (!r.ok) throw new Error(`uploadAgentPhoto → ${r.status}`);
+    return r.json() as Promise<{ url: string }>;
+  },
   // ---- Coach conversation history ----
   listConversations: () => jget<CoachConversation[]>(`/api/agent/conversations`),
   createConversation: async (title: string, messages: CoachMessage[]): Promise<{ id: string; title: string }> => {
