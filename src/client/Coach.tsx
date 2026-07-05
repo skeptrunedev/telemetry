@@ -7,12 +7,13 @@ import {
   ComposerPrimitive,
   AttachmentPrimitive,
   useAttachment,
+  useComposerRuntime,
   SimpleImageAttachmentAdapter,
   type ChatModelAdapter,
   type ChatModelRunResult,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { ArrowUp, Square, Check, Loader2, ImagePlus, X } from "lucide-react";
+import { ArrowUp, Square, Camera, Check, Loader2, ImagePlus, X } from "lucide-react";
 import { api, todayLocal } from "./api";
 import type { CoachMessage, CoachConversation } from "./api";
 
@@ -152,10 +153,45 @@ function AttachmentChip() {
   );
 }
 
+// Opens the camera directly on phones (capture attribute); desktop browsers
+// ignore capture and fall back to a file picker.
+function CameraButton() {
+  const composerRuntime = useComposerRuntime();
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={async (e) => {
+          for (const f of Array.from(e.target.files ?? [])) {
+            await composerRuntime.addAttachment(f);
+          }
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        className="composer-attach"
+        aria-label="Take a photo"
+        onClick={() => inputRef.current?.click()}
+      >
+        <Camera />
+      </button>
+    </>
+  );
+}
+
 function Composer() {
   return (
     <ComposerPrimitive.Root className="composer">
-      <ComposerPrimitive.Attachments components={{ Attachment: AttachmentChip }} />
+      <div className="attach-row">
+        <ComposerPrimitive.Attachments components={{ Attachment: AttachmentChip }} />
+      </div>
+      <CameraButton />
       <ComposerPrimitive.AddAttachment className="composer-attach" aria-label="Add a photo">
         <ImagePlus />
       </ComposerPrimitive.AddAttachment>

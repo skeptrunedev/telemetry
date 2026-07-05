@@ -1282,6 +1282,15 @@ a {
   width: 19px;
   height: 19px;
 }
+/* Own row above the input controls; collapses away when there are no chips. */
+.attach-row {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+}
+.attach-row:empty {
+  display: none;
+}
 .attach-chip {
   display: inline-flex;
   align-items: center;
