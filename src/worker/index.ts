@@ -3610,7 +3610,7 @@ app.get("/api/onboard/pending", async (c) => {
     .where(eq(schema.textMeRequests.status, "pending"))
     .orderBy(asc(schema.textMeRequests.createdAt))
     .limit(20);
-  return c.json(rows.map((r) => ({ id: r.id, phone: r.phone })));
+  return c.json(rows.map((r) => ({ id: r.id, phone: r.phone, kind: r.kind })));
 });
 
 // Agent daemon: mark a request handled.
@@ -3776,6 +3776,15 @@ app.post("/api/stripe/webhook", async (c) => {
             updatedAt: new Date(),
           },
         });
+      // Tell the iMessage agent to confirm the payment proactively: queue a
+      // payment text for each phone linked to this account (daemon polls it).
+      const phones = await db(c)
+        .select({ value: schema.linkedChannels.value })
+        .from(schema.linkedChannels)
+        .where(and(eq(schema.linkedChannels.userEmail, email), eq(schema.linkedChannels.kind, "phone")));
+      for (const ph of phones) {
+        await db(c).insert(schema.textMeRequests).values({ id: crypto.randomUUID(), phone: ph.value, kind: "payment" });
+      }
     }
   } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
     const subId = obj.id as string;

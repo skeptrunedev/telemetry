@@ -1236,6 +1236,7 @@ export const textMeRequests = sqliteTable(
     id: text("id").primaryKey(),
     phone: text("phone").notNull(),
     status: text("status", { enum: ["pending", "sent", "failed"] }).notNull().default("pending"),
+    kind: text("kind", { enum: ["intro", "payment"] }).notNull().default("intro"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [index("text_me_requests_status_idx").on(t.status), index("text_me_requests_phone_idx").on(t.phone)],
