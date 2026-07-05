@@ -9,13 +9,52 @@ const APP = "https://app.skcal.fit";
 
 <Layout
   title="Features — skcal"
-  description="Every skcal surface is programmable: agent with tools, MCP server, CLI, typed HTTP API, scoped keys, scale ingest."
+  description="An AI coach in iMessage that logs photos, weigh-ins, and workouts, remembers your preferences, and answers from your real numbers. Fully programmable underneath: MCP, CLI, typed API."
 >
   <Nav active="features" />
 
   <div class="wrap page-head">
-    <h1>API-first, because you live in the terminal.</h1>
-    <p>Every surface is programmable. The web app is just one client.</p>
+    <h1>Your coach lives in <span class="hl">Messages</span>.</h1>
+    <p>Text photos, weigh-ins, workouts, and questions, skcal logs everything and answers from your real numbers.</p>
+  </div>
+
+  <section class="wrap imsg-feature">
+    <div class="imsg-grid">
+      <div class="imsg-points">
+        <div class="ipoint">
+          <h3>Photo in, macros out</h3>
+          <p>Text a picture of any meal and get itemized calories and protein back in seconds. Scale readouts, treadmill consoles, and tape measures work the same way.</p>
+        </div>
+        <div class="ipoint">
+          <h3>Everything logs itself</h3>
+          <p>"158.2 this morning" logs a weigh-in. "Ran 5k then 3x10 pullups" logs a workout with real fields. Voice notes work too, talk instead of typing.</p>
+        </div>
+        <div class="ipoint">
+          <h3>It remembers you</h3>
+          <p>Tell it once that you hate yogurt or that you're cutting to 167, and every future answer respects it.</p>
+        </div>
+        <div class="ipoint">
+          <h3>Advice from your actual day</h3>
+          <p>"What should I eat tonight?" gets an answer computed from the calories and protein you have left, not generic tips.</p>
+        </div>
+        <div class="ipoint">
+          <h3>Onboarding is a text message</h3>
+          <p>Text the number, answer four quick questions, get your daily plan. No app install, no forms.</p>
+        </div>
+      </div>
+      <img
+        class="scene-img shot-light"
+        src="/landing/imessage-real.jpg"
+        alt="A real iMessage thread with skcal, a burrito bowl photo logged at 760 calories and 46g protein, then dinner advice from the remaining budget"
+        width="945"
+        height="2048"
+      />
+    </div>
+  </section>
+
+  <div class="wrap page-head sub-head">
+    <h1>Fully programmable underneath.</h1>
+    <p>Every surface is an API. The agent and the web app are just clients.</p>
   </div>
 
   <section class="bento">
@@ -131,3 +170,42 @@ const APP = "https://app.skcal.fit";
 
   <Footer />
 </Layout>
+
+<style>
+  .imsg-feature {
+    padding-bottom: clamp(40px, 6vw, 72px);
+  }
+  .imsg-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: clamp(36px, 5vw, 64px);
+    align-items: center;
+  }
+  .imsg-points {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(20px, 3vw, 30px);
+  }
+  .ipoint h3 {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+  .ipoint p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 15.5px;
+    max-width: 34em;
+  }
+  .sub-head {
+    padding-top: clamp(24px, 4vw, 40px);
+  }
+  @media (max-width: 860px) {
+    .imsg-grid {
+      grid-template-columns: 1fr;
+    }
+    .imsg-grid .scene-img {
+      justify-self: center;
+    }
+  }
+</style>
