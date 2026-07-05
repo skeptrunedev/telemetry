@@ -2,7 +2,7 @@ import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import type { BetterAuthPlugin } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { magicLink, mcp, phoneNumber } from "better-auth/plugins";
+import { bearer, magicLink, mcp, phoneNumber } from "better-auth/plugins";
 import { drizzle } from "drizzle-orm/d1";
 import { and, eq } from "drizzle-orm";
 import { WorkerMailer } from "worker-mailer";
@@ -159,6 +159,9 @@ export function makeAuth(env: AuthEnv) {
       },
     },
     plugins: [
+      // Native apps: sessions over Authorization: Bearer (the sign-in response
+      // exposes the token in the set-auth-token header; no cookies involved).
+      bearer(),
       // Primary sign-in: phone number + Twilio Verify OTP. Verify manages its
       // own codes, so sendOTP ignores Better Auth's generated code and
       // verifyOTP checks against Twilio instead.
