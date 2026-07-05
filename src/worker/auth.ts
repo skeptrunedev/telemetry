@@ -121,10 +121,11 @@ export function makeAuth(env: AuthEnv) {
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
     trustedOrigins: ["https://admin.skcal.fit"],
-    // Sessions effectively never expire: ~10-year lifetime, refreshed daily on
-    // use so active sessions keep rolling forward forever.
+    // Sessions effectively never expire: 1-year lifetime (cookie serialization
+    // hard-errors above the RFC 6265bis 400-day Max-Age cap, so 10y broke
+    // sign-in), refreshed daily on use so active sessions roll forward forever.
     session: {
-      expiresIn: 60 * 60 * 24 * 365 * 10,
+      expiresIn: 60 * 60 * 24 * 365,
       updateAge: 60 * 60 * 24,
     },
     // Session cookie is scoped to .skcal.fit so the admin subdomain (same
