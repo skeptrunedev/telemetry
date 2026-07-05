@@ -1254,6 +1254,9 @@ a {
   .menu-item:hover {
     background: var(--surface);
   }
+  .attach-source-option:hover {
+    background: var(--surface);
+  }
   .photo-pick:hover {
     border-color: var(--muted);
     color: var(--fg);
@@ -1281,6 +1284,41 @@ a {
 .composer-attach svg {
   width: 19px;
   height: 19px;
+}
+/* Two-option source sheet behind the attach button (camera vs library).
+   Rides the shared .sheet / .sheet-backdrop treatment but sits above the
+   topbar (40) and mobile drawer (60). */
+.attach-source-backdrop {
+  z-index: 70;
+}
+.attach-source-sheet {
+  padding: 0.55rem 0.6rem calc(0.7rem + env(safe-area-inset-bottom));
+}
+.attach-source-option {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 0.7rem;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: var(--fg);
+  cursor: pointer;
+}
+.attach-source-option:active {
+  transform: scale(0.98);
+}
+.attach-source-option svg {
+  width: 20px;
+  height: 20px;
+  color: var(--fg-soft, #a3a5aa);
+}
+/* hairline between the two options */
+.attach-source-option + .attach-source-option {
+  border-top: 1px solid var(--line);
 }
 /* Own row above the input controls; collapses away when there are no chips. */
 .attach-row {

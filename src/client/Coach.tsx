@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import {
   AssistantRuntimeProvider,
   useLocalRuntime,
@@ -7,12 +8,13 @@ import {
   ComposerPrimitive,
   AttachmentPrimitive,
   useAttachment,
+  useComposerRuntime,
   SimpleImageAttachmentAdapter,
   type ChatModelAdapter,
   type ChatModelRunResult,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { ArrowUp, Square, Camera, Check, Loader2, X } from "lucide-react";
+import { ArrowUp, Square, Camera, Check, ImagePlus, Loader2, X } from "lucide-react";
 import { api, todayLocal } from "./api";
 import type { CoachMessage, CoachConversation } from "./api";
 
@@ -170,17 +172,75 @@ function AttachmentChip() {
   );
 }
 
+// One visible attach button that opens our own source sheet instead of the
+// native picker. iOS hides "Take Photo" for multi-select file inputs, so a
+// single input can't offer both the camera and library multi-select — each
+// option gets its own hidden input behind the sheet.
+function AttachButton() {
+  const composer = useComposerRuntime();
+  const [open, setOpen] = useState(false);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const libraryRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const onPicked = async (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    for (const file of Array.from(input.files ?? [])) await composer.addAttachment(file);
+    input.value = ""; // so re-picking the same file fires change again
+  };
+
+  const pick = (ref: RefObject<HTMLInputElement | null>) => {
+    setOpen(false);
+    ref.current?.click();
+  };
+
+  return (
+    <>
+      <button type="button" className="composer-attach" aria-label="Add a photo" onClick={() => setOpen(true)}>
+        <Camera />
+      </button>
+      {/* capture opens the camera directly on phones (file dialog on desktop) */}
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onPicked} />
+      <input ref={libraryRef} type="file" accept="image/*" multiple hidden onChange={onPicked} />
+      {open &&
+        createPortal(
+          <div className="sheet-backdrop attach-source-backdrop" onClick={() => setOpen(false)}>
+            <div
+              className="sheet attach-source-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Add a photo"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button type="button" className="attach-source-option" onClick={() => pick(cameraRef)}>
+                <Camera />
+                Take photo
+              </button>
+              <button type="button" className="attach-source-option" onClick={() => pick(libraryRef)}>
+                <ImagePlus />
+                Photo library
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 function Composer() {
   return (
     <ComposerPrimitive.Root className="composer">
       <div className="attach-row">
         <ComposerPrimitive.Attachments components={{ Attachment: AttachmentChip }} />
       </div>
-      {/* multiple={false} keeps "Take Photo" in iOS's picker sheet — Safari
-          hides the camera option for multi-select file inputs */}
-      <ComposerPrimitive.AddAttachment multiple={false} className="composer-attach" aria-label="Add a photo">
-        <Camera />
-      </ComposerPrimitive.AddAttachment>
+      <AttachButton />
       <ComposerPrimitive.Input className="chat-input" placeholder="What are you thinking of eating?" autoFocus />
       <ThreadPrimitive.If running={false}>
         <ComposerPrimitive.Send className="composer-send" aria-label="Send">
