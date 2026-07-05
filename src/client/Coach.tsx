@@ -159,12 +159,20 @@ function AssistantMessage() {
   );
 }
 
-// ChatGPT-style pill: textarea + send/stop control share one rounded container.
+// Pending photo preview: a large rounded thumbnail with the remove control
+// floating on its corner (no filename), built from the picked file directly.
 function AttachmentChip() {
+  const attachment = useAttachment();
+  const file = (attachment as { file?: File }).file;
+  const src = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => {
+    return () => {
+      if (src) URL.revokeObjectURL(src);
+    };
+  }, [src]);
   return (
     <AttachmentPrimitive.Root className="attach-chip">
-      <AttachmentPrimitive.unstable_Thumb className="attach-thumb" />
-      <AttachmentPrimitive.Name />
+      {src ? <img className="attach-thumb" src={src} alt="" /> : <div className="attach-thumb" />}
       <AttachmentPrimitive.Remove className="attach-remove" aria-label="Remove photo">
         <X />
       </AttachmentPrimitive.Remove>
