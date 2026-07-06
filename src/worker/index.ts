@@ -404,7 +404,9 @@ async function hasActiveSubscription(
   c: Context<{ Bindings: Bindings; Variables: Variables }>,
   email: string,
 ): Promise<boolean> {
-  if (c.env.AUTH_DEV_BYPASS) return true;
+  // Dev bypass exempts everyone EXCEPT temp phone-signup accounts, so local
+  // dev / the sim harness exercise the real 402 onboarding gate end to end.
+  if (c.env.AUTH_DEV_BYPASS && !email.endsWith("@phone.skcal.fit")) return true;
   if (!c.env.STRIPE_SECRET_KEY) return true; // billing not configured — never lock out
   if (billingExempt(c.env, email)) return true;
   const row = (await db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email)).limit(1))[0];
