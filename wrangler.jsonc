@@ -33,7 +33,7 @@
     // Stripe price for the single $100/mo plan (secret key + webhook signing
     // secret live in Worker secrets). Exempt emails skip the subscription gate.
     "STRIPE_PRICE_ID": "price_1TozrdAORpgtf3danYpcO3FA",
-    "BILLING_EXEMPT_EMAILS": "me@skeptrune.com,nick.k@skeptrune.com,dev@local",
+    "BILLING_EXEMPT_EMAILS": "me@skeptrune.com,nick.k@skeptrune.com,dev@local,12107882102@phone.skcal.fit",
     // Photon Spectrum project for the iMessage agent; access token (CLI user
     // token from `photon login`) lives in Worker secrets as PHOTON_ACCESS_TOKEN.
     "PHOTON_PROJECT_ID": "85c139f6-e026-448a-b273-461ce205a322"

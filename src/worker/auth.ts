@@ -167,6 +167,8 @@ export function makeAuth(env: AuthEnv) {
       // verifyOTP checks against Twilio instead.
       phoneNumber({
         sendOTP: async ({ phoneNumber: phone }) => {
+          // Local dev/tests: no Twilio round-trip; verify accepts 000000.
+          if (env.AUTH_DEV_BYPASS) return;
           try {
             await twilioVerify(env, "Verifications", { To: phone, Channel: "sms" });
           } catch (e) {
@@ -184,11 +186,15 @@ export function makeAuth(env: AuthEnv) {
           }
         },
         verifyOTP: async ({ phoneNumber: phone, code }) => {
-          try {
-            const check = await twilioVerify(env, "VerificationCheck", { To: phone, Code: code });
-            if (check.status !== "approved") return false;
-          } catch {
-            return false;
+          if (env.AUTH_DEV_BYPASS) {
+            if (code !== "000000") return false;
+          } else {
+            try {
+              const check = await twilioVerify(env, "VerificationCheck", { To: phone, Code: code });
+              if (check.status !== "approved") return false;
+            } catch {
+              return false;
+            }
           }
           // Existing-account mapping: if this number is already a verified
           // linked channel (agent texting) and no account uses it for sign-in

@@ -304,7 +304,27 @@ async function userEmail(c: {
   req: { raw: Request; header: (k: string) => string | undefined };
 }): Promise<string | null> {
   try {
-    const session = await makeAuth(c.env).api.getSession({ headers: c.req.raw.headers });
+    // The bearer plugin's Authorization→cookie conversion only runs inside
+    // better-auth's own HTTP handler, so direct api.getSession() calls never
+    // see mobile bearer tokens. Synthesize the session cookie ourselves
+    // (both names — prod uses the __Secure- prefix, local dev doesn't).
+    let headers = c.req.raw.headers;
+    const authz = headers.get("authorization");
+    if (authz?.startsWith("Bearer ") && !headers.get("cookie")?.includes("session_token")) {
+      const tok = encodeURIComponent(authz.slice(7).trim());
+      headers = new Headers(headers);
+      headers.set(
+        "cookie",
+        [
+          headers.get("cookie"),
+          `better-auth.session_token=${tok}`,
+          `__Secure-better-auth.session_token=${tok}`,
+        ]
+          .filter(Boolean)
+          .join("; "),
+      );
+    }
+    const session = await makeAuth(c.env).api.getSession({ headers });
     const email = session?.user?.email?.toLowerCase().trim();
     if (email) return email;
   } catch {
@@ -860,7 +880,13 @@ app.use("/api/*", async (c, next) => {
       getMcpSession: (a: { headers: Headers }) => Promise<{ userId: string } | null>;
     };
     const session = await mcpApi.getMcpSession({ headers: c.req.raw.headers }).catch(() => null);
-    if (!session) return c.json({ error: "invalid token" }, 401);
+    if (!session) {
+      // Not an OAuth token — the mobile app sends better-auth session tokens
+      // as bearers (bearer plugin); userEmail() resolves those.
+      const email = await userEmail(c);
+      if (!email) return c.json({ error: "invalid token" }, 401);
+      return finish(email);
+    }
     const row = (
       await db(c).select({ email: schema.user.email }).from(schema.user).where(eq(schema.user.id, session.userId)).limit(1)
     )[0];
