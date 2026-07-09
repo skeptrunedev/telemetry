@@ -10,13 +10,22 @@
     },
     "preview": {
       "distribution": "internal",
-      "android": { "buildType": "apk" }
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
       "autoIncrement": true
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascApiKeyPath": "./credentials/AuthKey_3MV344G5H3.p8",
+        "ascApiKeyId": "3MV344G5H3",
+        "ascApiKeyIssuerId": "12cc6e71-1434-4210-a757-1a3f7bc64a82",
+        "appleTeamId": "63Q9XN39FV"
+      }
+    }
   }
 }
