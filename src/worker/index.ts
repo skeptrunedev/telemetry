@@ -2575,6 +2575,23 @@ const COACH_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "update_reminder",
+    description:
+      "Edit an existing reminder in place, use this whenever the user corrects or adjusts one ('no, 9am', 'make it weekdays only', 'change it to lunch') instead of creating a second reminder. The id of a reminder you just created is in that tool result, otherwise get it from list_reminders. Only pass the fields that change.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Reminder id." },
+        instruction: { type: "string", description: "New instruction, only if it changed." },
+        time: { type: "string", description: "New local time as HH:MM, 24-hour." },
+        days: { type: "string", description: "'daily', 'weekdays', 'weekends', or a comma list like 'mon,wed,fri'." },
+        once_date: { type: "string", description: "YYYY-MM-DD, or empty string to clear a one-off date." },
+        tz: { type: "string", description: "IANA timezone, only if the user stated a new one." },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "list_reminders",
     description: "List the user's reminders (schedule, timezone, enabled state).",
     input_schema: { type: "object", properties: {} },
@@ -2767,6 +2784,18 @@ async function executeCoachTool(
     });
   }
 
+  if (name === "update_reminder") {
+    const id = String(input.id ?? "").trim();
+    if (!id) return { error: "id required" };
+    return await updateReminderForUser(c, email, id, {
+      instruction: input.instruction,
+      time: input.time,
+      days: input.days,
+      onceDate: input.once_date,
+      tz: input.tz,
+    });
+  }
+
   if (name === "list_reminders") {
     return await listRemindersForUser(c, email);
   }
@@ -2870,7 +2899,7 @@ app.post("/api/agent/stream", async (c) => {
   const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
   const system =
     (await buildCoachSystem(c, email, today, tzMin)) +
-    `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory; update daily calorie and protein targets with set_targets. When the user describes their day to day activity, a new job, a change in training volume, or a big lifestyle change, recompute their daily calorie target with Mifflin-St Jeor from the height, sex, and latest weigh-in in the context above, scaled by the closest activity multiplier, 1.2 sedentary, 1.375 lightly active, 1.55 moderately active, 1.725 very active, 1.9 athlete, then apply the deficit or surplus their current goal implies, state the new daily calorie and protein numbers plainly, and call set_targets with them, passing their activity in a few words. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. REMINDERS, when the user asks to be reminded of something ("remind me to log lunch at noon", "ping me to weigh in on weekday mornings"), create it with set_reminder, adjust an existing one by deleting it (list_reminders then delete_reminder) and creating the new version. Reminders DELIVER OVER IMESSAGE, if the tool result says phoneLinked is false, tell the user they won't receive reminder texts until they link their phone in their profile or text the skcal number. If the result says tzDefaulted is true, state the timezone you assumed and ask them to correct it if wrong. After creating one, confirm in plain words what was set, the time and the cadence. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
+    `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory; update daily calorie and protein targets with set_targets. When the user describes their day to day activity, a new job, a change in training volume, or a big lifestyle change, recompute their daily calorie target with Mifflin-St Jeor from the height, sex, and latest weigh-in in the context above, scaled by the closest activity multiplier, 1.2 sedentary, 1.375 lightly active, 1.55 moderately active, 1.725 very active, 1.9 athlete, then apply the deficit or surplus their current goal implies, state the new daily calorie and protein numbers plainly, and call set_targets with them, passing their activity in a few words. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. REMINDERS, when the user asks to be reminded of something ("remind me to log lunch at noon", "ping me to weigh in on weekday mornings"), create it with set_reminder, and when they correct or adjust one ("no, 9am", "weekdays only") edit it in place with update_reminder using the id from your create result or list_reminders, never create a second one for the same thing. Cancellations use delete_reminder. Reminders DELIVER OVER IMESSAGE, if the tool result says phoneLinked is false, tell the user they won't receive reminder texts until they link their phone in their profile or text the skcal number. If the result says tzDefaulted is true, state the timezone you assumed and ask them to correct it if wrong. After creating one, confirm in plain words what was set, the time and the cadence. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
@@ -3095,6 +3124,65 @@ async function listRemindersForUser(c: EnvCtx, email: string) {
   return { reminders: rows.map(reminderOut), phoneLinked: !!(await verifiedPhoneFor(c, email)) };
 }
 
+// Partial edit — "no, 9am instead" must mutate the existing reminder, not
+// spawn a sibling. Any schedule-field change recomputes next_fire_at.
+async function updateReminderForUser(
+  c: EnvCtx,
+  email: string,
+  id: string,
+  input: ReminderCreateInput,
+): Promise<{ ok: true; reminder: ReturnType<typeof reminderOut> } | { error: string }> {
+  const row = (
+    await db(c)
+      .select()
+      .from(schema.reminders)
+      .where(and(eq(schema.reminders.id, id), eq(schema.reminders.userEmail, email)))
+      .limit(1)
+  )[0];
+  if (!row) return { error: "no reminder with that id" };
+
+  const patch: Partial<typeof schema.reminders.$inferInsert> = {};
+  if (input.instruction !== undefined) {
+    const instruction = String(input.instruction ?? "").trim().slice(0, 300);
+    if (!instruction) return { error: "instruction cannot be empty" };
+    patch.instruction = instruction;
+  }
+  if (input.time !== undefined) {
+    const tm = /^(\d{1,2}):(\d{2})$/.exec(String(input.time ?? "").trim());
+    const hour = tm ? Number(tm[1]) : -1;
+    const minute = tm ? Number(tm[2]) : -1;
+    if (!tm || hour > 23 || minute > 59) return { error: "time must be HH:MM (24-hour)" };
+    patch.hour = hour;
+    patch.minute = minute;
+  }
+  if (input.days !== undefined) {
+    const days = String(input.days ?? "").trim().toLowerCase();
+    if (!days || !parseDays(days)) return { error: "days must be daily, weekdays, weekends, or a list like mon,wed,fri" };
+    patch.days = days;
+  }
+  if (input.onceDate !== undefined) {
+    const v = String(input.onceDate ?? "").trim();
+    if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return { error: "once_date must be YYYY-MM-DD" };
+    patch.onceDate = v || null;
+  }
+  if (input.tz !== undefined) {
+    const tz = String(input.tz ?? "").trim();
+    if (!isValidTimeZone(tz)) return { error: "tz must be a valid IANA timezone" };
+    patch.tz = tz;
+  }
+  if (!Object.keys(patch).length) return { error: "nothing to change" };
+
+  const next = { ...row, ...patch };
+  const fireAt = nextFireAt(
+    { hour: next.hour, minute: next.minute, days: next.days, onceDate: next.onceDate, tz: next.tz },
+    new Date(),
+  );
+  if (fireAt == null) return { error: "that time has already passed, pick a future time or drop the date" };
+  patch.nextFireAt = fireAt;
+  const updated = (await db(c).update(schema.reminders).set(patch).where(eq(schema.reminders.id, id)).returning())[0];
+  return { ok: true, reminder: reminderOut(updated) };
+}
+
 async function deleteReminderForUser(c: EnvCtx, email: string, id: string): Promise<boolean> {
   const owned = await db(c)
     .select({ id: schema.reminders.id })
@@ -3126,7 +3214,22 @@ app.delete("/api/reminders/:id", async (c) => {
 app.patch("/api/reminders/:id", async (c) => {
   const email = c.get("email");
   const id = c.req.param("id");
-  const b = await c.req.json<{ enabled?: boolean }>().catch(() => ({}) as { enabled?: boolean });
+  const b = await c.req
+    .json<{ enabled?: boolean; instruction?: string; time?: string; days?: string; once_date?: string; onceDate?: string; tz?: string }>()
+    .catch(() => ({}) as { enabled?: boolean });
+  const onceDate = b.onceDate ?? b.once_date; // both spellings, like the POST route
+  // Schedule/content edits first; enabled can ride along in the same call.
+  if (b.instruction !== undefined || b.time !== undefined || b.days !== undefined || onceDate !== undefined || b.tz !== undefined) {
+    const res = await updateReminderForUser(c, email, id, {
+      instruction: b.instruction,
+      time: b.time,
+      days: b.days,
+      onceDate,
+      tz: b.tz,
+    });
+    if ("error" in res) return c.json(res, res.error === "no reminder with that id" ? 404 : 400);
+    if (typeof b.enabled !== "boolean") return c.json(res);
+  }
   if (typeof b.enabled !== "boolean") return c.json({ error: "enabled (boolean) required" }, 400);
   const row = (
     await db(c)
