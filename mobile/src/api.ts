@@ -160,5 +160,35 @@ export async function deleteConversation(id: string): Promise<void> {
   if (!r.ok) throw new Error(`deleteConversation → ${r.status}`);
 }
 
+// ---- Reminders (same endpoints as the web dashboard card) ----
+export type Reminder = {
+  id: string;
+  instruction: string;
+  time: string; // "HH:MM" local to tz
+  days: string; // daily | weekdays | weekends | "mon,wed,fri"
+  onceDate: string | null;
+  tz: string;
+  enabled: boolean;
+  nextFireAt: number;
+  lastSentAt: number | null;
+  createdAt: number;
+};
+
+export async function listReminders(): Promise<{ reminders: Reminder[]; phoneLinked: boolean }> {
+  const r = await req(`/api/reminders`);
+  if (!r.ok) throw new Error(`reminders → ${r.status}`);
+  return r.json() as Promise<{ reminders: Reminder[]; phoneLinked: boolean }>;
+}
+
+export async function deleteReminder(id: string): Promise<void> {
+  const r = await req(`/api/reminders/${id}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(`deleteReminder → ${r.status}`);
+}
+
+export async function setReminderEnabled(id: string, enabled: boolean): Promise<void> {
+  const r = await req(`/api/reminders/${id}`, { method: "PATCH", body: JSON.stringify({ enabled }) });
+  if (!r.ok) throw new Error(`setReminderEnabled → ${r.status}`);
+}
+
 export const kgToLb = (kg: number) => kg * 2.2046226218;
 export const cmToIn = (cm: number) => cm / 2.54;

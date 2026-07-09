@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, ScrollView, RefreshControl, StyleSheet } from "react-native";
+import { View, Text, ScrollView, RefreshControl, StyleSheet, Pressable, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path, Circle } from "react-native-svg";
 import { C } from "./theme";
-import { dashboard, Dashboard, kgToLb, cmToIn } from "./api";
+import { dashboard, Dashboard, kgToLb, cmToIn, listReminders, deleteReminder, setReminderEnabled, Reminder } from "./api";
+import { XIcon } from "./icons";
 
 const SITE_LABELS: Record<string, string> = {
   shoulders: "SHOULDERS", chest: "CHEST", arm_l: "ARM (L)", arm_r: "ARM (R)",
@@ -32,13 +33,114 @@ function TrendChart({ trend }: { trend: { ts: number; kg: number }[] }) {
   );
 }
 
+// "08:00" in the reminder's tz → "8:00 AM CDT · weekdays" style, mirroring the
+// web card. Hermes ships Intl, but guard timeZoneName and fall back to the raw
+// tz string if the short zone name is unavailable.
+function fmtWhen(r: Reminder): string {
+  const [h = 0, m = 0] = r.time.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  let zone = r.tz;
+  try {
+    zone =
+      new Intl.DateTimeFormat(undefined, { timeZone: r.tz, timeZoneName: "short" })
+        .formatToParts(new Date())
+        .find((p) => p.type === "timeZoneName")?.value ?? r.tz;
+  } catch {
+    // keep the raw tz string
+  }
+  const days = r.onceDate ? `once, ${r.onceDate}` : r.days;
+  return `${h12}:${String(m).padStart(2, "0")} ${ampm} ${zone} · ${days}`;
+}
+
+// Reminders the agents set up — manageable here, creation stays conversational.
+function RemindersCard({ data, onChanged }: { data: { reminders: Reminder[]; phoneLinked: boolean }; onChanged: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const toggle = async (r: Reminder) => {
+    setBusy(r.id);
+    try {
+      await setReminderEnabled(r.id, !r.enabled);
+      onChanged();
+    } finally {
+      setBusy(null);
+    }
+  };
+  const remove = (r: Reminder) =>
+    Alert.alert("Delete this reminder?", `“${r.instruction}”`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          setBusy(r.id);
+          try {
+            await deleteReminder(r.id);
+            onChanged();
+          } finally {
+            setBusy(null);
+          }
+        },
+      },
+    ]);
+
+  return (
+    <View style={s.card}>
+      <Text style={s.cardLabel}>REMINDERS · TEXTED FROM SKCAL</Text>
+      {data.reminders.length === 0 ? (
+        <Text style={s.remEmpty}>none yet — ask the agent, “remind me to log lunch at noon”</Text>
+      ) : (
+        data.reminders.map((r, i) => (
+          <View key={r.id} style={[s.remRow, i > 0 && s.remRowBorder]}>
+            <View style={s.remTop}>
+              <Text style={[s.remText, !r.enabled && s.remOff]}>{r.instruction}</Text>
+              <View style={s.remActions}>
+                <Pressable
+                  style={s.remToggle}
+                  disabled={busy === r.id}
+                  onPress={() => toggle(r)}
+                  accessibilityLabel={r.enabled ? "Pause reminder" : "Resume reminder"}
+                >
+                  <Text style={s.remToggleText}>{r.enabled ? "ON" : "OFF"}</Text>
+                </Pressable>
+                <Pressable
+                  style={s.remDelete}
+                  disabled={busy === r.id}
+                  onPress={() => remove(r)}
+                  accessibilityLabel="Delete reminder"
+                >
+                  <XIcon size={14} color={C.dim} />
+                </Pressable>
+              </View>
+            </View>
+            <Text style={s.remWhen}>{fmtWhen(r)}</Text>
+          </View>
+        ))
+      )}
+      {!data.phoneLinked && data.reminders.length > 0 && (
+        <Text style={s.remWarn}>No phone linked yet — these can’t be delivered until you link one.</Text>
+      )}
+    </View>
+  );
+}
+
 export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<Dashboard | null>(null);
+  const [reminders, setReminders] = useState<{ reminders: Reminder[]; phoneLinked: boolean } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const loadReminders = useCallback(async () => {
+    try {
+      setReminders(await listReminders());
+    } catch {
+      setReminders({ reminders: [], phoneLinked: false });
+    }
+  }, []);
+
   const load = useCallback(async () => {
+    const rem = loadReminders();
     try {
       setData(await dashboard());
       setError(null);
@@ -47,7 +149,8 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
       if (err.message === "unauthorized") onAuthError(err);
       else setError(err.message);
     }
-  }, [onAuthError]);
+    await rem;
+  }, [onAuthError, loadReminders]);
 
   useEffect(() => {
     load();
@@ -144,6 +247,8 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
           <Text style={s.mval}>{Math.round(protein)} / {data.targets.proteinTargetG ?? "—"} g</Text>
         </View>
       </View>
+
+      {reminders && <RemindersCard data={reminders} onChanged={loadReminders} />}
     </ScrollView>
   );
 }
@@ -173,4 +278,16 @@ const s = StyleSheet.create({
   mrow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
   mname: { color: C.muted, fontSize: 13, fontFamily: "monospace", letterSpacing: 1 },
   mval: { color: C.fg, fontSize: 17, fontWeight: "600" },
+  remEmpty: { color: C.dim, fontSize: 12, fontFamily: "monospace", paddingVertical: 8 },
+  remRow: { paddingVertical: 11 },
+  remRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
+  remTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
+  remText: { flex: 1, color: C.fg, fontSize: 14.5, lineHeight: 19.5 },
+  remOff: { color: C.dim, textDecorationLine: "line-through" },
+  remActions: { flexDirection: "row", alignItems: "center", gap: 6 },
+  remToggle: { borderWidth: 1, borderColor: C.line, borderRadius: 999, paddingVertical: 3, paddingHorizontal: 9 },
+  remToggleText: { color: C.muted, fontSize: 10, fontFamily: "monospace", letterSpacing: 0.8 },
+  remDelete: { width: 26, height: 26, alignItems: "center", justifyContent: "center", borderRadius: 7 },
+  remWhen: { color: C.muted, fontSize: 11, fontFamily: "monospace", letterSpacing: 0.6, marginTop: 3 },
+  remWarn: { color: C.attention, fontSize: 13, marginTop: 10 },
 });

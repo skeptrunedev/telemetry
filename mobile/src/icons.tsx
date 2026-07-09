@@ -47,6 +47,13 @@ export const SearchIcon = ({ size, color }: P) => (
   </Svg>
 );
 
+export const XIcon = ({ size, color }: P) => (
+  <Svg {...base(size)} stroke={color}>
+    <Path d="M18 6 6 18" />
+    <Path d="m6 6 12 12" />
+  </Svg>
+);
+
 export const TrashIcon = ({ size, color }: P) => (
   <Svg {...base(size)} stroke={color}>
     <Path d="M3 6h18" />
