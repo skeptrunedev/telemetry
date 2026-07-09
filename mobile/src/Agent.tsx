@@ -31,7 +31,13 @@ export function Agent() {
   };
 
   return (
-    <KeyboardAvoidingView style={s.wrap} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={90}>
+    // padding on Android too — the window doesn't resize under edge-to-edge,
+    // so without it the keyboard covers the chat input (same bug as SignIn).
+    <KeyboardAvoidingView
+      style={s.wrap}
+      behavior="padding"
+      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+    >
       <FlatList
         ref={list}
         style={s.list}

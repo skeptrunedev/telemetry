@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  ScrollView,
+} from "react-native";
 import { C } from "./theme";
 import { sendOtp, verifyOtp } from "./api";
 
@@ -53,8 +62,16 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   };
 
   return (
-    <View style={s.wrap}>
-      <View style={s.card}>
+    // behavior="padding" lifts the card by the keyboard height on both
+    // platforms — Android's window resize is unreliable under edge-to-edge,
+    // and the ScrollView keeps the button reachable in every case.
+    <KeyboardAvoidingView style={s.wrap} behavior="padding">
+      <ScrollView
+        contentContainerStyle={s.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={s.card}>
         <Text style={s.brand}>skcal</Text>
         <Text style={s.title}>Sign in</Text>
         <Text style={s.sub}>
@@ -96,14 +113,16 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
             </Pressable>
           </>
         )}
-        {error && <Text style={s.err}>{error}</Text>}
-      </View>
-    </View>
+          {error && <Text style={s.err}>{error}</Text>}
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const s = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: C.bg, justifyContent: "center", padding: 20 },
+  wrap: { flex: 1, backgroundColor: C.bg },
+  scroll: { flexGrow: 1, justifyContent: "center", padding: 20 },
   card: { backgroundColor: C.card, borderRadius: 18, padding: 24, borderWidth: 1, borderColor: C.line },
   brand: { color: C.amber, fontFamily: "monospace", letterSpacing: 4, fontSize: 14, marginBottom: 14 },
   title: { color: C.fg, fontSize: 30, fontWeight: "800", marginBottom: 8 },
