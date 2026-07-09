@@ -3305,14 +3305,23 @@ app.post("/api/admin/phone/reset", async (c) => {
   const report: string[] = [];
 
   // 1. Photon registration — removing it releases the pool-number mapping.
+  // A number can be registered more than once (e.g. a mapping left over from
+  // the shared-pool era next to the dedicated-line one), so delete them ALL:
+  // a survivor keeps routing the sender like an existing user.
   try {
-    const pu = (await photonUsers(c.env)).find((u) => u.phoneNumber === phone);
-    if (pu && c.env.PHOTON_PROJECT_ID && c.env.PHOTON_ACCESS_TOKEN) {
-      const res = await fetch(
-        `https://app.photon.codes/api/projects/${c.env.PHOTON_PROJECT_ID}/spectrum/users/${pu.id}`,
-        { method: "DELETE", headers: { authorization: `Bearer ${c.env.PHOTON_ACCESS_TOKEN}` } },
-      );
-      report.push(res.ok ? "photon: registration removed" : `photon: delete failed (${res.status})`);
+    const pus = (await photonUsers(c.env)).filter((u) => u.phoneNumber === phone);
+    if (pus.length && c.env.PHOTON_PROJECT_ID && c.env.PHOTON_ACCESS_TOKEN) {
+      for (const pu of pus) {
+        const res = await fetch(
+          `https://app.photon.codes/api/projects/${c.env.PHOTON_PROJECT_ID}/spectrum/users/${pu.id}`,
+          { method: "DELETE", headers: { authorization: `Bearer ${c.env.PHOTON_ACCESS_TOKEN}` } },
+        );
+        report.push(
+          res.ok
+            ? `photon: registration removed (${pu.assignedPhoneNumber ?? "no line"})`
+            : `photon: delete failed (${res.status})`,
+        );
+      }
     } else {
       report.push("photon: not registered");
     }
