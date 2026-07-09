@@ -29,6 +29,10 @@
     "run_worker_first": true
   },
   "observability": { "enabled": true },
+  // Agentic reminders: the Worker's `scheduled` handler evaluates due
+  // `reminders` rows and enqueues iMessage texts into text_me_requests for the
+  // skfit daemon to deliver.
+  "triggers": { "crons": ["*/15 * * * *"] },
   "vars": {
     // Stripe price for the single $100/mo plan (secret key + webhook signing
     // secret live in Worker secrets). Exempt emails skip the subscription gate.

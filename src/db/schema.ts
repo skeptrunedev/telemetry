@@ -1255,8 +1255,35 @@ export const textMeRequests = sqliteTable(
     id: text("id").primaryKey(),
     phone: text("phone").notNull(),
     status: text("status", { enum: ["pending", "sent", "failed"] }).notNull().default("pending"),
-    kind: text("kind", { enum: ["intro", "payment"] }).notNull().default("intro"),
+    kind: text("kind", { enum: ["intro", "payment", "reminder"] }).notNull().default("intro"),
+    // Pre-written text for kinds the daemon sends verbatim (kind='reminder');
+    // null for intro/payment, whose copy lives in the daemon.
+    message: text("message"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [index("text_me_requests_status_idx").on(t.status), index("text_me_requests_phone_idx").on(t.phone)],
+);
+
+// Agentic reminders: the user's standing ask ("remind me to log lunch") plus a
+// local-time schedule. A 15-minute cron picks up rows with next_fire_at due,
+// has the model decide whether sending makes sense RIGHT NOW (skips moot /
+// redundant / ill-timed ones), and enqueues the text into text_me_requests for
+// the iMessage daemon. One-offs (once_date set) disable themselves after firing.
+export const reminders = sqliteTable(
+  "reminders",
+  {
+    id: text("id").primaryKey(), // uuid
+    userEmail: text("user_email").notNull(),
+    instruction: text("instruction").notNull(), // the user's ask, e.g. "remind me to log lunch"
+    hour: integer("hour").notNull(), // local wall-clock time in `tz`
+    minute: integer("minute").notNull(),
+    days: text("days").notNull().default("daily"), // 'daily' | 'weekdays' | 'weekends' | 'mon,wed,fri'
+    onceDate: text("once_date"), // YYYY-MM-DD ⇒ one-off
+    tz: text("tz").notNull(), // IANA zone, e.g. "America/Chicago"
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    nextFireAt: integer("next_fire_at").notNull(), // ms epoch of the next due evaluation
+    lastSentAt: integer("last_sent_at"), // ms epoch of the last actually-enqueued text
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [index("reminders_user_idx").on(t.userEmail), index("reminders_next_fire_idx").on(t.enabled, t.nextFireAt)],
 );

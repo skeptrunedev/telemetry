@@ -7,6 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { z } from "zod";
 import * as schema from "../db/schema";
+import { isValidTimeZone, localDayInTz, localTimeLineInTz, nextFireAt, offsetMinutesToTz, parseDays, zonedTimeToUtc } from "./reminders";
 import { makeAuth, twilioVerify } from "./auth";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import type { DashboardData, Targets } from "../shared/types";
@@ -2557,6 +2558,36 @@ const COACH_TOOLS: Anthropic.Tool[] = [
       required: ["idPrefix"],
     },
   },
+  {
+    name: "set_reminder",
+    description:
+      "Create a scheduled reminder the user asked for (e.g. 'remind me to log lunch at noon on weekdays'). Reminders are delivered as iMessage texts, an agent checks their day first and skips sends that no longer make sense. The result includes phoneLinked, false means they have no verified phone linked and won't receive anything until they link one.",
+    input_schema: {
+      type: "object",
+      properties: {
+        instruction: { type: "string", description: "The user's ask in their words, e.g. 'remind me to log lunch'." },
+        time: { type: "string", description: "Local time as HH:MM, 24-hour, e.g. '12:00'." },
+        days: { type: "string", description: "'daily', 'weekdays', 'weekends', or a comma list like 'mon,wed,fri'. Default daily." },
+        once_date: { type: "string", description: "YYYY-MM-DD for a one-off reminder that fires once then disables itself." },
+        tz: { type: "string", description: "IANA timezone like 'America/Chicago', only when the user stated one. Defaults to their known timezone." },
+      },
+      required: ["instruction", "time"],
+    },
+  },
+  {
+    name: "list_reminders",
+    description: "List the user's reminders (schedule, timezone, enabled state).",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "delete_reminder",
+    description: "Delete a reminder. Get the id from list_reminders.",
+    input_schema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Reminder id from list_reminders." } },
+      required: ["id"],
+    },
+  },
 ];
 
 async function executeCoachTool(
@@ -2565,6 +2596,9 @@ async function executeCoachTool(
   name: string,
   input: Record<string, unknown>,
   today: string,
+  // Client tz offset in minutes (getTimezoneOffset), when the surface knows it;
+  // used only as a set_reminder timezone fallback. undefined = unknown.
+  tzMin?: number,
 ): Promise<unknown> {
   if (name === "list_food_log") {
     const date = resolveToolDate(String(input.date ?? ""), today) ?? today;
@@ -2715,6 +2749,35 @@ async function executeCoachTool(
     return { ok: true, forgot: hit.content };
   }
 
+  if (name === "set_reminder") {
+    // No explicit IANA zone from the model: fall back to the client's fixed
+    // UTC offset (when the surface sent one) before the server-side defaults.
+    const tz =
+      typeof input.tz === "string" && isValidTimeZone(input.tz)
+        ? input.tz
+        : tzMin !== undefined
+          ? (offsetMinutesToTz(tzMin) ?? undefined)
+          : undefined;
+    return await createReminderForUser(c, email, {
+      instruction: input.instruction,
+      time: input.time,
+      days: input.days,
+      onceDate: input.once_date,
+      tz,
+    });
+  }
+
+  if (name === "list_reminders") {
+    return await listRemindersForUser(c, email);
+  }
+
+  if (name === "delete_reminder") {
+    const id = String(input.id ?? "").trim();
+    if (!id) return { error: "id required" };
+    const ok = await deleteReminderForUser(c, email, id);
+    return ok ? { ok: true, deleted: id } : { error: "no reminder with that id" };
+  }
+
   return { error: "unknown tool" };
 }
 
@@ -2807,7 +2870,7 @@ app.post("/api/agent/stream", async (c) => {
   const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
   const system =
     (await buildCoachSystem(c, email, today, tzMin)) +
-    `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory; update daily calorie and protein targets with set_targets. When the user describes their day to day activity, a new job, a change in training volume, or a big lifestyle change, recompute their daily calorie target with Mifflin-St Jeor from the height, sex, and latest weigh-in in the context above, scaled by the closest activity multiplier, 1.2 sedentary, 1.375 lightly active, 1.55 moderately active, 1.725 very active, 1.9 athlete, then apply the deficit or surplus their current goal implies, state the new daily calorie and protein numbers plainly, and call set_targets with them, passing their activity in a few words. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
+    `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory; update daily calorie and protein targets with set_targets. When the user describes their day to day activity, a new job, a change in training volume, or a big lifestyle change, recompute their daily calorie target with Mifflin-St Jeor from the height, sex, and latest weigh-in in the context above, scaled by the closest activity multiplier, 1.2 sedentary, 1.375 lightly active, 1.55 moderately active, 1.725 very active, 1.9 athlete, then apply the deficit or surplus their current goal implies, state the new daily calorie and protein numbers plainly, and call set_targets with them, passing their activity in a few words. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. REMINDERS, when the user asks to be reminded of something ("remind me to log lunch at noon", "ping me to weigh in on weekday mornings"), create it with set_reminder, adjust an existing one by deleting it (list_reminders then delete_reminder) and creating the new version. Reminders DELIVER OVER IMESSAGE, if the tool result says phoneLinked is false, tell the user they won't receive reminder texts until they link their phone in their profile or text the skcal number. If the result says tzDefaulted is true, state the timezone you assumed and ask them to correct it if wrong. After creating one, confirm in plain words what was set, the time and the cadence. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
@@ -2840,7 +2903,7 @@ app.post("/api/agent/stream", async (c) => {
           const results: Anthropic.ToolResultBlockParam[] = [];
           for (const tu of toolUses) {
             send({ t: "tool", id: tu.id, name: tu.name, args: tu.input });
-            const out = await executeCoachTool(c, email, tu.name, tu.input as Record<string, unknown>, today);
+            const out = await executeCoachTool(c, email, tu.name, tu.input as Record<string, unknown>, today, tzMin);
             send({ t: "result", id: tu.id, result: out });
             results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out) });
           }
@@ -2918,6 +2981,176 @@ app.delete("/api/agent/memories/:id", async (c) => {
   if (!owned.length) return c.json({ error: "not found" }, 404);
   await db(c).delete(schema.agentMemories).where(eq(schema.agentMemories.id, id));
   return c.json({ ok: true });
+});
+
+// ---- Agentic reminders ------------------------------------------------------
+// CRUD shared by the REST routes (web/mobile/API keys + the iMessage daemon
+// via the service token) and the coach's set_reminder tool. Delivery happens
+// over iMessage only: the 15-minute cron (runReminderTick, bottom of this
+// file) evaluates due rows with the model and enqueues texts into
+// text_me_requests for the daemon — so a user without a verified linked phone
+// can create reminders but will never receive them.
+const MAX_ENABLED_REMINDERS = 10;
+const DEFAULT_REMINDER_TZ = "America/Chicago";
+
+// db() only needs { env }, so these helpers work from both Hono handlers and
+// the scheduled (cron) entry point.
+type EnvCtx = { env: Bindings };
+
+async function verifiedPhoneFor(c: EnvCtx, email: string): Promise<string | null> {
+  const rows = await db(c)
+    .select()
+    .from(schema.linkedChannels)
+    .where(and(eq(schema.linkedChannels.userEmail, email), eq(schema.linkedChannels.kind, "phone")))
+    .orderBy(desc(schema.linkedChannels.createdAt));
+  return rows.find((r) => r.verifiedAt)?.value ?? null;
+}
+
+function reminderOut(r: typeof schema.reminders.$inferSelect) {
+  return {
+    id: r.id,
+    instruction: r.instruction,
+    time: `${String(r.hour).padStart(2, "0")}:${String(r.minute).padStart(2, "0")}`,
+    days: r.days,
+    onceDate: r.onceDate,
+    tz: r.tz,
+    enabled: r.enabled,
+    nextFireAt: r.nextFireAt,
+    lastSentAt: r.lastSentAt,
+    createdAt: r.createdAt.getTime(),
+  };
+}
+
+type ReminderCreateInput = {
+  instruction?: unknown;
+  time?: unknown;
+  days?: unknown;
+  onceDate?: unknown;
+  tz?: unknown;
+};
+
+async function createReminderForUser(
+  c: EnvCtx,
+  email: string,
+  input: ReminderCreateInput,
+): Promise<
+  | { ok: true; reminder: ReturnType<typeof reminderOut>; tzDefaulted: boolean; phoneLinked: boolean }
+  | { error: string }
+> {
+  const instruction = String(input.instruction ?? "").trim().slice(0, 300);
+  if (!instruction) return { error: "instruction required" };
+  const tm = /^(\d{1,2}):(\d{2})$/.exec(String(input.time ?? "").trim());
+  const hour = tm ? Number(tm[1]) : -1;
+  const minute = tm ? Number(tm[2]) : -1;
+  if (!tm || hour > 23 || minute > 59) return { error: "time must be HH:MM (24-hour)" };
+  const days = String(input.days ?? "daily").trim().toLowerCase() || "daily";
+  if (!parseDays(days)) return { error: "days must be daily, weekdays, weekends, or a list like mon,wed,fri" };
+  let onceDate: string | null = null;
+  if (typeof input.onceDate === "string" && input.onceDate.trim()) {
+    onceDate = input.onceDate.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(onceDate)) return { error: "once_date must be YYYY-MM-DD" };
+  }
+  // Timezone: an explicit valid IANA zone wins; otherwise reuse the account's
+  // most recent reminder's zone; otherwise default (and say so, so the agent
+  // can confirm the assumption with the user).
+  let tzDefaulted = false;
+  let tz = typeof input.tz === "string" && isValidTimeZone(input.tz) ? input.tz : null;
+  if (!tz) {
+    const prev = await db(c)
+      .select()
+      .from(schema.reminders)
+      .where(eq(schema.reminders.userEmail, email))
+      .orderBy(desc(schema.reminders.createdAt))
+      .limit(1);
+    tz = prev[0]?.tz ?? null;
+  }
+  if (!tz) {
+    tz = DEFAULT_REMINDER_TZ;
+    tzDefaulted = true;
+  }
+  const fireAt = nextFireAt({ hour, minute, days, onceDate, tz }, new Date());
+  if (fireAt == null) return { error: "that time has already passed, pick a future time or drop the date" };
+  const enabledRows = await db(c)
+    .select({ id: schema.reminders.id })
+    .from(schema.reminders)
+    .where(and(eq(schema.reminders.userEmail, email), eq(schema.reminders.enabled, true)));
+  if (enabledRows.length >= MAX_ENABLED_REMINDERS) {
+    return { error: `reminder limit reached, max ${MAX_ENABLED_REMINDERS} active, delete one first` };
+  }
+  const row = (
+    await db(c)
+      .insert(schema.reminders)
+      .values({ id: crypto.randomUUID(), userEmail: email, instruction, hour, minute, days, onceDate, tz, enabled: true, nextFireAt: fireAt })
+      .returning()
+  )[0];
+  return { ok: true, reminder: reminderOut(row), tzDefaulted, phoneLinked: !!(await verifiedPhoneFor(c, email)) };
+}
+
+async function listRemindersForUser(c: EnvCtx, email: string) {
+  const rows = await db(c)
+    .select()
+    .from(schema.reminders)
+    .where(eq(schema.reminders.userEmail, email))
+    .orderBy(desc(schema.reminders.createdAt));
+  return { reminders: rows.map(reminderOut), phoneLinked: !!(await verifiedPhoneFor(c, email)) };
+}
+
+async function deleteReminderForUser(c: EnvCtx, email: string, id: string): Promise<boolean> {
+  const owned = await db(c)
+    .select({ id: schema.reminders.id })
+    .from(schema.reminders)
+    .where(and(eq(schema.reminders.id, id), eq(schema.reminders.userEmail, email)))
+    .limit(1);
+  if (!owned.length) return false;
+  await db(c).delete(schema.reminders).where(eq(schema.reminders.id, id));
+  return true;
+}
+
+app.post("/api/reminders", async (c) => {
+  const email = c.get("email");
+  const b = await c.req.json<ReminderCreateInput & { once_date?: unknown }>().catch(() => ({}) as ReminderCreateInput & { once_date?: unknown });
+  const result = await createReminderForUser(c, email, { ...b, onceDate: b.onceDate ?? b.once_date });
+  if ("error" in result) return c.json(result, 400);
+  return c.json(result);
+});
+
+app.get("/api/reminders", async (c) => c.json(await listRemindersForUser(c, c.get("email"))));
+
+app.delete("/api/reminders/:id", async (c) => {
+  const ok = await deleteReminderForUser(c, c.get("email"), c.req.param("id"));
+  if (!ok) return c.json({ error: "not found" }, 404);
+  return c.json({ ok: true });
+});
+
+// Optional enable/disable without losing the schedule.
+app.patch("/api/reminders/:id", async (c) => {
+  const email = c.get("email");
+  const id = c.req.param("id");
+  const b = await c.req.json<{ enabled?: boolean }>().catch(() => ({}) as { enabled?: boolean });
+  if (typeof b.enabled !== "boolean") return c.json({ error: "enabled (boolean) required" }, 400);
+  const row = (
+    await db(c)
+      .select()
+      .from(schema.reminders)
+      .where(and(eq(schema.reminders.id, id), eq(schema.reminders.userEmail, email)))
+      .limit(1)
+  )[0];
+  if (!row) return c.json({ error: "not found" }, 404);
+  if (b.enabled) {
+    const fireAt = nextFireAt({ hour: row.hour, minute: row.minute, days: row.days, onceDate: row.onceDate, tz: row.tz }, new Date());
+    if (fireAt == null) return c.json({ error: "this one-off's time has passed, create a new reminder instead" }, 400);
+    const enabledRows = await db(c)
+      .select({ id: schema.reminders.id })
+      .from(schema.reminders)
+      .where(and(eq(schema.reminders.userEmail, email), eq(schema.reminders.enabled, true)));
+    if (enabledRows.length >= MAX_ENABLED_REMINDERS) {
+      return c.json({ error: `reminder limit reached, max ${MAX_ENABLED_REMINDERS} active` }, 400);
+    }
+    await db(c).update(schema.reminders).set({ enabled: true, nextFireAt: fireAt }).where(eq(schema.reminders.id, id));
+  } else {
+    await db(c).update(schema.reminders).set({ enabled: false }).where(eq(schema.reminders.id, id));
+  }
+  return c.json({ ok: true, enabled: b.enabled });
 });
 
 // ---- Coach chat photos (web-composer attachments persisted to R2) ----------
@@ -3871,7 +4104,7 @@ app.get("/api/onboard/pending", async (c) => {
     .where(eq(schema.textMeRequests.status, "pending"))
     .orderBy(asc(schema.textMeRequests.createdAt))
     .limit(20);
-  return c.json(rows.map((r) => ({ id: r.id, phone: r.phone, kind: r.kind })));
+  return c.json(rows.map((r) => ({ id: r.id, phone: r.phone, kind: r.kind, message: r.message })));
 });
 
 // Agent daemon: mark a request handled.
@@ -4377,4 +4610,191 @@ app.all("*", async (c) => {
   return next;
 });
 
-export default app;
+// ---- Reminder cron ----------------------------------------------------------
+// Every 15 minutes (wrangler.jsonc triggers) we pick up enabled reminders whose
+// next_fire_at is due and run each through a "should this send RIGHT NOW?"
+// model evaluation grounded in the user's real day, so moot reminders (lunch
+// already logged), redundant ones, and ill-timed ones are skipped instead of
+// spamming. Sends are enqueued into text_me_requests for the iMessage daemon.
+
+const REMINDER_EVAL_SCHEMA = {
+  type: "object",
+  properties: {
+    send: { type: "boolean" },
+    message: { type: "string" },
+    why: { type: "string" },
+  },
+  required: ["send", "message", "why"],
+  additionalProperties: false,
+};
+
+const REMINDER_EVAL_SYSTEM = [
+  "You decide whether a scheduled reminder from skcal, an AI calorie and fitness tracker that texts users over iMessage, should be sent RIGHT NOW, and you write the text when it should.",
+  "",
+  "SKIP (send=false) when the reminder is moot because the thing it asks about was already done (e.g. the reminder is about logging lunch and a meal was logged around midday), redundant because this reminder already sent recently and nothing changed, or clearly ill timed. Otherwise send it.",
+  "",
+  "When sending, write 1-2 short texty sentences, customized with the user's REAL numbers and context below, like a coach texting a client. Never use em dashes or colons, use commas instead. Never open with acknowledgement filler such as 'Got it', 'Understood', 'Sure', 'Noted', 'Done', or 'Great'. No markdown, plain text only.",
+  "",
+  'Return STRICT JSON, {"send": boolean, "message": string, "why": string}. message must be "" when send is false. why is one short sentence for the logs.',
+].join("\n");
+
+// The same day-status internals the agents' get_status uses, but computed for
+// the reminder's local day in its own timezone, formatted as prompt context.
+async function reminderContext(c: EnvCtx, r: typeof schema.reminders.$inferSelect, now: Date): Promise<string> {
+  const email = r.userEmail;
+  const day = localDayInTz(r.tz, now);
+  const targets = (
+    await db(c).select().from(schema.targets).where(eq(schema.targets.userEmail, email)).limit(1)
+  )[0];
+  const kcalTarget = targets?.dailyKcalTarget ?? DEFAULT_TARGETS.dailyKcalTarget;
+  const proteinTarget = targets?.proteinTargetG ?? DEFAULT_TARGETS.proteinTargetG;
+  const nut = (
+    await db(c)
+      .select()
+      .from(schema.nutritionDays)
+      .where(and(eq(schema.nutritionDays.userEmail, email), eq(schema.nutritionDays.date, day)))
+      .limit(1)
+  )[0];
+  const kcalIn = nut?.kcal ?? 0;
+  const proteinIn = nut?.proteinG ?? 0;
+  const mealRows = await db(c)
+    .select()
+    .from(schema.meals)
+    .where(and(eq(schema.meals.userEmail, email), eq(schema.meals.date, day)))
+    .orderBy(asc(schema.meals.createdAt));
+  const itemRows = mealRows.length
+    ? await db(c)
+        .select()
+        .from(schema.nutritionItems)
+        .where(and(eq(schema.nutritionItems.userEmail, email), eq(schema.nutritionItems.date, day)))
+    : [];
+  const mealLines = mealRows.map((m) => {
+    const items = itemRows.filter((i) => i.mealId === m.id);
+    const kcal = items.reduce((s, i) => s + (i.kcal ?? 0), 0);
+    const names = items.map((i) => i.name).join(", ") || m.note || "meal";
+    return `  - ${localTimeLineInTz(r.tz, m.createdAt)}: ${names} (${kcal} kcal)`;
+  });
+  const dayStartMs = zonedDayStartMs(r.tz, day);
+  const workoutRows = await db(c)
+    .select()
+    .from(schema.workouts)
+    .where(
+      and(
+        eq(schema.workouts.userEmail, email),
+        gte(schema.workouts.startedAt, new Date(dayStartMs)),
+        lt(schema.workouts.startedAt, new Date(dayStartMs + DAY_MS)),
+      ),
+    )
+    .orderBy(desc(schema.workouts.startedAt));
+  const latestWeight = (
+    await db(c)
+      .select()
+      .from(schema.weightReadings)
+      .where(eq(schema.weightReadings.userEmail, email))
+      .orderBy(desc(schema.weightReadings.ts), desc(schema.weightReadings.id))
+      .limit(1)
+  )[0];
+  return [
+    `REMINDER INSTRUCTION (the user's standing ask): ${r.instruction}`,
+    `Schedule: ${String(r.hour).padStart(2, "0")}:${String(r.minute).padStart(2, "0")} ${r.onceDate ? `once on ${r.onceDate}` : r.days} (${r.tz})`,
+    `Current time in the user's timezone: ${localTimeLineInTz(r.tz, now)}`,
+    `This reminder last actually sent: ${r.lastSentAt ? localTimeLineInTz(r.tz, new Date(r.lastSentAt)) : "never"}`,
+    "",
+    `USER'S DAY SO FAR (${day}):`,
+    `- Calories logged: ${kcalIn} of ${kcalTarget} kcal target (${kcalTarget - kcalIn} left)`,
+    `- Protein logged: ${Math.round(proteinIn)} of ${proteinTarget} g target`,
+    mealLines.length ? `- Meals logged today:\n${mealLines.join("\n")}` : "- Meals logged today: none yet",
+    workoutRows.length
+      ? `- Workouts today: ${workoutRows.map((w) => w.summary).join("; ")}`
+      : "- Workouts today: none logged",
+    latestWeight
+      ? `- Latest weigh-in: ${kgToLb(latestWeight.weightKg).toFixed(1)} lb on ${localDayInTz(r.tz, latestWeight.ts)}`
+      : "- Latest weigh-in: none yet",
+  ].join("\n");
+}
+
+// Midnight of the local day `day` (YYYY-MM-DD) in `tz`, as UTC ms.
+function zonedDayStartMs(tz: string, day: string): number {
+  const [y, m, d] = day.split("-").map(Number);
+  return zonedTimeToUtc(y, m, d, 0, 0, tz);
+}
+
+async function evaluateReminder(
+  env: Bindings,
+  contextBlock: string,
+): Promise<{ send: boolean; message: string; why: string } | null> {
+  if (!env.ANTHROPIC_API_KEY) return null;
+  try {
+    const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+    const msg = await anthropic.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 400,
+      system: REMINDER_EVAL_SYSTEM,
+      output_config: { format: { type: "json_schema", schema: REMINDER_EVAL_SCHEMA } },
+      messages: [{ role: "user", content: contextBlock }],
+    } as Anthropic.MessageCreateParamsNonStreaming);
+    const out = msg.content.filter((bk): bk is Anthropic.TextBlock => bk.type === "text").map((bk) => bk.text).join("");
+    const parsed = JSON.parse(out) as { send?: unknown; message?: unknown; why?: unknown };
+    if (typeof parsed.send !== "boolean") return null;
+    const message = typeof parsed.message === "string" ? parsed.message.trim().slice(0, 600) : "";
+    if (parsed.send && !message) return null;
+    return { send: parsed.send, message, why: typeof parsed.why === "string" ? parsed.why : "" };
+  } catch (e) {
+    console.error("reminder evaluation failed:", e);
+    return null; // fail closed: never send on model/parse errors
+  }
+}
+
+async function runReminderTick(env: Bindings): Promise<void> {
+  const c: EnvCtx = { env };
+  const now = new Date();
+  const due = await db(c)
+    .select()
+    .from(schema.reminders)
+    .where(and(eq(schema.reminders.enabled, true), lt(schema.reminders.nextFireAt, now.getTime() + 1)))
+    .orderBy(asc(schema.reminders.nextFireAt))
+    .limit(20);
+  for (const r of due) {
+    // Compute the row's NEXT occurrence up front; every outcome below advances
+    // it (or disables the row), so an erroring reminder can never spam. A due
+    // one-off has had its shot — it always disables itself.
+    const upcoming = r.onceDate
+      ? null
+      : nextFireAt({ hour: r.hour, minute: r.minute, days: r.days, onceDate: null, tz: r.tz }, now);
+    const advance: Partial<typeof schema.reminders.$inferInsert> =
+      upcoming == null ? { enabled: false } : { nextFireAt: upcoming };
+    try {
+      const phone = await verifiedPhoneFor(c, r.userEmail);
+      if (!phone) {
+        console.log(`reminder ${r.id} (${r.userEmail}): no verified phone, skipping delivery`);
+        await db(c).update(schema.reminders).set(advance).where(eq(schema.reminders.id, r.id));
+        continue;
+      }
+      const contextBlock = await reminderContext(c, r, now);
+      const decision = await evaluateReminder(env, contextBlock);
+      if (decision?.send) {
+        await db(c)
+          .insert(schema.textMeRequests)
+          .values({ id: crypto.randomUUID(), phone, kind: "reminder", message: decision.message });
+        await db(c)
+          .update(schema.reminders)
+          .set({ ...advance, lastSentAt: now.getTime() })
+          .where(eq(schema.reminders.id, r.id));
+        console.log(`reminder ${r.id} (${r.userEmail}): sent — ${decision.why}`);
+      } else {
+        await db(c).update(schema.reminders).set(advance).where(eq(schema.reminders.id, r.id));
+        console.log(`reminder ${r.id} (${r.userEmail}): ${decision ? `skipped — ${decision.why}` : "evaluation unavailable, skipped"}`);
+      }
+    } catch (e) {
+      console.error(`reminder ${r.id} tick failed:`, e);
+      await db(c).update(schema.reminders).set(advance).where(eq(schema.reminders.id, r.id)).catch(() => {});
+    }
+  }
+}
+
+export default {
+  fetch: (request: Request, env: Bindings, ctx: ExecutionContext) => app.fetch(request, env, ctx),
+  scheduled: (_controller: ScheduledController, env: Bindings, ctx: ExecutionContext) => {
+    ctx.waitUntil(runReminderTick(env));
+  },
+};
