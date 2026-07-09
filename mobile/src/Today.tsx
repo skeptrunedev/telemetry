@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { View, Text, ScrollView, RefreshControl, StyleSheet } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path, Circle } from "react-native-svg";
 import { C } from "./theme";
 import { dashboard, Dashboard, kgToLb, cmToIn } from "./api";
@@ -32,6 +33,7 @@ function TrendChart({ trend }: { trend: { ts: number; kg: number }[] }) {
 }
 
 export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
+  const insets = useSafeAreaInsets();
   const [data, setData] = useState<Dashboard | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +86,7 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
   return (
     <ScrollView
       style={s.scroll}
-      contentContainerStyle={s.content}
+      contentContainerStyle={[s.content, { paddingBottom: 40 + insets.bottom }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={C.amber} />}
     >
       <View style={s.glance}>
