@@ -31,6 +31,19 @@ async function jsend(url: string, method: string, body: unknown): Promise<void> 
   if (!r.ok) throw new Error(`${method} ${url} → ${r.status}`);
 }
 
+export type Reminder = {
+  id: string;
+  instruction: string;
+  time: string; // "HH:MM" local to tz
+  days: string; // daily | weekdays | weekends | "mon,wed,fri"
+  onceDate: string | null;
+  tz: string;
+  enabled: boolean;
+  nextFireAt: number;
+  lastSentAt: number | null;
+  createdAt: number;
+};
+
 export type MealItem = { name: string; kcal: number; proteinG: number };
 export type LoggedItem = MealItem & { id: number };
 export type MealAnalysis = {
@@ -77,6 +90,9 @@ export const api = {
   addWeight: (weightKg: number, bodyFatPct?: number | null, note?: string | null) =>
     jsend(`/api/weight`, "POST", { weightKg, bodyFatPct, note }),
   weightList: () => jget<WeightReading[]>(`/api/weight`),
+  listReminders: () => jget<{ reminders: Reminder[]; phoneLinked: boolean }>(`/api/reminders`),
+  deleteReminder: (id: string) => jsend(`/api/reminders/${id}`, "DELETE", {}),
+  setReminderEnabled: (id: string, enabled: boolean) => jsend(`/api/reminders/${id}`, "PATCH", { enabled }),
   setWeightNote: (id: number, note: string | null) => jsend(`/api/weight/${id}`, "PATCH", { note }),
   addMeasurement: (site: string, valueCm: number) =>
     jsend(`/api/measurements`, "POST", { site, valueCm }),

@@ -2187,3 +2187,68 @@ a {
   min-width: 6.5rem;
   text-align: center;
 }
+
+/* ---- reminders card ---- */
+.reminder-text {
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  letter-spacing: normal;
+  text-transform: none;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.reminder-off {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+.reminder-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: none;
+}
+.reminder-toggle {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+}
+.reminder-delete {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+}
+.reminder-delete svg {
+  width: 14px;
+  height: 14px;
+}
+.reminder-delete:hover {
+  color: var(--alert);
+}
+.reminder-when {
+  display: block;
+  margin-top: 0.15rem;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.reminder-warn {
+  margin: 0.6rem 0 0;
+  font-size: 0.8rem;
+  color: var(--attention);
+}

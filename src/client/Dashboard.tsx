@@ -6,6 +6,7 @@ import { shiftDay, dayLabel, todayLocal } from "./dates";
 import { FoodLog } from "./FoodLog";
 import { WorkoutLog } from "./WorkoutLog";
 import { WeightHistory } from "./WeightHistory";
+import { Reminders } from "./Reminders";
 
 const f1 = (n: number) => n.toFixed(1);
 const DAY = 86_400_000;
@@ -200,6 +201,8 @@ export function Dashboard({
         <WorkoutLog date={date} refreshKey={refreshKey} />
 
         <WeightHistory />
+
+        <Reminders />
       </div>
 
       {/* whole-day navigation: everything above reflects this day */}
