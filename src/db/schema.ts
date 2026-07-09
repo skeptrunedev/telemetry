@@ -299,7 +299,7 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *       type: object
  *       description: A user's goals. Created with defaults on first read.
  *       additionalProperties: false
- *       required: [id, goalWeightKg, startWeightKg, targetDate, startDate, dailyKcalTarget, proteinTargetG]
+ *       required: [id, goalWeightKg, startWeightKg, targetDate, startDate, dailyKcalTarget, proteinTargetG, heightCm, sex]
  *       properties:
  *         id:
  *           type: integer
@@ -331,6 +331,15 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *           type: [integer, "null"]
  *           description: Daily protein target in grams.
  *           example: 170
+ *         heightCm:
+ *           type: [number, "null"]
+ *           description: Height in centimeters.
+ *           example: 178
+ *         sex:
+ *           type: [string, "null"]
+ *           enum: [male, female, other, null]
+ *           description: Sex used for calorie math.
+ *           example: male
  *     TargetsInput:
  *       type: object
  *       description: Partial update to a user's targets; omitted fields are left unchanged.
@@ -357,6 +366,16 @@ const nowMs = sql`(unixepoch() * 1000)`;
  *           format: int64
  *           description: New goal date as a Unix epoch in milliseconds.
  *           example: 1790000000000
+ *         activity:
+ *           type: string
+ *           maxLength: 200
+ *           description: The user's day-to-day activity level in a few words; stored as their single activity-level memory (replacing any previous one).
+ *           example: desk job, mostly sitting
+ *         reason:
+ *           type: string
+ *           maxLength: 500
+ *           description: Optional context for why the targets changed; not stored.
+ *           example: less active after a job change
  *     TrendPoint:
  *       type: object
  *       description: One point on the weight trend line.

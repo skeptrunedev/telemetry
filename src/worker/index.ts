@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, like, lt } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
@@ -1196,7 +1196,24 @@ async function getTargets(c: { env: Bindings }, email: string): Promise<Targets 
     startDate: t.startDate ? t.startDate.getTime() : null,
     dailyKcalTarget: t.dailyKcalTarget,
     proteinTargetG: t.proteinTargetG,
+    heightCm: t.heightCm,
+    sex: t.sex,
   };
+}
+
+// One activity-level memory per user: replace any existing "Activity level"
+// row instead of piling up duplicates, so both agents always see exactly one.
+async function setActivityMemory(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+  activity: string,
+): Promise<void> {
+  await db(c)
+    .delete(schema.agentMemories)
+    .where(and(eq(schema.agentMemories.userEmail, email), like(schema.agentMemories.content, "Activity level%")));
+  await db(c)
+    .insert(schema.agentMemories)
+    .values({ id: crypto.randomUUID(), userEmail: email, content: `Activity level: ${activity}` });
 }
 
 /**
@@ -1242,7 +1259,7 @@ app.get("/api/targets", async (c) => c.json(await getTargets(c, c.get("email")))
  */
 app.put("/api/targets", async (c) => {
   const email = c.get("email");
-  const b = await c.req.json<Partial<Targets>>();
+  const b = await c.req.json<Partial<Targets> & { activity?: string; reason?: string }>();
   const current = await getTargets(c, email);
   await db(c)
     .update(schema.targets)
@@ -1254,6 +1271,8 @@ app.put("/api/targets", async (c) => {
       targetDate: b.targetDate ? new Date(b.targetDate) : undefined,
     })
     .where(eq(schema.targets.userEmail, email));
+  const activity = typeof b.activity === "string" ? b.activity.trim().slice(0, 200) : "";
+  if (activity) await setActivityMemory(c, email, activity);
   return c.json({ ok: true });
 });
 
@@ -2219,6 +2238,7 @@ async function buildCoachSystem(
     `- Daily calories: ${kcalTarget || "unset"} kcal`,
     `- Daily protein: ${proteinTarget || "unset"} g`,
     `- Goal weight: ${fmtLb(targets.goalWeightKg)}; start weight: ${fmtLb(targets.startWeightKg)}`,
+    `- Height: ${targets.heightCm != null ? `${(targets.heightCm / 2.54).toFixed(1)} in (${Math.round(targets.heightCm)} cm)` : "unknown"}; sex: ${targets.sex ?? "unknown"}`,
     "",
     "TODAY SO FAR:",
     `- Logged: ${kcalIn} kcal, ${Math.round(proteinIn)} g protein`,
@@ -2503,6 +2523,22 @@ const COACH_TOOLS: Anthropic.Tool[] = [
   },
 
   {
+    name: "set_targets",
+    description:
+      "Update the user's daily calorie and protein targets, e.g. after recomputing them for a stated activity level. Pass activity, their day-to-day activity in a few words, whenever they described it so it's remembered.",
+    input_schema: {
+      type: "object",
+      properties: {
+        daily_kcal: { type: "number", description: "New daily calorie target." },
+        protein_g: { type: "number", description: "New daily protein target in grams." },
+        activity: { type: "string", description: "Their stated day-to-day activity, e.g. 'desk job, mostly sitting'." },
+        reason: { type: "string", description: "Why the targets changed, in a few words." },
+      },
+      required: ["daily_kcal", "protein_g"],
+    },
+  },
+
+  {
     name: "remember",
     description:
       "Save a durable fact or preference the user just told you (dislikes, allergies, diet style, goals, schedule). One short sentence. Don't save transient info or duplicates of existing MEMORIES.",
@@ -2644,6 +2680,21 @@ async function executeCoachTool(
     }
   }
 
+  if (name === "set_targets") {
+    const kcal = Number(input.daily_kcal);
+    const protein = Number(input.protein_g);
+    if (!(kcal >= 800 && kcal <= 6000)) return { error: "daily_kcal must be 800-6000" };
+    if (!(protein >= 30 && protein <= 400)) return { error: "protein_g must be 30-400" };
+    const set = { dailyKcalTarget: Math.round(kcal), proteinTargetG: Math.round(protein) };
+    await db(c)
+      .insert(schema.targets)
+      .values({ userEmail: email, ...set })
+      .onConflictDoUpdate({ target: schema.targets.userEmail, set });
+    const activity = typeof input.activity === "string" ? input.activity.trim().slice(0, 200) : "";
+    if (activity) await setActivityMemory(c, email, activity);
+    return { ok: true, ...set };
+  }
+
   if (name === "remember") {
     const content = String(input.content ?? "").trim().slice(0, 500);
     if (!content) return { error: "content required" };
@@ -2756,7 +2807,7 @@ app.post("/api/agent/stream", async (c) => {
   const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
   const system =
     (await buildCoachSystem(c, email, today, tzMin)) +
-    `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
+    `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory; update daily calorie and protein targets with set_targets. When the user describes their day to day activity, a new job, a change in training volume, or a big lifestyle change, recompute their daily calorie target with Mifflin-St Jeor from the height, sex, and latest weigh-in in the context above, scaled by the closest activity multiplier, 1.2 sedentary, 1.375 lightly active, 1.55 moderately active, 1.725 very active, 1.9 athlete, then apply the deficit or surplus their current goal implies, state the new daily calorie and protein numbers plainly, and call set_targets with them, passing their activity in a few words. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
@@ -3652,7 +3703,14 @@ app.post("/api/onboard/goal", async (c) => {
   if (!c.env.AGENT_SERVICE_TOKEN || c.req.header("authorization") !== `Bearer ${c.env.AGENT_SERVICE_TOKEN}`) {
     return c.json({ error: "unauthorized" }, 401);
   }
-  const b = await c.req.json<{ phone?: string; goalWeightLb?: number; dailyKcal?: number; proteinG?: number; note?: string }>();
+  const b = await c.req.json<{
+    phone?: string;
+    goalWeightLb?: number;
+    dailyKcal?: number;
+    proteinG?: number;
+    note?: string;
+    activity?: string;
+  }>();
   const phone = normalizePhone(b.phone ?? "");
   if (!phone) return c.json({ error: "invalid phone" }, 400);
   const chan = (
@@ -3682,7 +3740,9 @@ app.post("/api/onboard/goal", async (c) => {
   if (note) {
     await db(c).insert(schema.agentMemories).values({ id: crypto.randomUUID(), userEmail: email, content: `Goal: ${note}` });
   }
-  return c.json({ ok: true, email, applied: Object.keys(set), notedGoal: !!note });
+  const activity = typeof b.activity === "string" ? b.activity.trim().slice(0, 200) : "";
+  if (activity) await setActivityMemory(c, email, activity);
+  return c.json({ ok: true, email, applied: Object.keys(set), notedGoal: !!note, notedActivity: !!activity });
 });
 
 // Agent daemon: store a progress photo sent during onboarding (current

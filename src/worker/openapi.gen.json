@@ -1529,7 +1529,9 @@
           "targetDate",
           "startDate",
           "dailyKcalTarget",
-          "proteinTargetG"
+          "proteinTargetG",
+          "heightCm",
+          "sex"
         ],
         "properties": {
           "id": {
@@ -1586,6 +1588,28 @@
             ],
             "description": "Daily protein target in grams.",
             "example": 170
+          },
+          "heightCm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Height in centimeters.",
+            "example": 178
+          },
+          "sex": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "male",
+              "female",
+              "other",
+              null
+            ],
+            "description": "Sex used for calorie math.",
+            "example": "male"
           }
         }
       },
@@ -1619,6 +1643,18 @@
             "format": "int64",
             "description": "New goal date as a Unix epoch in milliseconds.",
             "example": 1790000000000
+          },
+          "activity": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The user's day-to-day activity level in a few words; stored as their single activity-level memory (replacing any previous one).",
+            "example": "desk job, mostly sitting"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Optional context for why the targets changed; not stored.",
+            "example": "less active after a job change"
           }
         }
       },

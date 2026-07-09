@@ -56,6 +56,8 @@ export type Targets = {
   startDate: number | null;
   dailyKcalTarget: number | null;
   proteinTargetG: number | null;
+  heightCm: number | null;
+  sex: "male" | "female" | "other" | null;
 };
 
 export type DashboardData = {
