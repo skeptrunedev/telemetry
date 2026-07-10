@@ -121,6 +121,27 @@ export async function whoami(): Promise<{ email: string }> {
   return r.json() as Promise<{ email: string }>;
 }
 
+// Store a chat photo in R2 (same endpoint the web app uses); the returned
+// same-origin URL goes into the persisted conversation. Accepts a data URL or
+// file uri; on web FormData needs a real Blob.
+export async function uploadAgentPhoto(uri: string): Promise<{ url: string }> {
+  const token = await getToken();
+  const fd = new FormData();
+  if (WEB || uri.startsWith("data:")) {
+    const blob = await (await fetch(uri)).blob();
+    fd.append("photo", blob, "photo.jpg");
+  } else {
+    fd.append("photo", { uri, name: "photo.jpg", type: "image/jpeg" } as unknown as Blob);
+  }
+  const r = await fetch(`${BASE}/api/agent/photos`, {
+    method: "POST",
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    body: fd,
+  });
+  if (!r.ok) throw new Error(`photo upload → ${r.status}`);
+  return r.json() as Promise<{ url: string }>;
+}
+
 export async function agent(messages: ChatMessage[]): Promise<string> {
   const r = await req(`/api/agent`, {
     method: "POST",

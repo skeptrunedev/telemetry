@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
 import {
   View, Text, TextInput, Pressable, FlatList, StyleSheet, Image,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Modal, type TextStyle,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { C } from "./theme";
-import { agent, createConversation, appendMessages, photoSource, ChatMessage } from "./api";
+import { agent, createConversation, appendMessages, photoSource, uploadAgentPhoto, ChatMessage, ChatPart } from "./api";
 
 // Persisted conversations may carry parts arrays (text + photos the web app
 // uploaded to R2); flatten to display text for bubbles and titles.
@@ -28,6 +29,23 @@ function Bubble({ item }: { item: ChatMessage }) {
   );
 }
 
+// Picker result → data URL the worker's vision path accepts directly.
+const toDataUrl = (a: ImagePicker.ImagePickerAsset): string | null => {
+  if (a.uri.startsWith("data:")) return a.uri;
+  if (a.base64) return `data:${a.mimeType ?? "image/jpeg"};base64,${a.base64}`;
+  return null;
+};
+
+// Chrome's UA focus ring uses outline-style auto, which shrugs off a zero
+// width — it has to be styled away. RNW supports outlineStyle; RN types don't.
+const WEB_NO_RING = { outlineStyle: "none", outlineWidth: 0 } as unknown as TextStyle;
+
+const PICKER_OPTS = {
+  mediaTypes: ["images"] as ImagePicker.MediaType[],
+  quality: 0.7,
+  base64: true,
+} as const;
+
 // The live agent thread. Seeded from a saved conversation (or empty for a new
 // chat); each completed turn persists to the shared conversation history so
 // web and mobile see the same chats. The parent remounts it per session key.
@@ -44,18 +62,45 @@ export function Agent({
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState("");
+  const [pending, setPending] = useState<string[]>([]); // data URLs awaiting send
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [busy, setBusy] = useState(false);
   const list = useRef<FlatList<ChatMessage>>(null);
   const convIdRef = useRef<string | null>(initialConversationId);
   const insets = useSafeAreaInsets();
 
+  const addAssets = (assets: ImagePicker.ImagePickerAsset[] | null | undefined) => {
+    const urls = (assets ?? []).map(toDataUrl).filter((u): u is string => !!u);
+    if (urls.length) setPending((p) => [...p, ...urls].slice(0, 4)); // worker caps 4/message
+  };
+
+  const pickLibrary = async () => {
+    setSheetOpen(false);
+    const res = await ImagePicker.launchImageLibraryAsync({ ...PICKER_OPTS, allowsMultipleSelection: true });
+    if (!res.canceled) addAssets(res.assets);
+  };
+
+  const pickCamera = async () => {
+    setSheetOpen(false);
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) return;
+    const res = await ImagePicker.launchCameraAsync(PICKER_OPTS);
+    if (!res.canceled) addAssets(res.assets);
+  };
+
   const send = async () => {
     const text = input.trim();
-    if (!text || busy) return;
-    const userMsg: ChatMessage = { role: "user", content: text };
+    if ((!text && !pending.length) || busy) return;
+    const photos = pending;
+    const content: string | ChatPart[] = photos.length
+      ? [...(text ? [{ type: "text" as const, text }] : []), ...photos.map((image) => ({ type: "image" as const, image }))]
+      : text;
+    const userMsg: ChatMessage = { role: "user", content };
     const next: ChatMessage[] = [...messages, userMsg];
     setMessages(next);
     setInput("");
+    setPending([]);
     setBusy(true);
     try {
       // The worker caps history at 20 messages; send the newest window,
@@ -64,11 +109,29 @@ export function Agent({
       while (window.length && window[0]?.role !== "user") window = window.slice(1);
       const reply = await agent(window);
       setMessages([...next, { role: "assistant", content: reply }]);
-      // Persist the completed turn exactly like the web app so history is shared.
-      const turn: ChatMessage[] = [userMsg, { role: "assistant", content: reply }];
+      // Persist the completed turn exactly like the web app so history is
+      // shared — data-URL photos are swapped for uploaded R2 URLs first (an
+      // upload failure keeps the data URL; the server flattens it to a
+      // "[photo]" marker, the old behavior).
+      let persistedMsg = userMsg;
+      if (photos.length && typeof userMsg.content !== "string") {
+        const swapped = await Promise.all(
+          userMsg.content.map(async (p) => {
+            if (p.type !== "image" || !p.image.startsWith("data:")) return p;
+            try {
+              const { url } = await uploadAgentPhoto(p.image);
+              return { type: "image" as const, image: url };
+            } catch {
+              return p;
+            }
+          }),
+        );
+        persistedMsg = { role: "user", content: swapped };
+      }
+      const turn: ChatMessage[] = [persistedMsg, { role: "assistant", content: reply }];
       try {
         if (!convIdRef.current) {
-          const { id } = await createConversation(text, turn);
+          const { id } = await createConversation(text || "[photo]", turn);
           convIdRef.current = id;
         } else {
           await appendMessages(convIdRef.current, turn);
@@ -84,6 +147,8 @@ export function Agent({
       setTimeout(() => list.current?.scrollToEnd({ animated: true }), 50);
     }
   };
+
+  const canSend = (input.trim().length > 0 || pending.length > 0) && !busy;
 
   return (
     // padding on Android too — the window doesn't resize under edge-to-edge,
@@ -103,27 +168,69 @@ export function Agent({
         ListEmptyComponent={<Text style={s.empty}>Ask before you eat.</Text>}
         onContentSizeChange={() => list.current?.scrollToEnd({ animated: false })}
       />
-      {/* Mirrors the web composer: one pill, input full-width on top, controls
-          row below with send bottom-right (bottom-left slot is reserved for a
-          future attach button, matching web's layout). */}
+      {/* Mirrors the web composer: one pill — pending photo chips on top, the
+          input full-width, then a controls row with attach bottom-left and
+          send bottom-right. */}
       <View style={[s.composerWrap, { paddingBottom: 12 + insets.bottom }]}>
-        <View style={s.composer}>
+        <View style={[s.composer, focused && s.composerFocused]}>
+          {pending.length > 0 && (
+            <View style={s.chips}>
+              {pending.map((uri, i) => (
+                <View key={i} style={s.chip}>
+                  <Image style={s.chipThumb} source={{ uri }} />
+                  <Pressable
+                    style={s.chipRemove}
+                    onPress={() => setPending((p) => p.filter((_, j) => j !== i))}
+                    accessibilityLabel="Remove photo"
+                  >
+                    <Text style={s.chipRemoveText}>✕</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          )}
           <TextInput
-            style={s.input}
+            style={[s.input, Platform.OS === "web" && WEB_NO_RING]}
             placeholder="What are you thinking of eating?"
             placeholderTextColor={C.muted}
             value={input}
             onChangeText={setInput}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             editable={!busy}
             multiline
           />
           <View style={s.controls}>
-            <Pressable style={[s.send, (busy || !input.trim()) && s.sendDim]} onPress={send} disabled={busy || !input.trim()}>
+            <Pressable
+              style={s.attach}
+              onPress={() => setSheetOpen(true)}
+              disabled={busy}
+              accessibilityLabel="Add a photo"
+            >
+              <Text style={s.attachText}>+</Text>
+            </Pressable>
+            <Pressable style={[s.send, !canSend && s.sendDim]} onPress={send} disabled={!canSend}>
               {busy ? <ActivityIndicator color={C.amberInk} size="small" /> : <Text style={s.sendText}>↑</Text>}
             </Pressable>
           </View>
         </View>
       </View>
+
+      {/* Two-option source sheet, same as the web composer's. */}
+      <Modal visible={sheetOpen} transparent animationType="fade" onRequestClose={() => setSheetOpen(false)}>
+        <Pressable style={s.sheetBackdrop} onPress={() => setSheetOpen(false)}>
+          <Pressable style={[s.sheet, { paddingBottom: 12 + insets.bottom }]} onPress={(e) => e.stopPropagation()}>
+            {Platform.OS !== "web" && (
+              <Pressable style={s.sheetOption} onPress={pickCamera}>
+                <Text style={s.sheetOptionText}>Take photo</Text>
+              </Pressable>
+            )}
+            <Pressable style={[s.sheetOption, Platform.OS !== "web" && s.sheetOptionBorder]} onPress={pickLibrary}>
+              <Text style={s.sheetOptionText}>Photo library</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -144,12 +251,34 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: C.line, borderRadius: 22, backgroundColor: C.card,
     paddingHorizontal: 8, paddingTop: 4, paddingBottom: 7,
   },
-  controls: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" },
+  composerFocused: { borderColor: C.amber },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 6, paddingTop: 8 },
+  chip: { position: "relative" },
+  chipThumb: { width: 72, height: 72, borderRadius: 12, borderWidth: 1, borderColor: C.line, backgroundColor: C.bg },
+  chipRemove: {
+    position: "absolute", top: 4, right: 4, width: 22, height: 22, borderRadius: 11,
+    backgroundColor: "rgba(0,0,0,0.65)", alignItems: "center", justifyContent: "center",
+  },
+  chipRemoveText: { color: "#fff", fontSize: 12, lineHeight: 14 },
+  controls: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   input: {
     width: "100%", color: C.fg,
     paddingHorizontal: 10, paddingVertical: 8, fontSize: 15.5, maxHeight: 120,
   },
+  attach: {
+    width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: C.line,
+    alignItems: "center", justifyContent: "center",
+  },
+  attachText: { color: C.muted, fontSize: 22, lineHeight: 24, fontWeight: "300" },
   send: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.amber, alignItems: "center", justifyContent: "center" },
   sendDim: { opacity: 0.4 },
   sendText: { color: C.amberInk, fontSize: 20, fontWeight: "800" },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: C.card, borderTopLeftRadius: 18, borderTopRightRadius: 18,
+    borderWidth: 1, borderColor: C.line, paddingTop: 6, paddingHorizontal: 8,
+  },
+  sheetOption: { minHeight: 52, justifyContent: "center", paddingHorizontal: 14 },
+  sheetOptionBorder: { borderTopWidth: 1, borderTopColor: C.line },
+  sheetOptionText: { color: C.fg, fontSize: 16 },
 });

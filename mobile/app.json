@@ -24,9 +24,16 @@
       [
         "@kingstinct/react-native-healthkit",
         {
-          "NSHealthShareUsageDescription": "skcal reads your weight and workouts from Apple Health so they are logged for you automatically — no manual entry.",
+          "NSHealthShareUsageDescription": "skcal reads your weight and workouts from Apple Health so they are logged for you automatically \u2014 no manual entry.",
           "NSHealthUpdateUsageDescription": "skcal does not write to Apple Health yet. This permission is reserved for a future option to save your logged weigh-ins back to Health.",
           "background": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "skcal reads the photo you pick so the agent can log the meal in it.",
+          "cameraPermission": "skcal uses the camera to snap a meal photo for logging."
         }
       ]
     ],
