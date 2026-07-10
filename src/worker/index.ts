@@ -3214,9 +3214,8 @@ app.delete("/api/reminders/:id", async (c) => {
 app.patch("/api/reminders/:id", async (c) => {
   const email = c.get("email");
   const id = c.req.param("id");
-  const b = await c.req
-    .json<{ enabled?: boolean; instruction?: string; time?: string; days?: string; once_date?: string; onceDate?: string; tz?: string }>()
-    .catch(() => ({}) as { enabled?: boolean });
+  type ReminderPatch = { enabled?: boolean; instruction?: string; time?: string; days?: string; once_date?: string; onceDate?: string; tz?: string };
+  const b = await c.req.json<ReminderPatch>().catch(() => ({}) as ReminderPatch);
   const onceDate = b.onceDate ?? b.once_date; // both spellings, like the POST route
   // Schedule/content edits first; enabled can ride along in the same call.
   if (b.instruction !== undefined || b.time !== undefined || b.days !== undefined || onceDate !== undefined || b.tz !== undefined) {

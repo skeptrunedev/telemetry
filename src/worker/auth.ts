@@ -23,6 +23,11 @@ export type AuthEnv = {
   TWILIO_API_KEY_SID?: string;
   TWILIO_API_KEY_SECRET?: string;
   TWILIO_VERIFY_SERVICE_SID?: string;
+  AUTH_DEV_BYPASS?: string;
+  // App Review demo access: this exact phone number skips Twilio and accepts
+  // only REVIEW_OTP (a worker secret). No SMS is ever sent to it.
+  REVIEW_PHONE?: string;
+  REVIEW_OTP?: string;
 };
 
 // Twilio Verify REST helper (shared with the linked-channels flow): Verify
@@ -169,6 +174,8 @@ export function makeAuth(env: AuthEnv) {
         sendOTP: async ({ phoneNumber: phone }) => {
           // Local dev/tests: no Twilio round-trip; verify accepts 000000.
           if (env.AUTH_DEV_BYPASS) return;
+          // App Review's demo number: no SMS, fixed code checked in verifyOTP.
+          if (env.REVIEW_PHONE && env.REVIEW_OTP && phone === env.REVIEW_PHONE) return;
           try {
             await twilioVerify(env, "Verifications", { To: phone, Channel: "sms" });
           } catch (e) {
@@ -188,6 +195,8 @@ export function makeAuth(env: AuthEnv) {
         verifyOTP: async ({ phoneNumber: phone, code }) => {
           if (env.AUTH_DEV_BYPASS) {
             if (code !== "000000") return false;
+          } else if (env.REVIEW_PHONE && env.REVIEW_OTP && phone === env.REVIEW_PHONE) {
+            if (code !== env.REVIEW_OTP) return false;
           } else {
             try {
               const check = await twilioVerify(env, "VerificationCheck", { To: phone, Code: code });
