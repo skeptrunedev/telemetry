@@ -103,19 +103,26 @@ export function Agent({
         ListEmptyComponent={<Text style={s.empty}>Ask before you eat.</Text>}
         onContentSizeChange={() => list.current?.scrollToEnd({ animated: false })}
       />
-      <View style={[s.composer, { paddingBottom: 12 + insets.bottom }]}>
-        <TextInput
-          style={s.input}
-          placeholder="What are you thinking of eating?"
-          placeholderTextColor={C.muted}
-          value={input}
-          onChangeText={setInput}
-          editable={!busy}
-          multiline
-        />
-        <Pressable style={[s.send, (busy || !input.trim()) && s.sendDim]} onPress={send} disabled={busy || !input.trim()}>
-          {busy ? <ActivityIndicator color={C.amberInk} size="small" /> : <Text style={s.sendText}>↑</Text>}
-        </Pressable>
+      {/* Mirrors the web composer: one pill, input full-width on top, controls
+          row below with send bottom-right (bottom-left slot is reserved for a
+          future attach button, matching web's layout). */}
+      <View style={[s.composerWrap, { paddingBottom: 12 + insets.bottom }]}>
+        <View style={s.composer}>
+          <TextInput
+            style={s.input}
+            placeholder="What are you thinking of eating?"
+            placeholderTextColor={C.muted}
+            value={input}
+            onChangeText={setInput}
+            editable={!busy}
+            multiline
+          />
+          <View style={s.controls}>
+            <Pressable style={[s.send, (busy || !input.trim()) && s.sendDim]} onPress={send} disabled={busy || !input.trim()}>
+              {busy ? <ActivityIndicator color={C.amberInk} size="small" /> : <Text style={s.sendText}>↑</Text>}
+            </Pressable>
+          </View>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -132,10 +139,15 @@ const s = StyleSheet.create({
   userText: { color: C.amberInk, fontSize: 15.5, lineHeight: 21 },
   assistantText: { color: C.fg, fontSize: 15.5, lineHeight: 21 },
   photo: { width: 180, height: 180, borderRadius: 12, backgroundColor: C.line },
-  composer: { flexDirection: "row", alignItems: "flex-end", gap: 10, padding: 12, borderTopWidth: 1, borderTopColor: C.line },
+  composerWrap: { padding: 12, borderTopWidth: 1, borderTopColor: C.line },
+  composer: {
+    borderWidth: 1, borderColor: C.line, borderRadius: 22, backgroundColor: C.card,
+    paddingHorizontal: 8, paddingTop: 4, paddingBottom: 7,
+  },
+  controls: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" },
   input: {
-    flex: 1, borderWidth: 1, borderColor: C.line, borderRadius: 20, color: C.fg,
-    paddingHorizontal: 16, paddingVertical: 10, fontSize: 15.5, maxHeight: 120, backgroundColor: C.card,
+    width: "100%", color: C.fg,
+    paddingHorizontal: 10, paddingVertical: 8, fontSize: 15.5, maxHeight: 120,
   },
   send: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.amber, alignItems: "center", justifyContent: "center" },
   sendDim: { opacity: 0.4 },

@@ -274,18 +274,22 @@ function Composer() {
       <div className="attach-row">
         <ComposerPrimitive.Attachments components={{ Attachment: AttachmentChip }} />
       </div>
-      <AttachButton />
       <ComposerPrimitive.Input className="chat-input" placeholder="What are you thinking of eating?" autoFocus />
-      <ThreadPrimitive.If running={false}>
-        <ComposerPrimitive.Send className="composer-send" aria-label="Send">
-          <ArrowUp />
-        </ComposerPrimitive.Send>
-      </ThreadPrimitive.If>
-      <ThreadPrimitive.If running>
-        <ComposerPrimitive.Cancel className="composer-send composer-stop" aria-label="Stop">
-          <Square fill="currentColor" strokeWidth={0} />
-        </ComposerPrimitive.Cancel>
-      </ThreadPrimitive.If>
+      {/* ChatGPT-style controls row under the full-width input: attach
+          bottom-left, send/stop bottom-right. */}
+      <div className="composer-controls">
+        <AttachButton />
+        <ThreadPrimitive.If running={false}>
+          <ComposerPrimitive.Send className="composer-send" aria-label="Send">
+            <ArrowUp />
+          </ComposerPrimitive.Send>
+        </ThreadPrimitive.If>
+        <ThreadPrimitive.If running>
+          <ComposerPrimitive.Cancel className="composer-send composer-stop" aria-label="Stop">
+            <Square fill="currentColor" strokeWidth={0} />
+          </ComposerPrimitive.Cancel>
+        </ThreadPrimitive.If>
+      </div>
     </ComposerPrimitive.Root>
   );
 }

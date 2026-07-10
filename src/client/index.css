@@ -1268,8 +1268,8 @@ a {
   flex: none;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: 0;
   background: transparent;
@@ -1320,11 +1320,11 @@ a {
 .attach-source-option + .attach-source-option {
   border-top: 1px solid var(--line);
 }
-/* Own row above the input controls; collapses away when there are no chips. */
+/* Own row above the input; collapses away when there are no chips. */
 .attach-row {
-  flex-basis: 100%;
   display: flex;
   flex-wrap: wrap;
+  padding: 0.15rem 0.35rem 0;
 }
 .attach-row:empty {
   display: none;
@@ -1955,25 +1955,33 @@ a {
   line-height: 1.25;
   color: var(--fg);
 }
-/* ChatGPT-style pill: textarea + send control share one rounded container. */
+/* ChatGPT-style pill, two rows: the input spans the full pill width on top;
+   below it a controls row — attach bottom-left, send/stop bottom-right — so
+   the buttons never steal typing width on phones (same layout at all widths). */
 .composer {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
   background: var(--input-bg);
   border: 1px solid var(--line);
   border-radius: 22px;
-  padding: 0.3rem 0.4rem 0.3rem 0.95rem;
+  padding: 0.45rem 0.45rem 0.4rem;
   transition: border-color 160ms ease-out;
 }
 .composer:focus-within {
   border-color: var(--accent);
 }
+.composer-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
 .composer-send {
   flex: none;
-  width: 2.15rem;
-  height: 2.15rem;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -2000,12 +2008,12 @@ a {
   color: var(--bg);
 }
 .chat-input {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   box-sizing: border-box;
   background: transparent;
   border: 0;
-  padding: 0.4rem 0;
+  padding: 0.35rem 0.5rem 0.15rem;
   color: var(--fg);
   font-family: var(--sans);
   font-size: 1rem;
