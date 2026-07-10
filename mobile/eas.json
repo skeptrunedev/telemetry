@@ -16,6 +16,13 @@
     },
     "production": {
       "autoIncrement": true
+    },
+    "simulator": {
+      "extends": "production",
+      "ios": {
+        "simulator": true
+      },
+      "distribution": "internal"
     }
   },
   "submit": {
@@ -24,7 +31,8 @@
         "ascApiKeyPath": "./credentials/AuthKey_3MV344G5H3.p8",
         "ascApiKeyId": "3MV344G5H3",
         "ascApiKeyIssuerId": "12cc6e71-1434-4210-a757-1a3f7bc64a82",
-        "appleTeamId": "63Q9XN39FV"
+        "appleTeamId": "63Q9XN39FV",
+        "ascAppId": "6789390978"
       }
     }
   }
