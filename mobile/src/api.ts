@@ -190,5 +190,21 @@ export async function setReminderEnabled(id: string, enabled: boolean): Promise<
   if (!r.ok) throw new Error(`setReminderEnabled → ${r.status}`);
 }
 
+// ---- Logging (used by the Apple Health sync) ----
+export async function logWeight(weightKg: number, note?: string): Promise<void> {
+  const r = await req(`/api/weight`, { method: "POST", body: JSON.stringify({ weightKg, note }) });
+  if (!r.ok) throw new Error(`logWeight → ${r.status}`);
+}
+
+// Same freeform-description path the agent's log_workout tool uses: the worker
+// parses the text into a normalized workout row and logs it.
+export async function describeWorkout(text: string, date?: string): Promise<void> {
+  const r = await req(`/api/workouts/describe`, {
+    method: "POST",
+    body: JSON.stringify({ text, date, tz: new Date().getTimezoneOffset() }),
+  });
+  if (!r.ok) throw new Error(`describeWorkout → ${r.status}`);
+}
+
 export const kgToLb = (kg: number) => kg * 2.2046226218;
 export const cmToIn = (cm: number) => cm / 2.54;

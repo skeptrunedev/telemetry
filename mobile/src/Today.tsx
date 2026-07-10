@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { View, Text, ScrollView, RefreshControl, StyleSheet, Pressable, Alert } from "react-native";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { View, Text, ScrollView, RefreshControl, StyleSheet, Pressable, Alert, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path, Circle } from "react-native-svg";
 import { C } from "./theme";
 import { dashboard, Dashboard, kgToLb, cmToIn, listReminders, deleteReminder, setReminderEnabled, Reminder } from "./api";
+import { healthSupported, isHealthConnected, connectAppleHealth, syncAppleHealth } from "./health";
 import { XIcon } from "./icons";
 
 const SITE_LABELS: Record<string, string> = {
@@ -124,12 +125,76 @@ function RemindersCard({ data, onChanged }: { data: { reminders: Reminder[]; pho
   );
 }
 
+// Apple Health connect/status card. iOS-native only: Android and the web sim
+// get a single muted line (the module never loads there — see src/health.ts).
+function AppleHealthCard({
+  connected,
+  lastSync,
+  onConnect,
+}: {
+  connected: boolean;
+  lastSync: { weights: number; workouts: number } | null;
+  onConnect: () => Promise<void>;
+}) {
+  const [connecting, setConnecting] = useState(false);
+
+  let body: ReactNode;
+  if (Platform.OS === "android") {
+    body = <Text style={s.healthMuted}>Apple Health is iPhone only</Text>;
+  } else if (Platform.OS === "web") {
+    body = <Text style={s.healthMuted}>Apple Health sync needs the iPhone app</Text>;
+  } else if (!healthSupported()) {
+    body = <Text style={s.healthMuted}>Apple Health isn’t available in this build</Text>;
+  } else if (connected) {
+    const synced =
+      lastSync && (lastSync.weights > 0 || lastSync.workouts > 0)
+        ? ` · just pulled ${[
+            lastSync.weights > 0 ? `${lastSync.weights} weigh-in${lastSync.weights === 1 ? "" : "s"}` : "",
+            lastSync.workouts > 0 ? `${lastSync.workouts} workout${lastSync.workouts === 1 ? "" : "s"}` : "",
+          ]
+            .filter(Boolean)
+            .join(", ")}`
+        : "";
+    body = <Text style={s.healthStatus}>Connected — weight & workouts sync when you open the app{synced}</Text>;
+  } else {
+    body = (
+      <View style={s.healthRow}>
+        <Text style={s.healthText}>Log weigh-ins and workouts automatically</Text>
+        <Pressable
+          style={s.healthConnect}
+          disabled={connecting}
+          accessibilityLabel="Connect Apple Health"
+          onPress={async () => {
+            setConnecting(true);
+            try {
+              await onConnect();
+            } finally {
+              setConnecting(false);
+            }
+          }}
+        >
+          <Text style={s.healthConnectText}>{connecting ? "…" : "CONNECT"}</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View style={s.card}>
+      <Text style={s.cardLabel}>APPLE HEALTH</Text>
+      {body}
+    </View>
+  );
+}
+
 export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<Dashboard | null>(null);
   const [reminders, setReminders] = useState<{ reminders: Reminder[]; phoneLinked: boolean } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [healthConnected, setHealthConnected] = useState(false);
+  const [healthSync, setHealthSync] = useState<{ weights: number; workouts: number } | null>(null);
 
   const loadReminders = useCallback(async () => {
     try {
@@ -141,6 +206,15 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
 
   const load = useCallback(async () => {
     const rem = loadReminders();
+    // Pull new Apple Health samples first (no-op when not connected / not iOS)
+    // so a fresh weigh-in shows up in the dashboard fetch below.
+    try {
+      const synced = await syncAppleHealth();
+      setHealthConnected(synced != null);
+      if (synced) setHealthSync(synced);
+    } catch {
+      // never let HealthKit trouble block the dashboard
+    }
     try {
       setData(await dashboard());
       setError(null);
@@ -152,7 +226,20 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
     await rem;
   }, [onAuthError, loadReminders]);
 
+  const connectHealth = useCallback(async () => {
+    const ok = await connectAppleHealth().catch(() => false);
+    if (!ok) {
+      Alert.alert("Apple Health", "Couldn’t connect. You can grant access later in Settings → Privacy & Security → Health.");
+      return;
+    }
+    setHealthConnected(true);
+    await load();
+  }, [load]);
+
   useEffect(() => {
+    // Reflect the persisted connection immediately (before the first sync
+    // resolves) so the card doesn't flash the CONNECT button on relaunch.
+    isHealthConnected().then(setHealthConnected).catch(() => {});
     load();
   }, [load]);
 
@@ -249,6 +336,8 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
       </View>
 
       {reminders && <RemindersCard data={reminders} onChanged={loadReminders} />}
+
+      <AppleHealthCard connected={healthConnected} lastSync={healthSync} onConnect={connectHealth} />
     </ScrollView>
   );
 }
@@ -290,4 +379,10 @@ const s = StyleSheet.create({
   remDelete: { width: 26, height: 26, alignItems: "center", justifyContent: "center", borderRadius: 7 },
   remWhen: { color: C.muted, fontSize: 11, fontFamily: "monospace", letterSpacing: 0.6, marginTop: 3 },
   remWarn: { color: C.attention, fontSize: 13, marginTop: 10 },
+  healthMuted: { color: C.dim, fontSize: 12, fontFamily: "monospace", paddingVertical: 8 },
+  healthStatus: { color: C.muted, fontSize: 13, lineHeight: 18, paddingVertical: 4 },
+  healthRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10, paddingVertical: 4 },
+  healthText: { flex: 1, color: C.fg, fontSize: 14.5, lineHeight: 19.5 },
+  healthConnect: { borderWidth: 1, borderColor: C.amber, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 13 },
+  healthConnectText: { color: C.amber, fontSize: 11, fontFamily: "monospace", letterSpacing: 1 },
 });

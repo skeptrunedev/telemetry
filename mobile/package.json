@@ -4,12 +4,14 @@
   "main": "index.ts",
   "dependencies": {
     "@expo/metro-runtime": "~57.0.3",
+    "@kingstinct/react-native-healthkit": "^14.0.2",
     "expo": "~57.0.2",
     "expo-secure-store": "~57.0.0",
     "expo-status-bar": "~57.0.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.0",
+    "react-native-nitro-modules": "^0.36.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2"

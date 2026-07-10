@@ -20,7 +20,15 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "skcal reads your weight and workouts from Apple Health so they are logged for you automatically — no manual entry.",
+          "NSHealthUpdateUsageDescription": "skcal does not write to Apple Health yet. This permission is reserved for a future option to save your logged weigh-ins back to Health.",
+          "background": false
+        }
+      ]
     ],
     "scheme": "skcal",
     "backgroundColor": "#141517",
