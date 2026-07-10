@@ -89,6 +89,29 @@ self.addEventListener("activate", (event) => {
 const CANONICAL_ORIGIN = "https://app.skcal.fit";
 const LEGACY_HOSTS = new Set(["telemetry.skeptrune.com", "skcal.skeptrune.com"]);
 
+// The browser sim of the mobile app (skcal-sim worker serving the expo web
+// export) calls this API cross-origin with bearer auth. Allow exactly those
+// origins — everything else stays same-origin with no CORS surface.
+const SIM_ORIGINS = new Set(["https://skcal-sim.nick-k.workers.dev", "http://localhost:8081"]);
+app.use("/api/*", async (c, next) => {
+  const origin = c.req.header("origin") ?? "";
+  if (!SIM_ORIGINS.has(origin)) return next();
+  if (c.req.method === "OPTIONS") {
+    return c.body(null, 204, {
+      "access-control-allow-origin": origin,
+      "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE",
+      "access-control-allow-headers": "authorization,content-type",
+      "access-control-max-age": "86400",
+    });
+  }
+  await next();
+  c.res.headers.set("access-control-allow-origin", origin);
+  const expose = c.res.headers.get("access-control-expose-headers");
+  if (!expose?.includes("set-auth-token")) {
+    c.res.headers.set("access-control-expose-headers", expose ? `${expose},set-auth-token` : "set-auth-token");
+  }
+});
+
 app.use("*", async (c, next) => {
   const url = new URL(c.req.url);
   if (url.hostname === "admin.skcal.fit") {

@@ -1,0 +1,10 @@
+{
+  // Browser-testable build of the mobile app: `npm run serve-sim` exports the
+  // expo web bundle and deploys it here. The API allows this origin via CORS.
+  "name": "skcal-sim",
+  "compatibility_date": "2026-06-01",
+  "assets": {
+    "directory": "../dist",
+    "not_found_handling": "single-page-application"
+  }
+}
