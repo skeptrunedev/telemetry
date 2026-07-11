@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, BackHandler, Platform } from "react-native";
+import { View, Text, Pressable, StyleSheet, BackHandler, Platform, Linking } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { C } from "./src/theme";
@@ -44,6 +44,23 @@ function Shell() {
       setAuthed(!!t);
       setReady(true);
     });
+  }, []);
+
+  // Deep-link session injection: `skcal://session?token=…` stores the token and
+  // marks us signed in. Possessing a valid session token IS authentication, so
+  // this opens no new hole — it exists so a headless simulator (which can't type
+  // into the sign-in field) can be driven straight to the logged-in app.
+  useEffect(() => {
+    const handle = (url: string | null) => {
+      if (!url) return;
+      const m = url.match(/[?&]token=([^&]+)/);
+      if (url.includes("session") && m) {
+        setToken(decodeURIComponent(m[1])).then(() => setAuthed(true));
+      }
+    };
+    Linking.getInitialURL().then(handle);
+    const sub = Linking.addEventListener("url", (e) => handle(e.url));
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {
