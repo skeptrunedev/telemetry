@@ -1,5 +1,8 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+// RN's global fetch can't expose a streaming response body; expo/fetch returns
+// a web-standard streaming Response so we can read the NDJSON token stream.
+import { fetch as streamFetch } from "expo/fetch";
 
 const BASE = "https://app.skcal.fit";
 const TOKEN_KEY = "skcal_session_token";
@@ -150,6 +153,87 @@ export async function agent(messages: ChatMessage[]): Promise<string> {
   if (!r.ok) throw new Error(`agent → ${r.status}`);
   const b = (await r.json()) as { reply: string };
   return b.reply;
+}
+
+// NDJSON event protocol shared with the web client (src/client/Coach.tsx):
+// {t:"text",v} appends a reply delta, {t:"tool"} / {t:"result"} bracket a tool
+// call. The reply is the concatenation of every text delta.
+type AgentEvent =
+  | { t: "text"; v?: string }
+  | { t: "tool"; id?: string; name?: string; args?: unknown }
+  | { t: "result"; id?: string; result?: unknown };
+
+// Streaming twin of agent(): POSTs to /api/agent/stream and reads the response
+// body incrementally via expo/fetch (RN's global fetch has no readable body).
+// onText is called with the full accumulated reply on each text delta so the UI
+// re-renders live; the resolved value is the final complete reply so callers can
+// persist the finished turn. onTool fires when a tool call starts (lightweight
+// "thinking" hint). Falls back to the non-streaming agent() on stream failure.
+export async function agentStream(
+  messages: ChatMessage[],
+  onText: (fullReply: string) => void,
+  onTool?: (name: string) => void,
+): Promise<string> {
+  const token = await getToken();
+  const day = new Date().toLocaleDateString("en-CA");
+  const tz = new Date().getTimezoneOffset();
+  let res: Response;
+  try {
+    res = await streamFetch(`${BASE}/api/agent/stream?date=${day}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ messages, date: day, tz }),
+    });
+  } catch {
+    // Network/stream setup failed — fall back to the buffered endpoint.
+    const reply = await agent(messages);
+    onText(reply);
+    return reply;
+  }
+  if (!res.ok || !res.body) {
+    // Non-2xx or no streamable body — buffered fallback keeps chat working.
+    const reply = await agent(messages);
+    onText(reply);
+    return reply;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let reply = "";
+  const handle = (line: string) => {
+    const s = line.trim();
+    if (!s) return;
+    let ev: AgentEvent;
+    try {
+      ev = JSON.parse(s) as AgentEvent;
+    } catch {
+      return;
+    }
+    if (ev.t === "text" && ev.v) {
+      reply += ev.v;
+      onText(reply);
+    } else if (ev.t === "tool") {
+      onTool?.(typeof ev.name === "string" ? ev.name : "");
+    }
+    // t:"result" carries tool output — nothing to render inline for now.
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      handle(buf.slice(0, nl));
+      buf = buf.slice(nl + 1);
+    }
+  }
+  if (buf.trim()) handle(buf);
+  return reply;
 }
 
 // ---- Agent conversation history (same endpoints the web app uses) ----

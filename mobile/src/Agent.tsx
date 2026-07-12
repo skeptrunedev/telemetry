@@ -5,8 +5,9 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Markdown from "react-native-markdown-display";
 import { C } from "./theme";
-import { agent, createConversation, appendMessages, photoSource, uploadAgentPhoto, ChatMessage, ChatPart } from "./api";
+import { agentStream, createConversation, appendMessages, photoSource, uploadAgentPhoto, ChatMessage, ChatPart } from "./api";
 
 // Persisted conversations may carry parts arrays (text + photos the web app
 // uploaded to R2); flatten to display text for bubbles and titles.
@@ -18,13 +19,18 @@ const textOf = (m: ChatMessage): string =>
 function Bubble({ item }: { item: ChatMessage }) {
   const user = item.role === "user";
   const parts = typeof item.content === "string" ? null : item.content;
+  const text = textOf(item);
   return (
     <View style={[s.bubble, user ? s.user : s.assistant]}>
       {/* photos need the bearer header — the API serves them per-user */}
       {parts?.filter((p) => p.type === "image").map((p, i) => (
         <Image key={i} style={s.photo} source={photoSource(p.image)} resizeMode="cover" />
       ))}
-      {textOf(item) ? <Text style={user ? s.userText : s.assistantText}>{textOf(item)}</Text> : null}
+      {/* user text is plain; assistant replies render markdown (bold, lists,
+          links, code) so the raw ** and #'s from the model don't leak through */}
+      {text ? (
+        user ? <Text style={s.userText}>{text}</Text> : <Markdown style={md}>{text}</Markdown>
+      ) : null}
     </View>
   );
 }
@@ -107,7 +113,11 @@ export function Agent({
       // opened on a user message (mirrors the web client).
       let window = next.slice(-20);
       while (window.length && window[0]?.role !== "user") window = window.slice(1);
-      const reply = await agent(window);
+      // Stream the reply token-by-token into a live assistant bubble; each
+      // delta re-renders the markdown so the text builds up in place.
+      const reply = await agentStream(window, (full) => {
+        setMessages([...next, { role: "assistant", content: full }]);
+      });
       setMessages([...next, { role: "assistant", content: reply }]);
       // Persist the completed turn exactly like the web app so history is
       // shared — data-URL photos are swapped for uploaded R2 URLs first (an
@@ -244,7 +254,6 @@ const s = StyleSheet.create({
   user: { alignSelf: "flex-end", backgroundColor: C.amber, borderBottomRightRadius: 5 },
   assistant: { alignSelf: "flex-start", backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderBottomLeftRadius: 5 },
   userText: { color: C.amberInk, fontSize: 15.5, lineHeight: 21 },
-  assistantText: { color: C.fg, fontSize: 15.5, lineHeight: 21 },
   photo: { width: 180, height: 180, borderRadius: 12, backgroundColor: C.line },
   composerWrap: { padding: 12, borderTopWidth: 1, borderTopColor: C.line },
   composer: {
@@ -281,4 +290,41 @@ const s = StyleSheet.create({
   sheetOption: { minHeight: 52, justifyContent: "center", paddingHorizontal: 14 },
   sheetOptionBorder: { borderTopWidth: 1, borderTopColor: C.line },
   sheetOptionText: { color: C.fg, fontSize: 16 },
+});
+
+// Dark-theme markdown for assistant replies. body's text props (color, size,
+// line height) cascade down to every text leaf via the renderer, matching the
+// ~15.5px bubble text; only element-specific tweaks are overridden below.
+const MONO = Platform.OS === "ios" ? "Menlo" : "monospace";
+const md = StyleSheet.create({
+  body: { color: C.fg, fontSize: 15.5, lineHeight: 21 },
+  paragraph: { marginTop: 0, marginBottom: 8 },
+  strong: { fontWeight: "700", color: C.fg },
+  em: { fontStyle: "italic" },
+  link: { color: C.amber, textDecorationLine: "underline" },
+  heading1: { color: C.fg, fontSize: 20, fontWeight: "700", marginBottom: 6 },
+  heading2: { color: C.fg, fontSize: 18, fontWeight: "700", marginBottom: 6 },
+  heading3: { color: C.fg, fontSize: 16.5, fontWeight: "700", marginBottom: 4 },
+  bullet_list: { marginBottom: 4 },
+  ordered_list: { marginBottom: 4 },
+  list_item: { marginBottom: 2 },
+  hr: { backgroundColor: C.line, height: 1, marginVertical: 8 },
+  blockquote: {
+    backgroundColor: C.bg, borderLeftWidth: 3, borderLeftColor: C.line,
+    borderColor: C.line, marginLeft: 0, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 8,
+  },
+  code_inline: {
+    backgroundColor: C.bg, color: C.fg, borderColor: C.line, borderWidth: 1,
+    borderRadius: 4, paddingHorizontal: 4, fontFamily: MONO, fontSize: 14,
+  },
+  code_block: {
+    backgroundColor: C.bg, color: C.fg, borderColor: C.line, borderWidth: 1,
+    borderRadius: 8, padding: 10, fontFamily: MONO, fontSize: 14,
+  },
+  fence: {
+    backgroundColor: C.bg, color: C.fg, borderColor: C.line, borderWidth: 1,
+    borderRadius: 8, padding: 10, fontFamily: MONO, fontSize: 14,
+  },
+  table: { borderColor: C.line, borderRadius: 6 },
+  tr: { borderColor: C.line },
 });
