@@ -129,35 +129,6 @@ export function Dashboard({
           {weight.note && <p className="note-line">“{weight.note}”</p>}
         </section>
 
-        {/* SHOULDER : WAIST */}
-        <section className="card">
-          <p className="label">Shoulder : Waist</p>
-          <p className="big-num">{shoulderToWaist != null ? shoulderToWaist.toFixed(3) : "—"}</p>
-          <p className="meta">higher = more V-taper · your "more muscular" metric</p>
-        </section>
-
-        {/* MEASUREMENTS */}
-        <section className="card">
-          <p className="label">Measurements / in</p>
-          {orderedMeasurements.length === 0 ? (
-            <p className="empty">no measurements yet — tap + to add</p>
-          ) : (
-            <div className="rows">
-              {orderedMeasurements.map((m) => (
-                <div className="crow" key={m.site}>
-                  <div className="crow-top">
-                    <span className="crow-label">{SITE_LABELS[m.site] ?? m.site}</span>
-                    <span className="crow-val">
-                      {f1(cmToIn(m.valueCm))}
-                      <span className="unit"> in</span>
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
         {/* NUTRITION */}
         <section className="card">
           <div className="card-head">
@@ -192,6 +163,35 @@ export function Dashboard({
                   <span className={protein != null && protein >= proteinTarget ? "" : "info"} style={{ width: `${proteinPct}%` }} />
                 </div>
               </div>
+            </div>
+          )}
+        </section>
+
+        {/* SHOULDER : WAIST */}
+        <section className="card">
+          <p className="label">Shoulder : Waist</p>
+          <p className="big-num">{shoulderToWaist != null ? shoulderToWaist.toFixed(3) : "—"}</p>
+          <p className="meta">higher = more V-taper · your "more muscular" metric</p>
+        </section>
+
+        {/* MEASUREMENTS */}
+        <section className="card">
+          <p className="label">Measurements / in</p>
+          {orderedMeasurements.length === 0 ? (
+            <p className="empty">no measurements yet — tap + to add</p>
+          ) : (
+            <div className="rows">
+              {orderedMeasurements.map((m) => (
+                <div className="crow" key={m.site}>
+                  <div className="crow-top">
+                    <span className="crow-label">{SITE_LABELS[m.site] ?? m.site}</span>
+                    <span className="crow-val">
+                      {f1(cmToIn(m.valueCm))}
+                      <span className="unit"> in</span>
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </section>

@@ -7,6 +7,7 @@ export const C = {
   muted: "#a3a5aa",
   dim: "#6c6f73",
   attention: "#e0894a",
+  info: "#5b9bd5",
   amber: "#f59e0b",
   amberInk: "#1a1205",
 };

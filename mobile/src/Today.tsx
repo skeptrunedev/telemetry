@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { View, Text, ScrollView, RefreshControl, StyleSheet, Pressable, Alert, Platform } from "react-native";
+import { View, Text, ScrollView, RefreshControl, StyleSheet, Pressable, Alert, Platform, type DimensionValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path, Circle } from "react-native-svg";
 import { C } from "./theme";
@@ -272,6 +272,12 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
   const arm = bySite("arm_r") ?? bySite("arm_l");
   const kcal = data.nutritionToday?.kcal ?? 0;
   const protein = data.nutritionToday?.proteinG ?? 0;
+  const kcalTarget = data.targets.dailyKcalTarget;
+  const proteinTarget = data.targets.proteinTargetG;
+  const kcalPct = kcalTarget ? Math.min(100, (kcal / kcalTarget) * 100) : 0;
+  const proteinPct = proteinTarget ? Math.min(100, (protein / proteinTarget) * 100) : 0;
+  const kcalOver = kcalTarget != null && kcal > kcalTarget;
+  const proteinHit = proteinTarget != null && protein >= proteinTarget;
 
   return (
     <ScrollView
@@ -303,6 +309,28 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
         </View>
       </View>
 
+      <View style={s.card}>
+        <Text style={s.cardLabel}>NUTRITION / TODAY</Text>
+        <View style={s.nutRow}>
+          <View style={s.nutTop}>
+            <Text style={s.mname}>CALORIES</Text>
+            <Text style={s.nutVal}>{kcal} / {kcalTarget ?? "—"} kcal</Text>
+          </View>
+          <View style={s.bar}>
+            <View style={[s.barFill, { width: `${kcalPct}%` as DimensionValue, backgroundColor: kcalOver ? C.amber : C.info }]} />
+          </View>
+        </View>
+        <View style={s.nutRow}>
+          <View style={s.nutTop}>
+            <Text style={s.mname}>PROTEIN</Text>
+            <Text style={s.nutVal}>{Math.round(protein)} / {proteinTarget ?? "—"} g</Text>
+          </View>
+          <View style={s.bar}>
+            <View style={[s.barFill, { width: `${proteinPct}%` as DimensionValue, backgroundColor: proteinHit ? C.amber : C.info }]} />
+          </View>
+        </View>
+      </View>
+
       {data.shoulderToWaist != null && (
         <View style={s.card}>
           <Text style={s.cardLabel}>SHOULDER : WAIST</Text>
@@ -322,18 +350,6 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
           ))}
         </View>
       )}
-
-      <View style={s.card}>
-        <Text style={s.cardLabel}>NUTRITION / TODAY</Text>
-        <View style={s.mrow}>
-          <Text style={s.mname}>CALORIES</Text>
-          <Text style={s.mval}>{kcal} / {data.targets.dailyKcalTarget ?? "—"}</Text>
-        </View>
-        <View style={s.mrow}>
-          <Text style={s.mname}>PROTEIN</Text>
-          <Text style={s.mval}>{Math.round(protein)} / {data.targets.proteinTargetG ?? "—"} g</Text>
-        </View>
-      </View>
 
       {reminders && <RemindersCard data={reminders} onChanged={loadReminders} />}
 
@@ -367,6 +383,11 @@ const s = StyleSheet.create({
   mrow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
   mname: { color: C.muted, fontSize: 13, fontFamily: "monospace", letterSpacing: 1 },
   mval: { color: C.fg, fontSize: 17, fontWeight: "600" },
+  nutRow: { paddingVertical: 11, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
+  nutTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 },
+  nutVal: { color: C.fg, fontSize: 14, fontFamily: "monospace" },
+  bar: { height: 8, borderRadius: 999, backgroundColor: C.line, overflow: "hidden" },
+  barFill: { height: "100%", borderRadius: 999 },
   remEmpty: { color: C.dim, fontSize: 12, fontFamily: "monospace", paddingVertical: 8 },
   remRow: { paddingVertical: 11 },
   remRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
