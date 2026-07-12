@@ -184,7 +184,10 @@ export function Dashboard({
               {orderedMeasurements.map((m) => (
                 <div className="crow" key={m.site}>
                   <div className="crow-top">
-                    <span className="crow-label">{SITE_LABELS[m.site] ?? m.site}</span>
+                    <span className="crow-label">
+                      {SITE_LABELS[m.site] ??
+                        m.site.split("_").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ")}
+                    </span>
                     <span className="crow-val">
                       {f1(cmToIn(m.valueCm))}
                       <span className="unit"> in</span>

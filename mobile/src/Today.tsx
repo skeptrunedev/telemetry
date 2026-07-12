@@ -13,6 +13,11 @@ const SITE_LABELS: Record<string, string> = {
   forearm_l: "FOREARM (L)", forearm_r: "FOREARM (R)", calf_l: "CALF (L)", calf_r: "CALF (R)",
 };
 
+// Prettify any site the label map doesn't cover (e.g. an AI-logged one-off)
+// so it never renders as a raw "WAIST_HIP" key: "waist_hip" -> "Waist Hip".
+const prettySite = (s: string) =>
+  s.split("_").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
+
 function TrendChart({ trend }: { trend: { ts: number; kg: number }[] }) {
   const W = 320, H = 110;
   if (trend.length < 2) return <View style={{ height: H }} />;
@@ -344,7 +349,7 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
           <Text style={s.cardLabel}>MEASUREMENTS / IN</Text>
           {data.measurementsLatest.map((m) => (
             <View key={m.site} style={s.mrow}>
-              <Text style={s.mname}>{SITE_LABELS[m.site] ?? m.site.toUpperCase()}</Text>
+              <Text style={s.mname}>{SITE_LABELS[m.site] ?? prettySite(m.site)}</Text>
               <Text style={s.mval}>{cmToIn(m.valueCm).toFixed(1)} <Text style={s.mutedSmall}>in</Text></Text>
             </View>
           ))}
