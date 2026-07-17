@@ -1909,16 +1909,62 @@ app.get("/api/nutrition/meals", async (c) => {
  *       '404':
  *         $ref: '#/components/responses/NotFound'
  */
-app.delete("/api/nutrition/meals/:id", async (c) => {
-  const email = c.get("email");
-  const id = c.req.param("id");
+// Shared by the REST routes and the coach's food-cleanup tools.
+async function deleteMealForUser(c: EnvCtx, email: string, id: string): Promise<boolean> {
   const rows = await db(c).select().from(schema.meals).where(and(eq(schema.meals.id, id), eq(schema.meals.userEmail, email))).limit(1);
-  if (!rows.length) return c.json({ error: "not found" }, 404);
+  if (!rows.length) return false;
   const keys: string[] = rows[0].photoKeys ? JSON.parse(rows[0].photoKeys) : [];
   await Promise.all(keys.map((k) => c.env.PHOTOS.delete(k).catch(() => {})));
   await db(c).delete(schema.nutritionItems).where(and(eq(schema.nutritionItems.mealId, id), eq(schema.nutritionItems.userEmail, email)));
   await db(c).delete(schema.meals).where(and(eq(schema.meals.id, id), eq(schema.meals.userEmail, email)));
   await recomputeDay(c, email, rows[0].date);
+  return true;
+}
+
+async function deleteFoodItemForUser(c: EnvCtx, email: string, id: number): Promise<boolean> {
+  const rows = await db(c).select().from(schema.nutritionItems).where(and(eq(schema.nutritionItems.id, id), eq(schema.nutritionItems.userEmail, email))).limit(1);
+  if (!rows.length) return false;
+  await db(c).delete(schema.nutritionItems).where(and(eq(schema.nutritionItems.id, id), eq(schema.nutritionItems.userEmail, email)));
+  await recomputeDay(c, email, rows[0].date);
+  return true;
+}
+
+// Partial edit of a logged food item ("that was actually 600 kcal") — any
+// change recomputes the day's totals.
+async function editFoodItemForUser(
+  c: EnvCtx,
+  email: string,
+  id: number,
+  input: { name?: unknown; kcal?: unknown; proteinG?: unknown },
+): Promise<{ ok: true; item: { id: number; name: string; kcal: number; proteinG: number; date: string } } | { error: string }> {
+  const rows = await db(c).select().from(schema.nutritionItems).where(and(eq(schema.nutritionItems.id, id), eq(schema.nutritionItems.userEmail, email))).limit(1);
+  if (!rows.length) return { error: "no food item with that id" };
+  const patch: Partial<typeof schema.nutritionItems.$inferInsert> = {};
+  if (input.name !== undefined) {
+    const name = String(input.name ?? "").trim().slice(0, 120);
+    if (!name) return { error: "name cannot be empty" };
+    patch.name = name;
+  }
+  if (input.kcal !== undefined) {
+    const kcal = Math.round(Number(input.kcal));
+    if (!Number.isFinite(kcal) || kcal < 0 || kcal > 5000) return { error: "kcal must be 0-5000" };
+    patch.kcal = kcal;
+  }
+  if (input.proteinG !== undefined) {
+    const proteinG = Number(input.proteinG);
+    if (!Number.isFinite(proteinG) || proteinG < 0 || proteinG > 500) return { error: "protein_g must be 0-500" };
+    patch.proteinG = proteinG;
+  }
+  if (!Object.keys(patch).length) return { error: "nothing to change" };
+  patch.source = "manual"; // a human correction outranks the AI estimate
+  const updated = (await db(c).update(schema.nutritionItems).set(patch).where(eq(schema.nutritionItems.id, id)).returning())[0];
+  await recomputeDay(c, email, updated.date);
+  return { ok: true, item: { id: updated.id, name: updated.name, kcal: updated.kcal, proteinG: updated.proteinG, date: updated.date } };
+}
+
+app.delete("/api/nutrition/meals/:id", async (c) => {
+  const ok = await deleteMealForUser(c, c.get("email"), c.req.param("id"));
+  if (!ok) return c.json({ error: "not found" }, 404);
   return c.json({ ok: true });
 });
 
@@ -1951,14 +1997,21 @@ app.delete("/api/nutrition/meals/:id", async (c) => {
  *         $ref: '#/components/responses/NotFound'
  */
 app.delete("/api/nutrition/items/:id", async (c) => {
-  const email = c.get("email");
   const id = Number(c.req.param("id"));
   if (!Number.isFinite(id)) return c.json({ error: "bad id" }, 400);
-  const rows = await db(c).select().from(schema.nutritionItems).where(and(eq(schema.nutritionItems.id, id), eq(schema.nutritionItems.userEmail, email))).limit(1);
-  if (!rows.length) return c.json({ error: "not found" }, 404);
-  await db(c).delete(schema.nutritionItems).where(and(eq(schema.nutritionItems.id, id), eq(schema.nutritionItems.userEmail, email)));
-  await recomputeDay(c, email, rows[0].date);
+  const ok = await deleteFoodItemForUser(c, c.get("email"), id);
+  if (!ok) return c.json({ error: "not found" }, 404);
   return c.json({ ok: true });
+});
+
+// Edit a logged food item in place (name / kcal / protein).
+app.patch("/api/nutrition/items/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isFinite(id)) return c.json({ error: "bad id" }, 400);
+  const b = await c.req.json<{ name?: string; kcal?: number; proteinG?: number; protein_g?: number }>().catch(() => ({}) as Record<string, never>);
+  const res = await editFoodItemForUser(c, c.get("email"), id, { name: b.name, kcal: b.kcal, proteinG: b.proteinG ?? b.protein_g });
+  if ("error" in res) return c.json(res, res.error === "no food item with that id" ? 404 : 400);
+  return c.json(res);
 });
 
 // Serve a meal photo from R2, scoped to the requesting user's own keys.
@@ -2471,6 +2524,39 @@ const COACH_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "delete_meal",
+    description: "Delete a logged meal and all its items. Get the id from list_food_log. For cleanup (duplicates, mistakes).",
+    input_schema: {
+      type: "object",
+      properties: { mealId: { type: "string", description: "Meal id from list_food_log." } },
+      required: ["mealId"],
+    },
+  },
+  {
+    name: "delete_food_item",
+    description: "Delete a single logged food item. Get the id from list_food_log.",
+    input_schema: {
+      type: "object",
+      properties: { itemId: { type: "number", description: "Item id from list_food_log." } },
+      required: ["itemId"],
+    },
+  },
+  {
+    name: "edit_food_item",
+    description:
+      "Edit a logged food item in place when the user corrects it ('that was actually 600 kcal', 'it was 2 scoops so double it', renames). Only pass the fields that change. Get the id from list_food_log.",
+    input_schema: {
+      type: "object",
+      properties: {
+        itemId: { type: "number", description: "Item id from list_food_log." },
+        name: { type: "string", description: "New item name, only if it changed." },
+        kcal: { type: "number", description: "Corrected calories for this item." },
+        protein_g: { type: "number", description: "Corrected protein grams for this item." },
+      },
+      required: ["itemId"],
+    },
+  },
+  {
     name: "log_measurement",
     description:
       "Record a body-part circumference measurement in INCHES. Sites: shoulders, chest, arm_l, arm_r, waist, neck, thigh, glutes, forearm_l, forearm_r, calf_l, calf_r.",
@@ -2796,6 +2882,26 @@ async function executeCoachTool(
     });
   }
 
+  if (name === "delete_meal") {
+    const id = String(input.mealId ?? "").trim();
+    if (!id) return { error: "mealId required" };
+    const ok = await deleteMealForUser(c, email, id);
+    return ok ? { ok: true, deleted: id } : { error: "no meal with that id" };
+  }
+
+  if (name === "delete_food_item") {
+    const id = Number(input.itemId);
+    if (!Number.isFinite(id)) return { error: "itemId required" };
+    const ok = await deleteFoodItemForUser(c, email, id);
+    return ok ? { ok: true, deleted: id } : { error: "no food item with that id" };
+  }
+
+  if (name === "edit_food_item") {
+    const id = Number(input.itemId);
+    if (!Number.isFinite(id)) return { error: "itemId required" };
+    return await editFoodItemForUser(c, email, id, { name: input.name, kcal: input.kcal, proteinG: input.protein_g });
+  }
+
   if (name === "list_reminders") {
     return await listRemindersForUser(c, email);
   }
@@ -2899,7 +3005,7 @@ app.post("/api/agent/stream", async (c) => {
   const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
   const system =
     (await buildCoachSystem(c, email, today, tzMin)) +
-    `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory; update daily calorie and protein targets with set_targets. When the user describes their day to day activity, a new job, a change in training volume, or a big lifestyle change, recompute their daily calorie target with Mifflin-St Jeor from the height, sex, and latest weigh-in in the context above, scaled by the closest activity multiplier, 1.2 sedentary, 1.375 lightly active, 1.55 moderately active, 1.725 very active, 1.9 athlete, then apply the deficit or surplus their current goal implies, state the new daily calorie and protein numbers plainly, and call set_targets with them, passing their activity in a few words. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. REMINDERS, when the user asks to be reminded of something ("remind me to log lunch at noon", "ping me to weigh in on weekday mornings"), create it with set_reminder, and when they correct or adjust one ("no, 9am", "weekdays only") edit it in place with update_reminder using the id from your create result or list_reminders, never create a second one for the same thing. Cancellations use delete_reminder. Reminders DELIVER OVER IMESSAGE, if the tool result says phoneLinked is false, tell the user they won't receive reminder texts until they link their phone in their profile or text the skcal number. If the result says tzDefaulted is true, state the timezone you assumed and ask them to correct it if wrong. After creating one, confirm in plain words what was set, the time and the cadence. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
+    `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; clean up mistakes and duplicates with delete_meal and delete_food_item, and when the user corrects an entry ("that was actually 600 kcal", "it was two scoops") fix it in place with edit_food_item instead of deleting and relogging; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory; update daily calorie and protein targets with set_targets. When the user describes their day to day activity, a new job, a change in training volume, or a big lifestyle change, recompute their daily calorie target with Mifflin-St Jeor from the height, sex, and latest weigh-in in the context above, scaled by the closest activity multiplier, 1.2 sedentary, 1.375 lightly active, 1.55 moderately active, 1.725 very active, 1.9 athlete, then apply the deficit or surplus their current goal implies, state the new daily calorie and protein numbers plainly, and call set_targets with them, passing their activity in a few words. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. REMINDERS, when the user asks to be reminded of something ("remind me to log lunch at noon", "ping me to weigh in on weekday mornings"), create it with set_reminder, and when they correct or adjust one ("no, 9am", "weekdays only") edit it in place with update_reminder using the id from your create result or list_reminders, never create a second one for the same thing. Cancellations use delete_reminder. Reminders DELIVER OVER IMESSAGE, if the tool result says phoneLinked is false, tell the user they won't receive reminder texts until they link their phone in their profile or text the skcal number. If the result says tzDefaulted is true, state the timezone you assumed and ask them to correct it if wrong. After creating one, confirm in plain words what was set, the time and the cadence. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
