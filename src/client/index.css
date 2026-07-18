@@ -2023,6 +2023,13 @@ a {
   min-height: 1.4rem;
   max-height: 140px;
   overflow-y: auto;
+  /* No visible scrollbar, ever: zoom/DPI rounding makes scrollHeight land a
+     pixel over the autosized height, which parks a permanent track in the
+     empty input. Scrolling still works (wheel/touch/caret) at the cap. */
+  scrollbar-width: none;
+}
+.chat-input::-webkit-scrollbar {
+  display: none;
 }
 .chat-input::placeholder {
   color: var(--muted);
