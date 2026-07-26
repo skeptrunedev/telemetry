@@ -477,8 +477,16 @@ const MACRO_SCHEMA = {
 const VISION_PROMPT =
   "The image(s) show ONE meal, possibly from multiple angles. Identify each distinct food or drink and estimate its calories (kcal) and protein (grams) for the portion actually shown. Be realistic about portion size. Sum them into total_kcal and total_protein_g. In `note`, give one short sentence on key assumptions or uncertainty.";
 
+// The meal parser occasionally emits a "Total" summary row as an item, which
+// double-counts the whole meal in the day totals. Belt to the prompt's ban.
+function dropSummaryRows<T extends { name: string }>(items: T[]): T[] {
+  const named = items.filter((it) => it.name.trim().length > 0);
+  if (named.length < 2) return named;
+  return named.filter((it) => !/^(total|subtotal|sum|overall|combined)\b/i.test(it.name.trim()));
+}
+
 const DESCRIBE_PROMPT =
-  "The user describes a meal they ate, in their own words. Estimate each distinct food or drink they ACTUALLY ate — respect stated quantities, sides and sauces, and EXCLUDE anything they say they skipped, ignored, or left over. Give kcal and protein (grams) for each item's described portion, sum into total_kcal and total_protein_g, and in `note` state the main assumptions (portion sizes, restaurant defaults).";
+  "The user describes a meal they ate, in their own words. Estimate each distinct food or drink they ACTUALLY ate — respect stated quantities, sides and sauces, and EXCLUDE anything they say they skipped, ignored, or left over. Give kcal and protein (grams) for each item's described portion, sum into total_kcal and total_protein_g, and in `note` state the main assumptions (portion sizes, restaurant defaults). `items` must contain individual foods ONLY — never add a Total, Subtotal, or summary row as an item; totals belong exclusively in total_kcal/total_protein_g.";
 
 // Normalized workout activity types — the same vocabulary future Apple Health /
 // Garmin / Strava imports will map onto.
@@ -1545,7 +1553,7 @@ async function analyzeMealPhotos(
   await db(c).insert(schema.meals).values({
     id: mealId, userEmail: email, date: today, note: note || parsed.note || null, photoKeys: JSON.stringify(photoKeys),
   });
-  const items = (parsed.items ?? []).slice(0, 30).map((it) => ({
+  const items = dropSummaryRows(parsed.items ?? []).slice(0, 30).map((it) => ({
     userEmail: email, mealId, date: today,
     name: String(it.name).slice(0, 120),
     kcal: Math.max(0, Math.round(Number(it.kcal) || 0)),
@@ -1800,7 +1808,7 @@ async function logDescribedMeal(
 
   const mealId = crypto.randomUUID();
   await db(c).insert(schema.meals).values({ id: mealId, userEmail: email, date: today, note: text, photoKeys: null });
-  const items = (parsed.items ?? []).slice(0, 30).map((it) => ({
+  const items = dropSummaryRows(parsed.items ?? []).slice(0, 30).map((it) => ({
     userEmail: email, mealId, date: today,
     name: String(it.name).slice(0, 120),
     kcal: Math.max(0, Math.round(Number(it.kcal) || 0)),
