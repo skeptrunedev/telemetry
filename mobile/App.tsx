@@ -45,10 +45,12 @@ function Shell() {
   }, []);
 
   useEffect(() => {
-    getToken().then((t) => {
-      setAuthed(!!t);
-      setReady(true);
-    });
+    // Never leave the app on a blank boot screen: if secure storage throws
+    // (locked keychain, unsigned build), fall through to sign-in instead.
+    getToken()
+      .then((t) => setAuthed(!!t))
+      .catch((e) => console.warn("token read failed, showing sign in:", e))
+      .finally(() => setReady(true));
   }, []);
 
   // Deep-link session injection: `skcal://session?token=…` stores the token and
