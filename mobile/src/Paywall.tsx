@@ -8,17 +8,14 @@ import { buySubscription, checkIapReadiness, restoreSubscription, type IapReadin
 // Shown instead of the dashboard when the API answers 402.
 //
 // This replaces a bare "subscription required" string that left the user with no
-// way forward, which is a plausible App Review rejection on its own. Two modes:
+// way forward, which is a plausible App Review rejection on its own.
 //
-//   * StoreKit has the product and the worker can verify it  ->  buy button
-//   * anything else (today's reality, and Android)           ->  iMessage copy
-//
-// The fallback deliberately shows no price and no purchase link of any kind.
-// Guideline 3.1.1 forbids steering to an outside payment method from inside the
-// app, so it says how to get set up and nothing about money.
+// Subscribing is the only path offered. The price line only renders once
+// StoreKit hands back the product, but the button is always there, because a
+// paywall that hides its own purchase button reads as broken (and gives App
+// Review nothing to test). Guideline 3.1.1 forbids steering to an outside
+// payment method, so no other way to pay is mentioned anywhere here.
 
-const SKCAL_NUMBER = "+1 (628) 316-6355";
-const SKCAL_SMS = "sms:+16283166355&body=hi";
 const TERMS_URL = "https://skcal.fit/terms";
 const PRIVACY_URL = "https://skcal.fit/privacy";
 
@@ -93,7 +90,7 @@ export function Paywall({ onActivated }: { onActivated: () => void }) {
             <ActivityIndicator color={C.amber} />
             <Text style={s.muted}>checking the App Store</Text>
           </View>
-        ) : ready ? (
+        ) : (
           <>
             <Text style={s.body}>
               skcal keeps your weight trend, meals, and workouts in one place, and the agent texts you through the
@@ -101,19 +98,23 @@ export function Paywall({ onActivated }: { onActivated: () => void }) {
             </Text>
 
             <View style={s.planRow}>
-              <Text style={s.planName}>{ready.product.displayName}</Text>
-              <Text style={s.planPrice}>{ready.product.displayPrice} / month</Text>
+              <Text style={s.planName}>{ready?.product.displayName ?? "skcal"}</Text>
+              {ready ? <Text style={s.planPrice}>{ready.product.displayPrice} / month</Text> : null}
             </View>
 
-            <Pressable
-              style={[s.cta, busy != null && s.ctaBusy]}
-              disabled={busy != null}
-              accessibilityRole="button"
-              accessibilityLabel="Subscribe"
-              onPress={() => handle("buy")}
-            >
-              <Text style={s.ctaText}>{busy === "buy" ? "OPENING THE APP STORE…" : "SUBSCRIBE"}</Text>
-            </Pressable>
+            {canRestore ? (
+              <Pressable
+                style={[s.cta, busy != null && s.ctaBusy]}
+                disabled={busy != null}
+                accessibilityRole="button"
+                accessibilityLabel="Subscribe"
+                onPress={() => handle("buy")}
+              >
+                <Text style={s.ctaText}>{busy === "buy" ? "OPENING THE APP STORE…" : "SUBSCRIBE"}</Text>
+              </Pressable>
+            ) : (
+              <Text style={s.fine}>Subscribing is available in the skcal app for iPhone.</Text>
+            )}
 
             <Text style={s.fine}>
               Payment is charged to your Apple ID when you confirm. It renews every month unless you turn off auto
@@ -128,24 +129,6 @@ export function Paywall({ onActivated }: { onActivated: () => void }) {
                 <Text style={s.link}>Privacy Policy</Text>
               </Pressable>
             </View>
-          </>
-        ) : (
-          <>
-            <Text style={s.body}>
-              skcal runs over iMessage. Text the skcal number and we will get you set up, then everything you log
-              shows up here.
-            </Text>
-            <Pressable
-              style={s.numberBtn}
-              accessibilityRole="button"
-              accessibilityLabel={`Text skcal at ${SKCAL_NUMBER}`}
-              onPress={() => Linking.openURL(SKCAL_SMS).catch(() => {})}
-            >
-              <Text style={s.numberText}>{SKCAL_NUMBER}</Text>
-            </Pressable>
-            <Text style={s.fine}>
-              Already texting with skcal? Pull down on Today once your account is set up and it will load.
-            </Text>
           </>
         )}
 
@@ -192,11 +175,6 @@ const s = StyleSheet.create({
   linkRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
   link: { color: C.info, fontSize: 12, textDecorationLine: "underline" },
   linkDot: { color: C.dim, fontSize: 12 },
-  numberBtn: {
-    marginTop: 16, borderRadius: 999, borderWidth: 1, borderColor: C.amber,
-    paddingVertical: 12, alignItems: "center",
-  },
-  numberText: { color: C.amber, fontSize: 15, fontFamily: "monospace", letterSpacing: 0.8 },
   note: { color: C.info, fontSize: 13, lineHeight: 18.5, marginTop: 14 },
   noteBad: { color: C.attention },
   restore: { alignSelf: "center", paddingVertical: 10, paddingHorizontal: 14 },
