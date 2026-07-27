@@ -1,0 +1,7 @@
+{
+  "name": "skcal-iap",
+  "version": "1.0.0",
+  "description": "StoreKit 2 subscriptions for skcal",
+  "main": "index.ts",
+  "private": true
+}

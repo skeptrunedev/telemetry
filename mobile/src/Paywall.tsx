@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, Linking, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, Linking, ActivityIndicator, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { C } from "./theme";
 import { isIapAvailable } from "../modules/skcal-iap";
@@ -102,7 +102,10 @@ export function Paywall({ onActivated }: { onActivated: () => void }) {
               {ready ? <Text style={s.planPrice}>{ready.product.displayPrice} / month</Text> : null}
             </View>
 
-            {canRestore ? (
+            {Platform.OS === "ios" ? (
+              // Always offered on iOS. Gating this on a StoreKit readiness probe
+              // meant one bad probe hid the only way to pay; a failed purchase
+              // now reports itself instead of silently removing the button.
               <Pressable
                 style={[s.cta, busy != null && s.ctaBusy]}
                 disabled={busy != null}
