@@ -120,6 +120,17 @@ async function gravatarUrl(email: string): Promise<string | null> {
 // Build a Better Auth instance bound to this request's env. Cheap to construct
 // per request (no I/O until an endpoint is hit), which suits Workers' isolate
 // model where `env` only exists inside a request.
+// Clients may send a bare 10-digit number; Twilio Verify needs E.164 and the
+// review-phone shortcut is an exact match, so normalize before either.
+function toE164(input: string): string | null {
+  const t = input.replace(/[\s().-]/g, "");
+  if (t.startsWith("+")) return /^\+[1-9]\d{6,14}$/.test(t) ? t : null;
+  const digits = t.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return null;
+}
+
 export function makeAuth(env: AuthEnv) {
   return betterAuth({
     database: drizzleAdapter(drizzle(env.DB, { schema }), { provider: "sqlite" }),
@@ -171,11 +182,15 @@ export function makeAuth(env: AuthEnv) {
       // own codes, so sendOTP ignores Better Auth's generated code and
       // verifyOTP checks against Twilio instead.
       phoneNumber({
-        sendOTP: async ({ phoneNumber: phone }) => {
+        sendOTP: async ({ phoneNumber: raw }) => {
           // Local dev/tests: no Twilio round-trip; verify accepts 000000.
           if (env.AUTH_DEV_BYPASS) return;
+          const phone = toE164(raw) ?? raw;
           // App Review's demo number: no SMS, fixed code checked in verifyOTP.
           if (env.REVIEW_PHONE && env.REVIEW_OTP && phone === env.REVIEW_PHONE) return;
+          if (!toE164(raw)) {
+            throw new APIError("BAD_REQUEST", { message: "Enter a valid phone number." });
+          }
           try {
             await twilioVerify(env, "Verifications", { To: phone, Channel: "sms" });
           } catch (e) {
@@ -195,7 +210,7 @@ export function makeAuth(env: AuthEnv) {
         verifyOTP: async ({ phoneNumber: phone, code }) => {
           if (env.AUTH_DEV_BYPASS) {
             if (code !== "000000") return false;
-          } else if (env.REVIEW_PHONE && env.REVIEW_OTP && phone === env.REVIEW_PHONE) {
+          } else if (env.REVIEW_PHONE && env.REVIEW_OTP && (toE164(phone) ?? phone) === env.REVIEW_PHONE) {
             if (code !== env.REVIEW_OTP) return false;
           } else {
             try {
