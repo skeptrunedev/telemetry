@@ -35,15 +35,12 @@
           "photosPermission": "skcal reads the photo you pick so the agent can log the meal in it.",
           "cameraPermission": "skcal uses the camera to snap a meal photo for logging."
         }
-      ]
+      ],
+      "expo-status-bar",
+      "expo-splash-screen"
     ],
     "scheme": "skcal",
     "backgroundColor": "#141517",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#141517"
-    },
     "extra": {
       "eas": {
         "projectId": "03af82f4-13a2-4717-9adb-9e51f4ce1718"
