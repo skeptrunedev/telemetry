@@ -91,7 +91,18 @@ async function verifyAndFinish(transaction: SkcalTransaction): Promise<PurchaseO
 /** Run the full buy flow. Safe to call even when IAP is unavailable. */
 export async function buySubscription(): Promise<PurchaseOutcome> {
   const readiness = await checkIapReadiness();
-  if (!readiness.ready) return { outcome: "error", message: "Subscribing in the app is not available yet" };
+  if (!readiness.ready) {
+    // Name the failing step. The four reasons need different fixes (device vs
+    // worker secrets vs App Store product propagation), and a generic message
+    // makes them indistinguishable from the outside.
+    const why: Record<string, string> = {
+      "no-storekit": "StoreKit is unavailable on this device",
+      offline: "could not reach skcal",
+      "server-not-configured": "skcal is missing its App Store keys",
+      "no-product": "the App Store has not published the subscription yet",
+    };
+    return { outcome: "error", message: `Subscribing is not available yet, ${why[readiness.reason] ?? readiness.reason}` };
+  }
 
   let transaction: SkcalTransaction;
   try {
