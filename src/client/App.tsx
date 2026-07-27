@@ -288,6 +288,23 @@ export default function App() {
   useEffect(() => {
     if (email) load();
   }, [email, load]);
+
+  // Landing back on Today refetches: the agent (or the iMessage agent, while
+  // this tab sat in the background) may have logged food since the last fetch,
+  // so the calorie/protein totals would otherwise be stale until a reload.
+  const prevViewRef = useRef(view);
+  useEffect(() => {
+    const prev = prevViewRef.current;
+    prevViewRef.current = view;
+    if (view === "today" && prev !== "today") reloadAll();
+  }, [view, reloadAll]);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && viewRef.current === "today") reloadAll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [reloadAll]);
   useEffect(() => {
     if (!drawerOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrawerOpen(false);

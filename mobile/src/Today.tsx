@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { View, Text, ScrollView, RefreshControl, StyleSheet, Pressable, Alert, Platform, type DimensionValue } from "react-native";
+import { View, Text, ScrollView, RefreshControl, StyleSheet, Pressable, Alert, Platform, type DimensionValue, AppState } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path, Circle } from "react-native-svg";
 import { C } from "./theme";
@@ -246,6 +246,16 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
     // resolves) so the card doesn't flash the CONNECT button on relaunch.
     isHealthConnected().then(setHealthConnected).catch(() => {});
     load();
+  }, [load]);
+
+  // Foregrounding refetches: the iMessage agent may have logged food while the
+  // app sat in the background, so the totals would otherwise be stale.
+  // (Switching Today <-> Agent already remounts this screen, which reloads.)
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") load();
+    });
+    return () => sub.remove();
   }, [load]);
 
   const refresh = async () => {
