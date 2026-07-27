@@ -4774,8 +4774,12 @@ function appleNotifyAllowed(id: string, now: number): boolean {
 }
 
 app.post("/api/apple/notifications", async (c) => {
+  // ACK anything we can't act on. Apple retries non-2xx for up to three days,
+  // so a 503 here (e.g. before the IAP secrets exist) would earn a retry storm
+  // and fail the "Send Test Notification" check in App Store Connect.
   if (!appleIapConfigured(c.env)) {
-    return c.json({ error: "IAP not configured", code: "iap_not_configured" }, 503);
+    console.warn("apple notification received before IAP was configured, acking");
+    return c.json({ received: true, ignored: "iap not configured" });
   }
   const body = await c.req.json<{ signedPayload?: unknown }>().catch(() => ({ signedPayload: undefined }));
   if (typeof body.signedPayload !== "string" || body.signedPayload.length > 32_000) {

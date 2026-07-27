@@ -303,14 +303,17 @@ describe("apple: routes without IAP keys configured", () => {
     expect(await res.json()).toEqual({ error: "IAP not configured", code: "iap_not_configured" });
   });
 
-  it("POST /api/apple/notifications → 503 and needs no session at all", async () => {
+  // Apple retries any non-2xx for days, so an unconfigured worker must still
+  // ACK — this is also what makes App Store Connect's "Send Test Notification"
+  // pass before the IAP keys exist.
+  it("POST /api/apple/notifications → ACKs without keys, and needs no session at all", async () => {
     const res = await workerFetchBilling("/api/apple/notifications", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ signedPayload: "a.b.c" }),
     });
-    expect(res.status).toBe(503);
-    expect(((await res.json()) as { code: string }).code).toBe("iap_not_configured");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ received: true, ignored: "iap not configured" });
   });
 
   it("GET /api/apple/config reports unconfigured but still hands back the product id", async () => {
