@@ -8,6 +8,8 @@ import { SignIn } from "./src/SignIn";
 import { Today } from "./src/Today";
 import { Agent } from "./src/Agent";
 import { Drawer, DrawerView } from "./src/Drawer";
+import { Paywall } from "./src/Paywall";
+import { reconcilePendingTransactions, watchTransactions } from "./src/iap";
 import { PanelLeftIcon } from "./src/icons";
 
 // Content height of the top bar (below the status-bar inset).
@@ -23,6 +25,9 @@ function Shell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
+  // Set when any API call answers 402. Replaces the whole body with the paywall
+  // so no screen can surface a raw "subscription required" string.
+  const [blocked, setBlocked] = useState(false);
 
   // Agent conversation history — lives up here (like the web app) so the
   // drawer and the chat view share one state.
@@ -69,6 +74,24 @@ function Shell() {
     loadConversations();
   }, [authed, loadConversations]);
 
+  // StoreKit renewals, refunds, and Ask-to-Buy approvals. Anything that lands
+  // while the app is open gets pushed to /api/apple/verify immediately rather
+  // than waiting on an App Store Server Notification round trip. Also sweeps up
+  // transactions that were left unfinished by an earlier failed verify.
+  useEffect(() => {
+    if (!authed) return;
+    reconcilePendingTransactions()
+      .then((granted) => {
+        if (granted) setBlocked(false);
+      })
+      .catch(() => {
+        /* boot-time reconciliation is best-effort */
+      });
+    return watchTransactions((result) => {
+      if (result.outcome === "active") setBlocked(false);
+    });
+  }, [authed]);
+
   // Android back: close the drawer / avatar menu before leaving the app.
   useEffect(() => {
     if (!drawerOpen && !menuOpen) return;
@@ -88,6 +111,7 @@ function Shell() {
     setConversations([]);
     setSession({ key: "new-0", convId: null, messages: [] });
     setView("today");
+    setBlocked(false);
     setAuthed(false);
   }, []);
 
@@ -165,8 +189,10 @@ function Shell() {
       </View>
 
       <View style={s.body}>
-        {view === "today" ? (
-          <Today onAuthError={onAuthError} />
+        {blocked ? (
+          <Paywall onActivated={() => setBlocked(false)} />
+        ) : view === "today" ? (
+          <Today onAuthError={onAuthError} onSubscriptionRequired={() => setBlocked(true)} />
         ) : (
           <Agent
             key={session.key}

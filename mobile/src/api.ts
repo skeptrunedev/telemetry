@@ -311,5 +311,45 @@ export async function describeWorkout(text: string, date?: string): Promise<void
   if (!r.ok) throw new Error(`describeWorkout → ${r.status}`);
 }
 
+// ---- Apple in-app purchase ----
+// Both routes are exempt from the worker's 402 subscription gate, so an
+// unsubscribed account can still reach them to buy or restore.
+
+export type AppleIapConfig = {
+  /** False until the In-App Purchase key secrets are set on the worker. */
+  configured: boolean;
+  bundleId: string;
+  productIds: string[];
+  /** Passed to StoreKit at purchase time so the transaction is bound to this account. */
+  appAccountToken: string;
+};
+
+export async function appleConfig(): Promise<AppleIapConfig> {
+  const r = await req(`/api/apple/config`);
+  if (!r.ok) throw new Error(`apple config → ${r.status}`);
+  return r.json() as Promise<AppleIapConfig>;
+}
+
+export type AppleVerifyResult = {
+  ok: boolean;
+  status: string;
+  periodEnd: number | null;
+  productId: string;
+  environment: string;
+  active: boolean;
+};
+
+/**
+ * Hand a StoreKit transaction id to the worker, which re-fetches it from Apple
+ * and writes the entitlement. Nothing the app says about the purchase is
+ * trusted, so the id is all we send.
+ */
+export async function appleVerify(transactionId: string): Promise<AppleVerifyResult> {
+  const r = await req(`/api/apple/verify`, { method: "POST", body: JSON.stringify({ transactionId }) });
+  const body = (await r.json().catch(() => ({}))) as Partial<AppleVerifyResult> & { error?: string };
+  if (!r.ok) throw new Error(body.error ?? `verify → ${r.status}`);
+  return body as AppleVerifyResult;
+}
+
 export const kgToLb = (kg: number) => kg * 2.2046226218;
 export const cmToIn = (cm: number) => cm / 2.54;

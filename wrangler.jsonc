@@ -39,6 +39,12 @@
     "STRIPE_PRICE_ID": "price_1TozrdAORpgtf3danYpcO3FA",
     "REVIEW_PHONE": "+15005550999",
     "BILLING_EXEMPT_EMAILS": "me@skeptrune.com,nick.k@skeptrune.com,dev@local,15005550999@phone.skcal.fit",
+    // Apple in-app purchase needs no vars: the bundle id and product id are
+    // constants in src/worker/apple.ts, and the App Store Connect In-App
+    // Purchase key lives in Worker secrets as APPLE_IAP_KEY_ID,
+    // APPLE_IAP_ISSUER_ID and APPLE_IAP_PRIVATE_KEY. Until those are set,
+    // /api/apple/* answers 503 iap_not_configured.
+    //
     // Photon Spectrum project for the iMessage agent; access token (CLI user
     // token from `photon login`) lives in Worker secrets as PHOTON_ACCESS_TOKEN.
     "PHOTON_PROJECT_ID": "85c139f6-e026-448a-b273-461ce205a322"

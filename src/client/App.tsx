@@ -123,7 +123,7 @@ export default function App() {
     api
       .billing()
       .then(setBilling)
-      .catch(() => setBilling({ active: true, exempt: false, status: null, periodEnd: null, priceUsd: 100 }));
+      .catch(() => setBilling({ active: true, exempt: false, source: null, status: null, periodEnd: null, priceUsd: 100 }));
   }, [email]);
   // Desktop: whether the persistent sidebar is collapsed (remembered).
   const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem("skcal-nav-collapsed") === "1");

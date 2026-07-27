@@ -9,6 +9,19 @@ import { z } from "zod";
 import * as schema from "../db/schema";
 import { isValidTimeZone, localDayInTz, localTimeLineInTz, nextFireAt, offsetMinutesToTz, parseDays, zonedTimeToUtc } from "./reminders";
 import { makeAuth, twilioVerify } from "./auth";
+import {
+  APPLE_BUNDLE_ID,
+  APPLE_PRODUCT_IDS,
+  anyBillingRowActive,
+  appleBillingState,
+  appleGetSubscriptionState,
+  appleGetTransaction,
+  appleIapConfigured,
+  billingRowActive,
+  decodeJwsPayload,
+  type AppleNotificationPayload,
+  type AppleTransactionInfo,
+} from "./apple";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import type { DashboardData, Targets } from "../shared/types";
 import { lbToKg, inToCm, MEASUREMENT_SITES, API_SCOPES } from "../shared/types";
@@ -41,6 +54,13 @@ type Bindings = {
   STRIPE_WEBHOOK_SECRET?: string;
   STRIPE_PRICE_ID?: string;
   BILLING_EXEMPT_EMAILS?: string;
+  // ---- Apple in-app purchase (StoreKit 2 + App Store Server API) ----
+  // An App Store Connect "In-App Purchase" key (NOT the App Store Connect API
+  // key used for submissions). Unset today, so /api/apple/* answers 503 with
+  // code "iap_not_configured" until they are set.
+  APPLE_IAP_KEY_ID?: string;
+  APPLE_IAP_ISSUER_ID?: string;
+  APPLE_IAP_PRIVATE_KEY?: string;
   // ---- Linked channels (phone verification) + messaging-agent service auth ----
   TWILIO_API_KEY_SID?: string;
   TWILIO_API_KEY_SECRET?: string;
@@ -421,6 +441,22 @@ function billingExempt(env: Bindings, email: string): boolean {
   return email === DEV_EMAIL || list.includes(email.toLowerCase());
 }
 
+/** Every store row for one account (at most one per source). */
+async function billingRows(c: Context<{ Bindings: Bindings; Variables: Variables }>, email: string) {
+  return db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email));
+}
+
+/** The Stripe row specifically — customer ids and the portal only exist there. */
+async function stripeBillingRow(c: Context<{ Bindings: Bindings; Variables: Variables }>, email: string) {
+  return (
+    await db(c)
+      .select()
+      .from(schema.billing)
+      .where(and(eq(schema.billing.userEmail, email), eq(schema.billing.source, "stripe")))
+      .limit(1)
+  )[0];
+}
+
 async function hasActiveSubscription(
   c: Context<{ Bindings: Bindings; Variables: Variables }>,
   email: string,
@@ -428,16 +464,13 @@ async function hasActiveSubscription(
   // Dev bypass exempts everyone EXCEPT temp phone-signup accounts, so local
   // dev / the sim harness exercise the real 402 onboarding gate end to end.
   if (c.env.AUTH_DEV_BYPASS && !email.endsWith("@phone.skcal.fit")) return true;
-  if (!c.env.STRIPE_SECRET_KEY) return true; // billing not configured — never lock out
+  // Billing not configured at all (no Stripe key AND no Apple IAP key) — never
+  // lock anyone out. Either one being present means the gate is live.
+  if (!c.env.STRIPE_SECRET_KEY && !appleIapConfigured(c.env)) return true;
   if (billingExempt(c.env, email)) return true;
-  const row = (await db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email)).limit(1))[0];
-  if (!row?.status) return false;
-  if (row.status === "active" || row.status === "trialing") {
-    // 3-day grace past the recorded period end covers webhook lag on renewals.
-    return !row.currentPeriodEnd || row.currentPeriodEnd.getTime() > Date.now() - 3 * DAY_MS;
-  }
-  // Stripe retries payment during dunning; keep access while it does.
-  return row.status === "past_due";
+  // Source-aware: an active Apple row and an expired Stripe row (or the reverse)
+  // must not cancel each other out, so any store saying yes is a yes.
+  return anyBillingRowActive(await billingRows(c, email));
 }
 
 function bufToBase64(buf: ArrayBuffer): string {
@@ -827,6 +860,10 @@ app.use("/api/*", async (c, next) => {
     path.startsWith("/api/auth/") ||
     path === "/api/ingest/weight" ||
     path === "/api/stripe/webhook" ||
+    // App Store Server Notifications: Apple posts these with no credential of
+    // ours. The handler treats the whole body as untrusted and re-fetches from
+    // Apple before touching `billing`.
+    path === "/api/apple/notifications" ||
     path.startsWith("/api/onboard/") ||
     path === "/api/agent-thread" // service-token auth in the handler
   ) {
@@ -835,9 +872,12 @@ app.use("/api/*", async (c, next) => {
 
   // Identity resolved — apply the subscription gate (billing-management routes
   // stay reachable so an unsubscribed user can subscribe / manage billing).
+  // /api/apple/* is exempt for the same reason: the iOS paywall has to be able
+  // to verify a purchase it just made while the account is still unsubscribed.
   const finish = async (email: string) => {
     c.set("email", email);
-    if (!path.startsWith("/api/billing") && !(await hasActiveSubscription(c, email))) {
+    const billingRoute = path.startsWith("/api/billing") || path.startsWith("/api/apple/");
+    if (!billingRoute && !(await hasActiveSubscription(c, email))) {
       return c.json({ error: "subscription required" }, 402);
     }
     return next();
@@ -3637,11 +3677,18 @@ app.delete("/api/keys/:id", async (c) => {
 // ---- Billing (Stripe: one $100/mo plan) -------------------------------------
 app.get("/api/billing", async (c) => {
   const email = c.get("email");
-  const exempt = !!c.env.AUTH_DEV_BYPASS || !c.env.STRIPE_SECRET_KEY || billingExempt(c.env, email);
-  const row = (await db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email)).limit(1))[0];
+  const exempt =
+    !!c.env.AUTH_DEV_BYPASS ||
+    (!c.env.STRIPE_SECRET_KEY && !appleIapConfigured(c.env)) ||
+    billingExempt(c.env, email);
+  const rows = await billingRows(c, email);
+  // Report whichever row is actually granting access, so the app shows Apple
+  // state for an App Store subscriber and Stripe state for a web subscriber.
+  const row = rows.find((r) => billingRowActive(r)) ?? rows.find((r) => r.source === "stripe") ?? rows[0];
   return c.json({
     active: await hasActiveSubscription(c, email),
     exempt,
+    source: row?.source ?? null,
     status: row?.status ?? null,
     periodEnd: row?.currentPeriodEnd?.getTime() ?? null,
     priceUsd: 100,
@@ -3654,15 +3701,18 @@ app.post("/api/billing/checkout", async (c) => {
   if (!c.env.STRIPE_SECRET_KEY || !c.env.STRIPE_PRICE_ID) return c.json({ error: "billing not configured" }, 503);
   const origin = new URL(c.req.url).origin;
   try {
-    const row = (await db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email)).limit(1))[0];
+    const row = await stripeBillingRow(c, email);
     let customerId = row?.stripeCustomerId ?? null;
     if (!customerId) {
       const customer = await stripeApi(c.env, "customers", { email, "metadata[user_email]": email });
       customerId = String(customer.id);
       await db(c)
         .insert(schema.billing)
-        .values({ userEmail: email, stripeCustomerId: customerId })
-        .onConflictDoUpdate({ target: schema.billing.userEmail, set: { stripeCustomerId: customerId, updatedAt: new Date() } });
+        .values({ userEmail: email, source: "stripe", stripeCustomerId: customerId })
+        .onConflictDoUpdate({
+          target: [schema.billing.userEmail, schema.billing.source],
+          set: { stripeCustomerId: customerId, updatedAt: new Date() },
+        });
     }
     const session = await stripeApi(c.env, "checkout/sessions", {
       mode: "subscription",
@@ -3685,7 +3735,7 @@ app.post("/api/billing/checkout", async (c) => {
 app.post("/api/billing/portal", async (c) => {
   const email = c.get("email");
   if (!c.env.STRIPE_SECRET_KEY) return c.json({ error: "billing not configured" }, 503);
-  const row = (await db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email)).limit(1))[0];
+  const row = await stripeBillingRow(c, email);
   if (!row?.stripeCustomerId) return c.json({ error: "no billing account yet" }, 400);
   const origin = new URL(c.req.url).origin;
   try {
@@ -4249,15 +4299,18 @@ app.post("/api/onboard/checkout", async (c) => {
   if (!chan?.verifiedAt) return c.json({ error: "not linked", code: "unlinked" }, 404);
   const email = chan.userEmail;
   try {
-    const row = (await db(c).select().from(schema.billing).where(eq(schema.billing.userEmail, email)).limit(1))[0];
+    const row = await stripeBillingRow(c, email);
     let customerId = row?.stripeCustomerId ?? null;
     if (!customerId) {
       const customer = await stripeApi(c.env, "customers", { email, "metadata[user_email]": email });
       customerId = String(customer.id);
       await db(c)
         .insert(schema.billing)
-        .values({ userEmail: email, stripeCustomerId: customerId })
-        .onConflictDoUpdate({ target: schema.billing.userEmail, set: { stripeCustomerId: customerId, updatedAt: new Date() } });
+        .values({ userEmail: email, source: "stripe", stripeCustomerId: customerId })
+        .onConflictDoUpdate({
+          target: [schema.billing.userEmail, schema.billing.source],
+          set: { stripeCustomerId: customerId, updatedAt: new Date() },
+        });
     }
     const session = await stripeApi(c.env, "checkout/sessions", {
       mode: "subscription",
@@ -4473,12 +4526,13 @@ app.post("/api/stripe/webhook", async (c) => {
         .insert(schema.billing)
         .values({
           userEmail: email,
+          source: "stripe",
           stripeCustomerId: (obj.customer as string) ?? null,
           subscriptionId: (obj.subscription as string) ?? null,
           status: "active",
         })
         .onConflictDoUpdate({
-          target: schema.billing.userEmail,
+          target: [schema.billing.userEmail, schema.billing.source],
           set: {
             stripeCustomerId: (obj.customer as string) ?? null,
             subscriptionId: (obj.subscription as string) ?? null,
@@ -4506,23 +4560,268 @@ app.post("/api/stripe/webhook", async (c) => {
     const periodEnd = periodEndSec ? new Date(periodEndSec * 1000) : null;
     const metaEmail = (obj.metadata as { user_email?: string } | undefined)?.user_email?.toLowerCase();
 
-    const bySub = await db(c).select().from(schema.billing).where(eq(schema.billing.subscriptionId, subId)).limit(1);
+    // Scoped to source='stripe' so an Apple row (whose subscriptionId is an
+    // originalTransactionId) can never be picked up by a Stripe lookup.
+    const bySub = await db(c)
+      .select()
+      .from(schema.billing)
+      .where(and(eq(schema.billing.source, "stripe"), eq(schema.billing.subscriptionId, subId)))
+      .limit(1);
     const byCust = bySub.length
       ? bySub
-      : await db(c).select().from(schema.billing).where(eq(schema.billing.stripeCustomerId, customerId)).limit(1);
+      : await db(c)
+          .select()
+          .from(schema.billing)
+          .where(and(eq(schema.billing.source, "stripe"), eq(schema.billing.stripeCustomerId, customerId)))
+          .limit(1);
     const email = bySub[0]?.userEmail ?? byCust[0]?.userEmail ?? metaEmail;
     if (email) {
       await db(c)
         .insert(schema.billing)
-        .values({ userEmail: email, stripeCustomerId: customerId, subscriptionId: subId, status, currentPeriodEnd: periodEnd })
+        .values({
+          userEmail: email,
+          source: "stripe",
+          stripeCustomerId: customerId,
+          subscriptionId: subId,
+          status,
+          currentPeriodEnd: periodEnd,
+        })
         .onConflictDoUpdate({
-          target: schema.billing.userEmail,
+          target: [schema.billing.userEmail, schema.billing.source],
           set: { stripeCustomerId: customerId, subscriptionId: subId, status, currentPeriodEnd: periodEnd, updatedAt: new Date() },
         });
     }
   }
 
   return c.json({ received: true });
+});
+
+// ---- Apple in-app purchase (StoreKit 2) -------------------------------------
+// The iOS app runs the StoreKit purchase; these routes are what actually grants
+// access. The governing rule is that the client payload is never believed: the
+// app sends a transaction id, and the Worker re-fetches that transaction from
+// Apple's App Store Server API before writing anything to `billing`.
+
+/** Apple transaction ids are decimal, currently 16 digits; allow some headroom. */
+const APPLE_TXN_ID = /^[0-9]{1,20}$/;
+
+/**
+ * A stable UUID bound to the account, derived from BETTER_AUTH_SECRET so it
+ * needs no storage. The app passes it to StoreKit as `appAccountToken` at
+ * purchase time and Apple echoes it back on every transaction, which is how we
+ * prove a transaction belongs to the account claiming it. Without this, someone
+ * could enumerate transaction ids (they are not random) and claim a stranger's
+ * subscription.
+ */
+async function appleAccountToken(env: Bindings, email: string): Promise<string> {
+  const secret = env.BETTER_AUTH_SECRET ?? "";
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = new Uint8Array(
+    await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`apple-iap:${email.toLowerCase()}`)),
+  );
+  const b = mac.slice(0, 16);
+  b[6] = (b[6] & 0x0f) | 0x40; // UUID version nibble
+  b[8] = (b[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+async function upsertAppleBilling(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+  originalTransactionId: string,
+  state: { status: string; currentPeriodEnd: number | null },
+): Promise<void> {
+  const currentPeriodEnd = state.currentPeriodEnd != null ? new Date(state.currentPeriodEnd) : null;
+  await db(c)
+    .insert(schema.billing)
+    .values({
+      userEmail: email,
+      source: "apple",
+      subscriptionId: originalTransactionId,
+      status: state.status,
+      currentPeriodEnd,
+    })
+    .onConflictDoUpdate({
+      target: [schema.billing.userEmail, schema.billing.source],
+      set: { subscriptionId: originalTransactionId, status: state.status, currentPeriodEnd, updatedAt: new Date() },
+    });
+}
+
+/** The Apple row a given originalTransactionId is already bound to, if any. */
+async function appleRowByOriginalId(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  originalTransactionId: string,
+) {
+  return (
+    await db(c)
+      .select()
+      .from(schema.billing)
+      .where(and(eq(schema.billing.source, "apple"), eq(schema.billing.subscriptionId, originalTransactionId)))
+      .limit(1)
+  )[0];
+}
+
+// What the iOS paywall needs before it can show a buy button. Reachable while
+// unsubscribed (the gate exempts /api/apple/*).
+app.get("/api/apple/config", async (c) => {
+  const email = c.get("email");
+  return c.json({
+    configured: appleIapConfigured(c.env),
+    bundleId: APPLE_BUNDLE_ID,
+    productIds: APPLE_PRODUCT_IDS,
+    appAccountToken: await appleAccountToken(c.env, email),
+  });
+});
+
+// Verify a StoreKit transaction and grant (or update) the Apple entitlement.
+app.post("/api/apple/verify", async (c) => {
+  const email = c.get("email");
+  if (!appleIapConfigured(c.env)) {
+    return c.json({ error: "IAP not configured", code: "iap_not_configured" }, 503);
+  }
+  const body = await c.req.json<{ transactionId?: unknown }>().catch(() => ({ transactionId: undefined }));
+  const transactionId = String(body.transactionId ?? "").trim();
+  if (!APPLE_TXN_ID.test(transactionId)) return c.json({ error: "invalid transactionId" }, 400);
+
+  // The one source of truth. Whatever the app sent alongside the id is ignored.
+  const fetched = await appleGetTransaction(c.env, transactionId);
+  if (!fetched.ok) {
+    const status = fetched.status === 404 ? 404 : 502;
+    return c.json({ error: "apple could not verify this transaction", detail: fetched.detail }, status);
+  }
+  const info = fetched.info;
+  if (info.bundleId !== APPLE_BUNDLE_ID) return c.json({ error: "transaction belongs to another app" }, 400);
+  if (!APPLE_PRODUCT_IDS.includes(info.productId)) return c.json({ error: "unknown product" }, 400);
+
+  const originalId = String(info.originalTransactionId ?? "");
+  if (!APPLE_TXN_ID.test(originalId)) return c.json({ error: "apple returned no originalTransactionId" }, 502);
+
+  // Ownership. Preferred proof is the appAccountToken we handed the app before
+  // the purchase. Transactions made before that shipped (or restored through
+  // Family Sharing) carry none, so those fall back to first-claim-wins.
+  const expectedToken = await appleAccountToken(c.env, email);
+  const claimed = await appleRowByOriginalId(c, originalId);
+  const tokenOnTransaction = (info.appAccountToken ?? "").toLowerCase();
+  if (tokenOnTransaction) {
+    if (tokenOnTransaction !== expectedToken) {
+      return c.json({ error: "this subscription belongs to another account", code: "already_linked" }, 409);
+    }
+  } else if (claimed && claimed.userEmail !== email) {
+    return c.json({ error: "this subscription belongs to another account", code: "already_linked" }, 409);
+  }
+
+  // Prefer the subscription endpoint: it carries Apple's own status code, which
+  // distinguishes grace period from billing retry from plain expiry. Fall back
+  // to date arithmetic on the transaction if that call fails.
+  const sub = await appleGetSubscriptionState(c.env, originalId);
+  const state = sub.ok
+    ? appleBillingState(sub.info, { statusCode: sub.statusCode })
+    : appleBillingState(info, {});
+
+  await upsertAppleBilling(c, email, originalId, state);
+  return c.json({
+    ok: true,
+    status: state.status,
+    periodEnd: state.currentPeriodEnd,
+    productId: info.productId,
+    environment: fetched.sandbox ? "Sandbox" : "Production",
+    active: await hasActiveSubscription(c, email),
+  });
+});
+
+// ---- App Store Server Notifications V2 --------------------------------------
+// Apple POSTs here unauthenticated. We do NOT validate the x5c certificate
+// chain of the signed payload — that is a lot of security-critical crypto to
+// hand-roll on WebCrypto inside a Worker. Instead the body is treated as fully
+// untrusted and used for exactly one thing: pulling out an originalTransactionId
+// that we then re-fetch from Apple over an authenticated TLS call.
+//
+// So the worst an attacker with a forged body can do is:
+//   * an id we have never seen        -> we return early, zero side effects
+//   * an id already in `billing`      -> we re-read Apple and write the TRUTH,
+//                                        which is the same thing the real
+//                                        notification would have caused
+// Neither creates or extends an entitlement. The remaining exposure is outbound
+// request amplification, which the throttle below bounds.
+const APPLE_NOTIFY_COOLDOWN_MS = 5_000;
+const APPLE_NOTIFY_MAX_PER_MIN = 120;
+const appleNotifySeen = new Map<string, number>();
+let appleNotifyWindowStart = 0;
+let appleNotifyWindowCount = 0;
+
+// Best-effort only: Worker isolates are per-colo and short-lived, so this is a
+// cheap brake on a burst rather than a real distributed rate limiter. It is
+// sized well above Apple's real notification volume for a single-product app.
+function appleNotifyAllowed(id: string, now: number): boolean {
+  if (now - appleNotifyWindowStart > 60_000) {
+    appleNotifyWindowStart = now;
+    appleNotifyWindowCount = 0;
+  }
+  appleNotifyWindowCount += 1;
+  if (appleNotifyWindowCount > APPLE_NOTIFY_MAX_PER_MIN) return false;
+  const last = appleNotifySeen.get(id);
+  if (last != null && now - last < APPLE_NOTIFY_COOLDOWN_MS) return false;
+  if (appleNotifySeen.size > 500) appleNotifySeen.clear();
+  appleNotifySeen.set(id, now);
+  return true;
+}
+
+app.post("/api/apple/notifications", async (c) => {
+  if (!appleIapConfigured(c.env)) {
+    return c.json({ error: "IAP not configured", code: "iap_not_configured" }, 503);
+  }
+  const body = await c.req.json<{ signedPayload?: unknown }>().catch(() => ({ signedPayload: undefined }));
+  if (typeof body.signedPayload !== "string" || body.signedPayload.length > 32_000) {
+    return c.json({ error: "bad payload" }, 400);
+  }
+
+  let payload: AppleNotificationPayload;
+  let claimed: AppleTransactionInfo;
+  try {
+    payload = decodeJwsPayload<AppleNotificationPayload>(body.signedPayload);
+    const signedTx = payload.data?.signedTransactionInfo;
+    if (typeof signedTx !== "string") return c.json({ received: true, ignored: "no transaction" });
+    claimed = decodeJwsPayload<AppleTransactionInfo>(signedTx);
+  } catch {
+    return c.json({ error: "bad payload" }, 400);
+  }
+
+  // Untrusted pre-filters. Cheap ways to drop noise before spending a lookup.
+  if (payload.notificationType === "TEST") return c.json({ received: true });
+  if (payload.data?.bundleId && payload.data.bundleId !== APPLE_BUNDLE_ID) {
+    return c.json({ received: true, ignored: "other bundle" });
+  }
+  const originalId = String(claimed.originalTransactionId ?? "");
+  if (!APPLE_TXN_ID.test(originalId)) return c.json({ received: true, ignored: "no id" });
+
+  // Only ids we already granted get an outbound call, so an unknown or guessed
+  // id costs nothing and can never bootstrap an entitlement.
+  const row = await appleRowByOriginalId(c, originalId);
+  if (!row) return c.json({ received: true, ignored: "unknown subscription" });
+  if (!appleNotifyAllowed(originalId, Date.now())) return c.json({ received: true, throttled: true });
+
+  const sub = await appleGetSubscriptionState(c.env, originalId);
+  if (!sub.ok) {
+    // Non-2xx makes Apple retry with backoff, which is what we want for a
+    // transient App Store Server API failure.
+    return c.json({ error: "could not re-read state from apple", detail: sub.detail }, 503);
+  }
+  if (sub.info.bundleId !== APPLE_BUNDLE_ID) return c.json({ received: true, ignored: "other bundle" });
+
+  const state = appleBillingState(sub.info, {
+    statusCode: sub.statusCode,
+    notificationType: payload.notificationType,
+    subtype: payload.subtype,
+  });
+  await upsertAppleBilling(c, row.userEmail, originalId, state);
+  return c.json({ received: true, status: state.status });
 });
 
 // ---- MCP server (Streamable HTTP, OAuth 2.1 via Better Auth) ---------------

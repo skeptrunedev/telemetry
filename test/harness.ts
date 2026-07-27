@@ -89,8 +89,16 @@ async function applyMigrations(instance: Miniflare): Promise<void> {
     const sql = readFileSync(join(dir, file), "utf8");
     // Drizzle's generated migrations separate statements with this marker.
     for (const stmt of sql.split("--> statement-breakpoint")) {
-      const s = stmt.trim();
-      if (s) await db.exec(s.replace(/\n/g, " "));
+      // D1's exec() wants one statement per line, so newlines collapse to
+      // spaces — which would make a leading `-- comment` swallow the statement
+      // behind it. Drop whole-line comments first. (wrangler parses the SQL
+      // properly and needs none of this; it's a harness-only quirk.)
+      const s = stmt
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("--"))
+        .join(" ")
+        .trim();
+      if (s) await db.exec(s);
     }
   }
 }
@@ -109,17 +117,18 @@ function bundleOnce() {
 // sessionless data requests with 401. BETTER_AUTH_SECRET keeps makeAuth()
 // constructible; the AI/ingest secrets are empty so those routes take their
 // guard-rail paths and never reach Anthropic.
-function bindings(bypass: boolean) {
+function bindings(bypass: boolean, extra: Record<string, string> = {}) {
   return {
     ANTHROPIC_API_KEY: "",
     INGEST_TOKEN: "",
     ...(bypass ? { AUTH_DEV_BYPASS: "1" } : {}),
     BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret-32",
     BETTER_AUTH_URL: "http://example.com",
+    ...extra,
   };
 }
 
-async function makeInstance(bypass: boolean): Promise<Miniflare> {
+async function makeInstance(bypass: boolean, extra: Record<string, string> = {}): Promise<Miniflare> {
   const { scriptPath, modulesRoot } = await bundleOnce();
   const instance = new Miniflare({
     modules: true,
@@ -132,7 +141,7 @@ async function makeInstance(bypass: boolean): Promise<Miniflare> {
     compatibilityFlags: ["nodejs_compat"],
     d1Databases: { DB: ":memory:" },
     r2Buckets: ["PHOTOS"],
-    bindings: bindings(bypass),
+    bindings: bindings(bypass, extra),
     // The Worker's SPA fallback hits env.ASSETS; stub it so non-API paths resolve.
     serviceBindings: { ASSETS: () => new Response("spa", { status: 200 }) },
   });
@@ -165,6 +174,42 @@ export async function workerFetchNoBypass(path: string, init: RequestInit = {}):
   return instance.dispatchFetch(`http://example.com${path}`, init as never) as unknown as Promise<Response>;
 }
 
+// A third instance with a (fake) STRIPE_SECRET_KEY bound, which is what turns
+// the subscription gate ON. Dev bypass stays on, and the Worker deliberately
+// does NOT exempt @phone.skcal.fit accounts from the gate, so those emails are
+// how these tests reach the real 402 path.
+let mfBilling: Miniflare | undefined;
+
+async function getMiniflareBilling(): Promise<Miniflare> {
+  if (!mfBilling) mfBilling = await makeInstance(true, { STRIPE_SECRET_KEY: "sk_test_not_a_real_key" });
+  return mfBilling;
+}
+
+/** Dispatch to the Worker with the subscription gate live. */
+export async function workerFetchBilling(path: string, init: RequestInit = {}): Promise<Response> {
+  const instance = await getMiniflareBilling();
+  return instance.dispatchFetch(`http://example.com${path}`, init as never) as unknown as Promise<Response>;
+}
+
+/** Write a `billing` row straight into that instance's D1, bypassing any route. */
+export async function seedBillingRow(row: {
+  userEmail: string;
+  source: "stripe" | "apple";
+  status: string | null;
+  currentPeriodEnd?: number | null;
+  subscriptionId?: string | null;
+}): Promise<void> {
+  const db = await (await getMiniflareBilling()).getD1Database("DB");
+  await db
+    .prepare(
+      "INSERT INTO billing (user_email, source, subscription_id, status, current_period_end, updated_at)" +
+        " VALUES (?1, ?2, ?3, ?4, ?5, ?6)" +
+        " ON CONFLICT(user_email, source) DO UPDATE SET subscription_id = ?3, status = ?4, current_period_end = ?5, updated_at = ?6",
+    )
+    .bind(row.userEmail, row.source, row.subscriptionId ?? null, row.status, row.currentPeriodEnd ?? null, Date.now())
+    .run();
+}
+
 /** Tear down the shared instances (called from a global afterAll). */
 export async function disposeMiniflare(): Promise<void> {
   if (mf) {
@@ -174,5 +219,9 @@ export async function disposeMiniflare(): Promise<void> {
   if (mfNoBypass) {
     await mfNoBypass.dispose();
     mfNoBypass = undefined;
+  }
+  if (mfBilling) {
+    await mfBilling.dispose();
+    mfBilling = undefined;
   }
 }

@@ -80,7 +80,17 @@ export type Workout = {
   createdAt: number;
 };
 export type ApiKey = { id: string; name: string; prefix: string; scopes: string[]; createdAt: number; lastUsedAt: number | null };
-export type Billing = { active: boolean; exempt: boolean; status: string | null; periodEnd: number | null; priceUsd: number };
+// `source` is which store the reported status came from: an account can hold
+// both a Stripe row and an Apple StoreKit row, and `active` is true if either
+// grants access.
+export type Billing = {
+  active: boolean;
+  exempt: boolean;
+  source: "stripe" | "apple" | null;
+  status: string | null;
+  periodEnd: number | null;
+  priceUsd: number;
+};
 export type Channel = { id: string; kind: "phone" | "telegram"; value: string; verified: boolean; createdAt: number };
 
 export const api = {

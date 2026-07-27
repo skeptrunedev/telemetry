@@ -1146,19 +1146,36 @@ export const apiKeys = sqliteTable(
   (t) => [index("api_keys_token_hash_idx").on(t.tokenHash), index("api_keys_user_idx").on(t.userEmail)],
 );
 
-// Stripe billing state, one row per user. Kept in sync by the Stripe webhook;
-// `status` mirrors the subscription status (active/trialing/past_due/canceled…).
+// Subscription state, one row per (account, store). Stripe rows are kept in
+// sync by the Stripe webhook, Apple rows by /api/apple/verify and the App Store
+// Server Notifications endpoint. `status` mirrors the store's own subscription
+// status (active/trialing/past_due/canceled for Stripe, plus grace_period/
+// billing_retry/revoked/expired for Apple).
+//
+// The primary key is (user_email, source) rather than user_email so a StoreKit
+// subscription and a Stripe subscription can coexist on one account without
+// overwriting each other. Either row being active grants access.
 export const billing = sqliteTable(
   "billing",
   {
-    userEmail: text("user_email").primaryKey(),
+    userEmail: text("user_email").notNull(),
+    source: text("source", { enum: ["stripe", "apple"] })
+      .notNull()
+      .default("stripe"),
     stripeCustomerId: text("stripe_customer_id"),
+    // Stripe subscription id, or for Apple the originalTransactionId — the
+    // stable per-subscription key App Store Server Notifications carry, and
+    // therefore how a notification finds the account it belongs to.
     subscriptionId: text("subscription_id"),
     status: text("status"),
     currentPeriodEnd: integer("current_period_end", { mode: "timestamp_ms" }),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
-  (t) => [index("billing_customer_idx").on(t.stripeCustomerId), index("billing_subscription_idx").on(t.subscriptionId)],
+  (t) => [
+    primaryKey({ columns: [t.userEmail, t.source] }),
+    index("billing_customer_idx").on(t.stripeCustomerId),
+    index("billing_subscription_idx").on(t.subscriptionId),
+  ],
 );
 
 // Channels linked to an account for agent access: verified phone numbers today

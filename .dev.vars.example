@@ -36,3 +36,13 @@ SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
 SMTP_FROM=
+
+# ---- Apple in-app purchase (StoreKit 2) ----
+# An App Store Connect "In-App Purchase" key (Users and Access > Integrations >
+# In-App Purchase), NOT the App Store Connect API key used for submissions.
+# APPLE_IAP_PRIVATE_KEY is the whole .p8 file; real newlines or literal \n both
+# work. With any of these empty, /api/apple/* answers 503 iap_not_configured and
+# the iOS paywall falls back to its "text the skcal number" copy.
+APPLE_IAP_KEY_ID=
+APPLE_IAP_ISSUER_ID=
+APPLE_IAP_PRIVATE_KEY=

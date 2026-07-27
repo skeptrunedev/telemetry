@@ -192,7 +192,14 @@ function AppleHealthCard({
   );
 }
 
-export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
+export function Today({
+  onAuthError,
+  onSubscriptionRequired,
+}: {
+  onAuthError: (e: Error) => void;
+  /** 402 from the API. The shell swaps in the paywall rather than showing a raw error. */
+  onSubscriptionRequired: () => void;
+}) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<Dashboard | null>(null);
   const [reminders, setReminders] = useState<{ reminders: Reminder[]; phoneLinked: boolean } | null>(null);
@@ -226,10 +233,11 @@ export function Today({ onAuthError }: { onAuthError: (e: Error) => void }) {
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       if (err.message === "unauthorized") onAuthError(err);
+      else if (err.message === "subscription required") onSubscriptionRequired();
       else setError(err.message);
     }
     await rem;
-  }, [onAuthError, loadReminders]);
+  }, [onAuthError, onSubscriptionRequired, loadReminders]);
 
   const connectHealth = useCallback(async () => {
     const ok = await connectAppleHealth().catch(() => false);
