@@ -256,7 +256,9 @@ const s = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   avatarText: { color: C.muted, fontFamily: "monospace", fontSize: 12, fontWeight: "600" },
-  body: { flex: 1 },
+  // Cap the reading width so iPad shows a centered column instead of a
+  // phone layout stretched across 13 inches. No effect on phones.
+  body: { flex: 1, width: "100%", maxWidth: 720, alignSelf: "center" },
   menuBackdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   menu: {
     position: "absolute", right: 10, minWidth: 210,
