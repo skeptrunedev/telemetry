@@ -7,6 +7,22 @@ import { useEffect, useRef, useState } from "react";
 
 const fmtDate = (ts: number) => new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
+// Scale readings bounce a couple of pounds a day on water and food weight, so
+// the raw line is honest but hard to read a direction from. An exponential
+// moving average over roughly a week is what weight-trend apps plot, and it is
+// the line the eye should follow.
+const TREND_WINDOW = 7;
+function emaSeries(values: number[]): number[] {
+  const alpha = 2 / (TREND_WINDOW + 1);
+  const out: number[] = [];
+  let acc = values[0] ?? 0;
+  for (const v of values) {
+    acc = out.length === 0 ? v : alpha * v + (1 - alpha) * acc;
+    out.push(acc);
+  }
+  return out;
+}
+
 export function AreaChart({
   points,
   timestamps,
@@ -29,15 +45,18 @@ export function AreaChart({
     return <div className="chart-empty">— not enough data yet —</div>;
   }
   const width = 320;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
+  const trend = emaSeries(points);
+  const min = Math.min(...points, ...trend);
+  const max = Math.max(...points, ...trend);
   const span = max - min || 1;
   const pad = 5;
   const n = points.length;
   const x = (i: number) => pad + (i * (width - pad * 2)) / (n - 1);
   const y = (v: number) => pad + (height - pad * 2) * (1 - (v - min) / span);
-  const line = points.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
-  const area = `${line} L${x(n - 1).toFixed(1)} ${height} L${x(0).toFixed(1)} ${height} Z`;
+  const toPath = (vals: number[]) => vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const scaleLine = toPath(points);
+  const trendLine = toPath(trend);
+  const area = `${trendLine} L${x(n - 1).toFixed(1)} ${height} L${x(0).toFixed(1)} ${height} Z`;
   const lastX = x(n - 1);
   const lastY = y(points[n - 1]);
 
@@ -79,8 +98,19 @@ export function AreaChart({
       <svg className="chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="trend">
         <path className="chart-area" d={area} fill="var(--accent)" fillOpacity="0.1" />
         <path
+          className="chart-scale-line"
+          d={scaleLine}
+          fill="none"
+          stroke="var(--muted)"
+          strokeWidth="1"
+          strokeOpacity="0.55"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        <path
           className="chart-line"
-          d={line}
+          d={trendLine}
           fill="none"
           stroke="var(--accent)"
           strokeWidth="2.5"
@@ -111,6 +141,10 @@ export function AreaChart({
           style={{ transform: `translate(${hx}px, ${hy}px)` }}
         />
       </svg>
+      <div className="chart-legend" aria-hidden="true">
+        <span><i /> trend</span>
+        <span><i className="scale" /> scale</span>
+      </div>
       <div
         className={`chart-tip${active ? " on" : ""}`}
         style={{
@@ -123,6 +157,7 @@ export function AreaChart({
         <span className="chart-tip-val">
           {points[ci].toFixed(1)} {unit}
         </span>
+        <span className="chart-tip-trend">trend {trend[ci].toFixed(1)}</span>
         {ts != null && <span className="chart-tip-date">{fmtDate(ts)}</span>}
       </div>
     </div>

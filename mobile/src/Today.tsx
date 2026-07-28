@@ -18,24 +18,52 @@ const SITE_LABELS: Record<string, string> = {
 const prettySite = (s: string) =>
   s.split("_").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
 
+// Scale readings swing a couple of pounds a day, so the raw line is plotted
+// thin and muted underneath a 7-day exponential moving average, which is the
+// line worth reading a direction from. Mirrors the web chart.
+const TREND_WINDOW = 7;
+function emaSeries(values: number[]): number[] {
+  const alpha = 2 / (TREND_WINDOW + 1);
+  const out: number[] = [];
+  let acc = 0;
+  for (const v of values) {
+    acc = out.length === 0 ? v : alpha * v + (1 - alpha) * acc;
+    out.push(acc);
+  }
+  return out;
+}
+
 function TrendChart({ trend }: { trend: { ts: number; kg: number }[] }) {
   const W = 320, H = 110;
   if (trend.length < 2) return <View style={{ height: H }} />;
   const xs = trend.map((p) => p.ts);
   const ys = trend.map((p) => kgToLb(p.kg));
+  const smooth = emaSeries(ys);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
-  const y0 = Math.min(...ys) - 0.4, y1 = Math.max(...ys) + 0.4;
+  const y0 = Math.min(...ys, ...smooth) - 0.4, y1 = Math.max(...ys, ...smooth) + 0.4;
   const px = (t: number) => ((t - x0) / (x1 - x0 || 1)) * W;
   const py = (v: number) => H - ((v - y0) / (y1 - y0 || 1)) * H;
-  const d = trend.map((p, i) => `${i ? "L" : "M"} ${px(p.ts).toFixed(1)} ${py(kgToLb(p.kg)).toFixed(1)}`).join(" ");
-  const area = `${d} L ${W} ${H} L 0 ${H} Z`;
+  const toPath = (vals: number[]) =>
+    vals.map((v, i) => `${i ? "L" : "M"} ${px(xs[i]).toFixed(1)} ${py(v).toFixed(1)}`).join(" ");
+  const scalePath = toPath(ys);
+  const trendPath = toPath(smooth);
+  const area = `${trendPath} L ${W} ${H} L 0 ${H} Z`;
   const last = trend[trend.length - 1];
   return (
-    <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
-      <Path d={area} fill={C.amber} opacity={0.16} />
-      <Path d={d} stroke={C.amber} strokeWidth={2.5} fill="none" strokeLinejoin="round" strokeLinecap="round" />
-      <Circle cx={px(last.ts)} cy={py(kgToLb(last.kg))} r={4} fill={C.amber} />
-    </Svg>
+    <>
+      <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
+        <Path d={area} fill={C.amber} opacity={0.16} />
+        <Path d={scalePath} stroke={C.muted} strokeWidth={1} opacity={0.55} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+        <Path d={trendPath} stroke={C.amber} strokeWidth={2.5} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+        <Circle cx={px(last.ts)} cy={py(kgToLb(last.kg))} r={4} fill={C.amber} />
+      </Svg>
+      <View style={s.legend}>
+        <View style={[s.legendSwatch, { backgroundColor: C.amber, height: 2 }]} />
+        <Text style={s.legendText}>TREND</Text>
+        <View style={[s.legendSwatch, { backgroundColor: C.muted, height: 1, opacity: 0.7 }]} />
+        <Text style={s.legendText}>SCALE</Text>
+      </View>
+    </>
   );
 }
 
@@ -394,6 +422,9 @@ const s = StyleSheet.create({
   glabel: { color: C.muted, fontSize: 10.5, fontFamily: "monospace", letterSpacing: 1, marginTop: 2 },
   card: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.line, padding: 16 },
   cardHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
+  legend: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
+  legendSwatch: { width: 14 },
+  legendText: { fontFamily: "monospace", fontSize: 9, letterSpacing: 1, color: C.muted, marginRight: 8 },
   cardLabel: { color: C.muted, fontSize: 12, fontFamily: "monospace", letterSpacing: 1.5, marginBottom: 6 },
   onTrack: { color: C.amber, fontSize: 12, fontFamily: "monospace", letterSpacing: 1 },
   delta: { color: C.fg, fontSize: 21, fontWeight: "700", marginBottom: 4 },

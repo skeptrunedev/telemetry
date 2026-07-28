@@ -2267,3 +2267,36 @@ a {
   font-size: 0.8rem;
   color: var(--attention);
 }
+
+/* weight chart: raw scale readings sit under the smoothed trend line */
+.chart-tip-trend {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.chart-legend {
+  display: flex;
+  gap: 0.85rem;
+  margin-top: 0.35rem;
+}
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.chart-legend i {
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--accent);
+}
+.chart-legend i.scale {
+  border-top: 1px solid var(--muted);
+  opacity: 0.7;
+}
