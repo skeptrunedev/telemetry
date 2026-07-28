@@ -116,7 +116,7 @@ export function Paywall({ onActivated }: { onActivated: () => void }) {
                 <Text style={s.ctaText}>{busy === "buy" ? "OPENING THE APP STORE…" : "SUBSCRIBE"}</Text>
               </Pressable>
             ) : (
-              <Text style={s.fine}>Subscribing is available in the skcal app for iPhone.</Text>
+              <Text style={s.fine}>This account is not active yet. Once it is, everything you log shows up here.</Text>
             )}
 
             <Text style={s.fine}>
