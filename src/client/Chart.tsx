@@ -57,8 +57,6 @@ export function AreaChart({
   const scaleLine = toPath(points);
   const trendLine = toPath(trend);
   const area = `${trendLine} L${x(n - 1).toFixed(1)} ${height} L${x(0).toFixed(1)} ${height} Z`;
-  const lastX = x(n - 1);
-  const lastY = y(points[n - 1]);
 
   const scrub = (clientX: number) => {
     const el = wrapRef.current;
@@ -118,7 +116,6 @@ export function AreaChart({
           strokeLinejoin="round"
           pathLength={1}
         />
-        <circle className="chart-dot" cx={lastX} cy={lastY} r="3.5" fill="var(--accent)" />
         <line
           className={`chart-guide${active ? " on" : ""}`}
           x1="0"

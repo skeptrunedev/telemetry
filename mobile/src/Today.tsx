@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { View, Text, ScrollView, RefreshControl, StyleSheet, Pressable, Alert, Platform, type DimensionValue, AppState } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Path, Circle } from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
 import { C } from "./theme";
 import { dashboard, Dashboard, kgToLb, cmToIn, listReminders, deleteReminder, setReminderEnabled, Reminder } from "./api";
 import { healthSupported, isHealthConnected, connectAppleHealth, syncAppleHealth } from "./health";
@@ -48,14 +48,12 @@ function TrendChart({ trend }: { trend: { ts: number; kg: number }[] }) {
   const scalePath = toPath(ys);
   const trendPath = toPath(smooth);
   const area = `${trendPath} L ${W} ${H} L 0 ${H} Z`;
-  const last = trend[trend.length - 1];
   return (
     <>
       <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
         <Path d={area} fill={C.amber} opacity={0.16} />
         <Path d={scalePath} stroke={C.muted} strokeWidth={1} opacity={0.55} fill="none" strokeLinejoin="round" strokeLinecap="round" />
         <Path d={trendPath} stroke={C.amber} strokeWidth={2.5} fill="none" strokeLinejoin="round" strokeLinecap="round" />
-        <Circle cx={px(last.ts)} cy={py(kgToLb(last.kg))} r={4} fill={C.amber} />
       </Svg>
       <View style={s.legend}>
         <View style={[s.legendSwatch, { backgroundColor: C.amber, height: 2 }]} />
