@@ -24,6 +24,12 @@ import { PanelLeftIcon } from "./src/icons";
 // Content height of the top bar (below the status-bar inset).
 const TOPBAR_H = 50;
 
+// The paywall sells through StoreKit, so it only exists on iOS. Android has no
+// purchase path until Play Billing ships, and the worker lets Android clients
+// through the subscription gate until then (ANDROID_FREE_UNTIL_PLAY_BILLING),
+// so Android never shows it.
+const HAS_PAYWALL = Platform.OS === "ios";
+
 // Account deletion confirmation. Apple can't be told to cancel an App Store
 // subscription on the user's behalf, so iOS says so before the user commits.
 const DELETE_ACCOUNT_WARNING =
@@ -236,7 +242,7 @@ function Shell() {
         {blocked ? (
           <Paywall onActivated={() => setBlocked(false)} />
         ) : view === "today" ? (
-          <Today onAuthError={onAuthError} onSubscriptionRequired={() => setBlocked(true)} />
+          <Today onAuthError={onAuthError} onSubscriptionRequired={HAS_PAYWALL ? () => setBlocked(true) : undefined} />
         ) : (
           <Agent
             key={session.key}

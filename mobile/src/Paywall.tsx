@@ -5,7 +5,8 @@ import { C } from "./theme";
 import { isIapAvailable } from "../modules/skcal-iap";
 import { buySubscription, checkIapReadiness, restoreSubscription, type IapReadiness } from "./iap";
 
-// Shown instead of the dashboard when the API answers 402.
+// Shown instead of the dashboard when the API answers 402. iOS only in the
+// store builds: App.tsx never mounts it on Android (see HAS_PAYWALL there).
 //
 // This replaces a bare "subscription required" string that left the user with no
 // way forward, which is a plausible App Review rejection on its own.
@@ -103,26 +104,27 @@ export function Paywall({ onActivated }: { onActivated: () => void }) {
             </View>
 
             {Platform.OS === "ios" ? (
-              // Always offered on iOS. Gating this on a StoreKit readiness probe
-              // meant one bad probe hid the only way to pay; a failed purchase
-              // now reports itself instead of silently removing the button.
-              <Pressable
-                style={[s.cta, busy != null && s.ctaBusy]}
-                disabled={busy != null}
-                accessibilityRole="button"
-                accessibilityLabel="Subscribe"
-                onPress={() => handle("buy")}
-              >
-                <Text style={s.ctaText}>{busy === "buy" ? "OPENING THE APP STORE…" : "SUBSCRIBE"}</Text>
-              </Pressable>
+              <>
+                {/* Always offered on iOS. Gating this on a StoreKit readiness probe
+                    meant one bad probe hid the only way to pay; a failed purchase
+                    now reports itself instead of silently removing the button. */}
+                <Pressable
+                  style={[s.cta, busy != null && s.ctaBusy]}
+                  disabled={busy != null}
+                  accessibilityRole="button"
+                  accessibilityLabel="Subscribe"
+                  onPress={() => handle("buy")}
+                >
+                  <Text style={s.ctaText}>{busy === "buy" ? "OPENING THE APP STORE…" : "SUBSCRIBE"}</Text>
+                </Pressable>
+                <Text style={s.fine}>
+                  Payment is charged to your Apple ID when you confirm. It renews every month unless you turn off auto
+                  renew at least 24 hours before the period ends. Manage or cancel it any time in your Apple ID settings.
+                </Text>
+              </>
             ) : (
               <Text style={s.fine}>This account is not active yet. Once it is, everything you log shows up here.</Text>
             )}
-
-            <Text style={s.fine}>
-              Payment is charged to your Apple ID when you confirm. It renews every month unless you turn off auto
-              renew at least 24 hours before the period ends. Manage or cancel it any time in your Apple ID settings.
-            </Text>
             <View style={s.linkRow}>
               <Pressable onPress={() => Linking.openURL(TERMS_URL)} accessibilityRole="link">
                 <Text style={s.link}>Terms of Use</Text>

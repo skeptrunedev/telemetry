@@ -469,6 +469,22 @@ async function stripeBillingRow(c: Context<{ Bindings: Bindings; Variables: Vari
   )[0];
 }
 
+// ---- TEMPORARY: Android is free until Play Billing ships --------------------
+// The Android app has no way to buy a subscription yet (its Play Billing module
+// is a stub), so the gate would park Android users on a paywall they cannot get
+// past. Until Play Billing ships, requests the mobile app tags with
+// `X-Skcal-Client: android` skip the subscription gate. Web and iOS are gated
+// exactly as before.
+//
+// The header is asserted by the client, so this is a pricing decision, not a
+// security boundary: any caller can send it, and that is accepted for as long
+// as this flag exists. To end it, delete the flag and androidFreeAccess().
+const ANDROID_FREE_UNTIL_PLAY_BILLING = true;
+
+function androidFreeAccess(c: Context<{ Bindings: Bindings; Variables: Variables }>): boolean {
+  return ANDROID_FREE_UNTIL_PLAY_BILLING && c.req.header("x-skcal-client") === "android";
+}
+
 async function hasActiveSubscription(
   c: Context<{ Bindings: Bindings; Variables: Variables }>,
   email: string,
@@ -892,7 +908,7 @@ app.use("/api/*", async (c, next) => {
     c.set("email", email);
     const billingRoute = path.startsWith("/api/billing") || path.startsWith("/api/apple/");
     const accountRoute = path === "/api/account";
-    if (!billingRoute && !accountRoute && !(await hasActiveSubscription(c, email))) {
+    if (!billingRoute && !accountRoute && !androidFreeAccess(c) && !(await hasActiveSubscription(c, email))) {
       return c.json({ error: "subscription required" }, 402);
     }
     return next();

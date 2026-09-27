@@ -156,8 +156,9 @@ function RemindersCard({ data, onChanged }: { data: { reminders: Reminder[]; pho
   );
 }
 
-// Apple Health connect/status card. iOS-native only: Android and the web sim
-// get a single muted line (the module never loads there — see src/health.ts).
+// Apple Health connect/status card. iOS-native only: the web sim gets a single
+// muted line (the module never loads there — see src/health.ts), and Android
+// doesn't render the card at all.
 function AppleHealthCard({
   connected,
   lastSync,
@@ -170,9 +171,7 @@ function AppleHealthCard({
   const [connecting, setConnecting] = useState(false);
 
   let body: ReactNode;
-  if (Platform.OS === "android") {
-    body = <Text style={s.healthMuted}>Apple Health is iPhone only</Text>;
-  } else if (Platform.OS === "web") {
+  if (Platform.OS === "web") {
     body = <Text style={s.healthMuted}>Apple Health sync needs the iPhone app</Text>;
   } else if (!healthSupported()) {
     body = <Text style={s.healthMuted}>Apple Health isn’t available in this build</Text>;
@@ -223,8 +222,12 @@ export function Today({
   onSubscriptionRequired,
 }: {
   onAuthError: (e: Error) => void;
-  /** 402 from the API. The shell swaps in the paywall rather than showing a raw error. */
-  onSubscriptionRequired: () => void;
+  /**
+   * 402 from the API. The shell swaps in the paywall rather than showing a raw
+   * error. Omitted where there is no paywall (Android): the worker doesn't gate
+   * Android clients, so a 402 there is shown as a plain inactive-account error.
+   */
+  onSubscriptionRequired?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<Dashboard | null>(null);
@@ -259,7 +262,10 @@ export function Today({
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       if (err.message === "unauthorized") onAuthError(err);
-      else if (err.message === "subscription required") onSubscriptionRequired();
+      else if (err.message === "subscription required") {
+        if (onSubscriptionRequired) onSubscriptionRequired();
+        else setError("This account is not active.");
+      }
       else setError(err.message);
     }
     await rem;
@@ -402,7 +408,10 @@ export function Today({
 
       {reminders && <RemindersCard data={reminders} onChanged={loadReminders} />}
 
-      <AppleHealthCard connected={healthConnected} lastSync={healthSync} onConnect={connectHealth} />
+      {/* Apple Health is an iOS service; Android shows no card rather than naming another platform. */}
+      {Platform.OS !== "android" && (
+        <AppleHealthCard connected={healthConnected} lastSync={healthSync} onConnect={connectHealth} />
+      )}
     </ScrollView>
   );
 }

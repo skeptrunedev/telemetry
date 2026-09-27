@@ -11,6 +11,12 @@ const TOKEN_KEY = "skcal_session_token";
 // the Expo-web preview falls back to localStorage.
 const WEB = Platform.OS === "web";
 
+// Sent on every request to the worker so it knows which app is calling. The
+// worker's temporary ANDROID_FREE_UNTIL_PLAY_BILLING policy keys off
+// `android`; nothing is sent from the web preview, which isn't a store build.
+const CLIENT_HEADERS: Record<string, string> =
+  Platform.OS === "android" || Platform.OS === "ios" ? { "x-skcal-client": Platform.OS } : {};
+
 // Kept warm by getToken/setToken so synchronous callers (e.g. <Image> auth
 // headers) can read it without an async hop — App always getToken()s on boot.
 let cachedToken: string | null = null;
@@ -34,7 +40,7 @@ export async function setToken(t: string | null): Promise<void> {
 // same-origin on the web app, so mobile must attach the bearer header itself.
 export function photoSource(image: string): { uri: string; headers?: Record<string, string> } {
   const uri = image.startsWith("http") ? image : `${BASE}${image}`;
-  return cachedToken ? { uri, headers: { authorization: `Bearer ${cachedToken}` } } : { uri };
+  return { uri, headers: { ...CLIENT_HEADERS, ...(cachedToken ? { authorization: `Bearer ${cachedToken}` } : {}) } };
 }
 
 async function req(path: string, init: RequestInit = {}): Promise<Response> {
@@ -42,6 +48,7 @@ async function req(path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(`${BASE}${path}`, {
     ...init,
     headers: {
+      ...CLIENT_HEADERS,
       ...(init.headers ?? {}),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...(init.body ? { "content-type": "application/json" } : {}),
@@ -52,7 +59,7 @@ async function req(path: string, init: RequestInit = {}): Promise<Response> {
 export async function sendOtp(phoneNumber: string): Promise<void> {
   const r = await fetch(`${BASE}/api/auth/phone-number/send-otp`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...CLIENT_HEADERS, "content-type": "application/json" },
     body: JSON.stringify({ phoneNumber }),
   });
   if (!r.ok) {
@@ -64,7 +71,7 @@ export async function sendOtp(phoneNumber: string): Promise<void> {
 export async function verifyOtp(phoneNumber: string, code: string): Promise<string> {
   const r = await fetch(`${BASE}/api/auth/phone-number/verify`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...CLIENT_HEADERS, "content-type": "application/json" },
     body: JSON.stringify({ phoneNumber, code }),
   });
   if (!r.ok) {
@@ -138,7 +145,7 @@ export async function uploadAgentPhoto(uri: string): Promise<{ url: string }> {
   }
   const r = await fetch(`${BASE}/api/agent/photos`, {
     method: "POST",
-    headers: token ? { authorization: `Bearer ${token}` } : {},
+    headers: { ...CLIENT_HEADERS, ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: fd,
   });
   if (!r.ok) throw new Error(`photo upload → ${r.status}`);
@@ -182,6 +189,7 @@ export async function agentStream(
     res = await streamFetch(`${BASE}/api/agent/stream?date=${day}`, {
       method: "POST",
       headers: {
+        ...CLIENT_HEADERS,
         "content-type": "application/json",
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },

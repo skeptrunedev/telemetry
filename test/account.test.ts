@@ -10,7 +10,8 @@ import {
   workerFetchStripe,
 } from "./harness";
 
-// Account deletion (DELETE /api/account).
+// Account deletion (DELETE /api/account) and the temporary Android exemption
+// from the subscription gate.
 //
 // Deletion runs against the Stripe-faked instance: real D1 and R2, with every
 // outbound call to api.stripe.com answered locally, so the test sees exactly
@@ -309,5 +310,27 @@ describe("Stripe webhook after deletion", () => {
       .bind(email)
       .first<{ status: string }>();
     expect(row?.status).toBe("active");
+  });
+});
+
+// TEMPORARY policy ANDROID_FREE_UNTIL_PLAY_BILLING: Android clients skip the
+// subscription gate until Play Billing ships. @phone.skcal.fit accounts are
+// the ones the test instance still gates (see harness).
+describe("Android free access until Play Billing", () => {
+  const unsubscribed = "+15550002222@phone.skcal.fit";
+
+  it("lets an unsubscribed Android client through", async () => {
+    const res = await workerFetchBilling(
+      "/api/dashboard",
+      as(unsubscribed, { headers: { "x-skcal-client": "android" } }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("still gates iOS, web, and untagged clients", async () => {
+    for (const headers of [{ "x-skcal-client": "ios" }, { "x-skcal-client": "web" }, {}] as Record<string, string>[]) {
+      const res = await workerFetchBilling("/api/dashboard", as(unsubscribed, { headers }));
+      expect(res.status).toBe(402);
+    }
   });
 });
