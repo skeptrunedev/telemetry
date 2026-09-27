@@ -1,0 +1,57 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+---
+
+<Layout title="Delete your account — skcal" description="How to permanently delete your skcal account and data, in the app or by email.">
+  <Nav />
+  <article class="wrap legal">
+    <h1>Delete your account</h1>
+    <p class="legal-date">Last updated: 2026-09-26</p>
+    <p>You can permanently delete your skcal account and all of its data at any time. Deletion can't be undone.</p>
+
+    <h2>In the app</h2>
+    <ol>
+      <li>Open the skcal app and sign in.</li>
+      <li>Tap your account circle in the top right corner.</li>
+      <li>Tap <strong>Delete account</strong>, then confirm.</li>
+    </ol>
+    <p>The account is deleted right away and the app returns to the sign-in screen.</p>
+
+    <h2>Without the app</h2>
+    <p>
+      Email <a href="mailto:support@skcal.fit?subject=Delete%20my%20skcal%20account">support@skcal.fit</a> with the
+      subject "Delete my skcal account". Send it from the email address on your account, or include the phone number
+      you sign in with. We'll confirm the request comes from the account holder, then delete the account and reply
+      when it's done.
+    </p>
+
+    <h2>What gets deleted</h2>
+    <ul>
+      <li>Your account, sign-in methods, sessions, and linked phone numbers.</li>
+      <li>Weigh-ins, body-fat readings, measurements, targets, and nutrition totals.</li>
+      <li>Meals, food items, meal and progress photos, and your profile picture.</li>
+      <li>Workouts, reminders, agent conversations and memories, and your iMessage conversation history.</li>
+      <li>API keys, scale ingest tokens, and connected app (OAuth) authorizations.</li>
+    </ul>
+
+    <h2>Subscriptions</h2>
+    <p>
+      A subscription billed through our website is cancelled automatically when the account is deleted. A subscription
+      bought through the App Store is billed by Apple, so cancel it in your Apple ID subscription settings as well;
+      deleting your skcal account doesn't stop App Store billing.
+    </p>
+
+    <h2>What we keep</h2>
+    <p>
+      Payment processors keep their own records of past charges (for example Stripe invoices) as the law requires.
+      Deleted data can remain in our database provider's point-in-time recovery backups for a limited period until
+      those backups roll over. See the <a href="/privacy">Privacy Policy</a> for the full picture.
+    </p>
+
+    <h2>Contact</h2>
+    <p>Questions: <a href="mailto:support@skcal.fit">support@skcal.fit</a>.</p>
+  </article>
+  <Footer />
+</Layout>
