@@ -412,13 +412,25 @@ async function resolveApiKey(
 // ---- Stripe billing ---------------------------------------------------------
 // One $100/mo plan. The webhook keeps the `billing` table in sync; the guard
 // requires an active subscription for data routes (exempt emails + dev skip).
+/** A non-2xx Stripe response, keeping the HTTP status and Stripe's error code. */
+class StripeApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string | undefined,
+  ) {
+    super(message);
+  }
+}
+
 async function stripeApi(
   env: Bindings,
   path: string,
   params?: Record<string, string>,
+  method: "GET" | "POST" | "DELETE" = params ? "POST" : "GET",
 ): Promise<Record<string, unknown>> {
   const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method: params ? "POST" : "GET",
+    method,
     headers: {
       authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
       ...(params ? { "content-type": "application/x-www-form-urlencoded" } : {}),
@@ -427,8 +439,8 @@ async function stripeApi(
   });
   const json = (await res.json()) as Record<string, unknown>;
   if (!res.ok) {
-    const err = (json.error as { message?: string } | undefined)?.message ?? `stripe ${path} → ${res.status}`;
-    throw new Error(err);
+    const error = json.error as { message?: string; code?: string } | undefined;
+    throw new StripeApiError(error?.message ?? `stripe ${path} → ${res.status}`, res.status, error?.code);
   }
   return json;
 }
@@ -874,10 +886,13 @@ app.use("/api/*", async (c, next) => {
   // stay reachable so an unsubscribed user can subscribe / manage billing).
   // /api/apple/* is exempt for the same reason: the iOS paywall has to be able
   // to verify a purchase it just made while the account is still unsubscribed.
+  // /api/account is exempt because deleting an account must never require a
+  // subscription (App Store guideline 5.1.1(v), Google Play account deletion).
   const finish = async (email: string) => {
     c.set("email", email);
     const billingRoute = path.startsWith("/api/billing") || path.startsWith("/api/apple/");
-    if (!billingRoute && !(await hasActiveSubscription(c, email))) {
+    const accountRoute = path === "/api/account";
+    if (!billingRoute && !accountRoute && !(await hasActiveSubscription(c, email))) {
       return c.json({ error: "subscription required" }, 402);
     }
     return next();
@@ -901,8 +916,13 @@ app.use("/api/*", async (c, next) => {
         .limit(1)
     )[0];
     if (!row?.verifiedAt) return c.json({ error: "channel not linked", code: "unlinked" }, 404);
-    if (path.startsWith("/api/keys") || path.startsWith("/api/channels") || path.startsWith("/api/admin")) {
-      return c.json({ error: "agent cannot manage keys, channels, or admin" }, 403);
+    if (
+      path.startsWith("/api/keys") ||
+      path.startsWith("/api/channels") ||
+      path.startsWith("/api/admin") ||
+      path === "/api/account"
+    ) {
+      return c.json({ error: "agent cannot manage keys, channels, account, or admin" }, 403);
     }
     return finish(row.userEmail);
   }
@@ -913,6 +933,7 @@ app.use("/api/*", async (c, next) => {
     const key = await resolveApiKey(c, authz.slice("Bearer ".length).trim());
     if (!key) return c.json({ error: "invalid API key" }, 401);
     if (path.startsWith("/api/keys")) return c.json({ error: "API keys cannot manage API keys" }, 403);
+    if (path === "/api/account") return c.json({ error: "API keys cannot delete the account" }, 403);
     if (!key.scopes.includes("*")) {
       const need = scopeForRequest(c.req.method, path);
       if (!need || !key.scopes.includes(need)) {
@@ -3558,6 +3579,10 @@ app.get("/openapi.json", (c) =>
 // ---- Profile avatar --------------------------------------------------------
 // Upload a custom profile picture (stored in R2) and point the user's Better
 // Auth `image` at it. Used when there's no Google/Gravatar picture.
+
+/** A user.image that points at an uploaded avatar; group 1 is its R2 id under `avatars/`. */
+const AVATAR_IMAGE_PATH = /^\/api\/profile\/avatar\/([^/?#]+)$/;
+
 app.post("/api/profile/avatar", async (c) => {
   const email = c.get("email");
   const form = await c.req.formData();
@@ -3567,7 +3592,14 @@ app.post("/api/profile/avatar", async (c) => {
   const id = crypto.randomUUID();
   await c.env.PHOTOS.put(`avatars/${id}`, file.stream(), { httpMetadata: { contentType: file.type } });
   const image = `/api/profile/avatar/${id}`;
+  const previous = (
+    await db(c).select({ image: schema.user.image }).from(schema.user).where(eq(schema.user.email, email)).limit(1)
+  )[0]?.image;
   await db(c).update(schema.user).set({ image, updatedAt: new Date() }).where(eq(schema.user.email, email));
+  // Avatar keys don't carry the owner's email, so a replaced avatar would be
+  // unreachable by account deletion. Remove it now instead.
+  const previousId = previous?.match(AVATAR_IMAGE_PATH)?.[1];
+  if (previousId) await c.env.PHOTOS.delete(`avatars/${previousId}`);
   return c.json({ image });
 });
 
@@ -3610,6 +3642,7 @@ ${bodyHtml}
 
 app.get("/privacy", (c) => c.redirect("https://skcal.fit/privacy", 301));
 app.get("/terms", (c) => c.redirect("https://skcal.fit/terms", 301));
+app.get("/delete-account", (c) => c.redirect("https://skcal.fit/delete-account", 301));
 
 // ---- API keys (managed from the app; session-only per the guard) -----------
 app.get("/api/keys", async (c) => {
@@ -3747,6 +3780,211 @@ app.post("/api/billing/portal", async (c) => {
   } catch (e) {
     return c.json({ error: "portal failed", detail: String(e) }, 502);
   }
+});
+
+// ---- Account deletion ---------------------------------------------------------
+// Self-serve deletion (App Store guideline 5.1.1(v), Google Play's account
+// deletion requirement). One helper erases everything the account owns, and
+// both DELETE /api/account and the admin phone-reset wipe go through it.
+//
+// Order matters. Outside systems go first (Stripe billing, the Photon iMessage
+// registration), then R2 objects, then every D1 row in one atomic batch. A
+// failure at any step throws before the D1 rows go, so the account is still
+// there and the delete can simply be retried; nothing is left half-billed.
+
+/** Delete every R2 object under `prefix`, re-listing from the start until none remain. */
+async function deleteR2Prefix(bucket: R2Bucket, prefix: string): Promise<number> {
+  let deleted = 0;
+  for (;;) {
+    const page = await bucket.list({ prefix, limit: 1000 });
+    if (!page.objects.length) return deleted;
+    await bucket.delete(page.objects.map((o) => o.key));
+    deleted += page.objects.length;
+  }
+}
+
+/** Remove one Photon (iMessage) registration by its Photon user id. */
+async function photonDeleteUser(env: Bindings, id: string): Promise<Response> {
+  return fetch(`https://app.photon.codes/api/projects/${env.PHOTON_PROJECT_ID}/spectrum/users/${id}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${env.PHOTON_ACCESS_TOKEN}` },
+  });
+}
+
+class AccountDeletionError extends Error {
+  constructor(
+    message: string,
+    readonly status: 502 | 503,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Permanently erase one account: its Stripe customer (which cancels any live
+ * subscription), its Photon registrations, its R2 photos and avatar, and every
+ * row it owns in D1, ending with the user, sessions, and sign-in accounts.
+ * Throws AccountDeletionError, leaving D1 untouched, when an outside system
+ * can't be cleaned up.
+ */
+async function deleteAccount(c: EnvCtx, email: string): Promise<void> {
+  const authUser = (await db(c).select().from(schema.user).where(eq(schema.user.email, email)).limit(1))[0];
+  const linked = await db(c).select().from(schema.linkedChannels).where(eq(schema.linkedChannels.userEmail, email));
+  const phones = [
+    ...new Set([
+      ...linked.filter((ch) => ch.kind === "phone").map((ch) => ch.value),
+      ...(authUser?.phoneNumber ? [authUser.phoneNumber] : []),
+    ]),
+  ];
+
+  // 1. Stripe. Deleting the customer immediately cancels every subscription on
+  // it, so a deleted account can never be billed again. An already-deleted
+  // customer is the state we want, so Stripe's resource_missing counts as done.
+  const stripeRow = (
+    await db(c)
+      .select()
+      .from(schema.billing)
+      .where(and(eq(schema.billing.userEmail, email), eq(schema.billing.source, "stripe")))
+      .limit(1)
+  )[0];
+  if (stripeRow?.stripeCustomerId) {
+    if (!c.env.STRIPE_SECRET_KEY) {
+      throw new AccountDeletionError("billing is not configured, so the Stripe customer can't be removed", 503);
+    }
+    try {
+      await stripeApi(c.env, `customers/${stripeRow.stripeCustomerId}`, undefined, "DELETE");
+    } catch (e) {
+      if (!(e instanceof StripeApiError && e.code === "resource_missing")) {
+        throw new AccountDeletionError(`could not cancel billing: ${e instanceof Error ? e.message : String(e)}`, 502);
+      }
+    }
+  }
+  // Apple subscriptions can't be cancelled server-side; the user cancels them in
+  // their Apple ID settings, which the iOS app says before confirming. Their
+  // billing row goes with the rest below, and later App Store notifications for
+  // it are ignored as an unknown subscription.
+
+  // 2. Photon registrations for every number on the account, so the iMessage
+  // line stops treating the number as an existing user.
+  if (phones.length) {
+    const registrations = (await photonUsers(c.env)).filter((pu) => phones.includes(pu.phoneNumber));
+    for (const pu of registrations) {
+      const res = await photonDeleteUser(c.env, pu.id);
+      if (!res.ok) throw new AccountDeletionError(`could not remove the iMessage registration (${res.status})`, 502);
+    }
+  }
+
+  // 3. R2. Meal, chat, and progress photos all live under `${email}/`. Keys
+  // recorded in D1 are deleted explicitly as well, so a key written under any
+  // other prefix still goes. Avatars live under `avatars/<id>`; the current one
+  // is whatever user.image points at.
+  const meals = await db(c).select({ photoKeys: schema.meals.photoKeys }).from(schema.meals).where(eq(schema.meals.userEmail, email));
+  const progress = await db(c).select({ r2Key: schema.photos.r2Key }).from(schema.photos).where(eq(schema.photos.userEmail, email));
+  const recordedKeys = [
+    ...meals.flatMap((m) => (m.photoKeys ? (JSON.parse(m.photoKeys) as string[]) : [])),
+    ...progress.map((p) => p.r2Key),
+  ];
+  const avatarId = authUser?.image?.match(AVATAR_IMAGE_PATH)?.[1];
+  if (avatarId) recordedKeys.push(`avatars/${avatarId}`);
+  for (let i = 0; i < recordedKeys.length; i += 1000) {
+    await c.env.PHOTOS.delete(recordedKeys.slice(i, i + 1000));
+  }
+  await deleteR2Prefix(c.env.PHOTOS, `${email}/`);
+
+  // 4. Every D1 row the account owns, in one atomic batch.
+  const conversationIds = (
+    await db(c)
+      .select({ id: schema.coachConversations.id })
+      .from(schema.coachConversations)
+      .where(eq(schema.coachConversations.userEmail, email))
+  ).map((r) => r.id);
+  const d = db(c);
+  await d.batch([
+    d.delete(schema.coachMessages).where(inArray(schema.coachMessages.conversationId, conversationIds)),
+    d.delete(schema.coachConversations).where(eq(schema.coachConversations.userEmail, email)),
+    d.delete(schema.weightReadings).where(eq(schema.weightReadings.userEmail, email)),
+    d.delete(schema.measurements).where(eq(schema.measurements.userEmail, email)),
+    d.delete(schema.photos).where(eq(schema.photos.userEmail, email)),
+    d.delete(schema.targets).where(eq(schema.targets.userEmail, email)),
+    d.delete(schema.nutritionDays).where(eq(schema.nutritionDays.userEmail, email)),
+    d.delete(schema.nutritionItems).where(eq(schema.nutritionItems.userEmail, email)),
+    d.delete(schema.meals).where(eq(schema.meals.userEmail, email)),
+    d.delete(schema.workouts).where(eq(schema.workouts.userEmail, email)),
+    d.delete(schema.agentMemories).where(eq(schema.agentMemories.userEmail, email)),
+    d.delete(schema.reminders).where(eq(schema.reminders.userEmail, email)),
+    d.delete(schema.apiKeys).where(eq(schema.apiKeys.userEmail, email)),
+    d.delete(schema.ingestTokens).where(eq(schema.ingestTokens.userEmail, email)),
+    d.delete(schema.billing).where(eq(schema.billing.userEmail, email)),
+    d.delete(schema.agentThreads).where(inArray(schema.agentThreads.phone, phones)),
+    d.delete(schema.textMeRequests).where(inArray(schema.textMeRequests.phone, phones)),
+    d.delete(schema.linkedChannels).where(eq(schema.linkedChannels.userEmail, email)),
+    d.delete(schema.verification).where(inArray(schema.verification.identifier, [email, ...phones])),
+    ...(authUser
+      ? [
+          d.delete(schema.oauthAccessToken).where(eq(schema.oauthAccessToken.userId, authUser.id)),
+          d.delete(schema.oauthConsent).where(eq(schema.oauthConsent.userId, authUser.id)),
+          d.delete(schema.oauthApplication).where(eq(schema.oauthApplication.userId, authUser.id)),
+          d.delete(schema.session).where(eq(schema.session.userId, authUser.id)),
+          d.delete(schema.account).where(eq(schema.account.userId, authUser.id)),
+          d.delete(schema.user).where(eq(schema.user.id, authUser.id)),
+        ]
+      : []),
+  ]);
+}
+
+/**
+ * @openapi
+ * /api/account:
+ *   delete:
+ *     tags: [Account]
+ *     summary: Delete the caller's account
+ *     description: >-
+ *       Permanently deletes the signed-in account and everything it owns: weigh-ins, measurements, meals, food
+ *       items, photos, workouts, targets, agent conversations and memories, reminders, API keys, linked phone
+ *       numbers, sessions, and the sign-in itself. A Stripe subscription is cancelled. An App Store subscription
+ *       has to be cancelled in the Apple ID settings. Requires a signed-in session; API keys and the messaging
+ *       agent cannot call it. This cannot be undone.
+ *     operationId: deleteAccount
+ *     responses:
+ *       '200':
+ *         description: The account and all of its data were deleted.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ok'
+ *       '401':
+ *         description: No signed-in session.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Called with an API key or by the messaging agent, which cannot delete accounts.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '502':
+ *         description: Stripe or the iMessage provider refused the cleanup. The account's data was not deleted; retry.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '503':
+ *         description: The account has a Stripe customer but billing is not configured. The account's data was not deleted.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+app.delete("/api/account", async (c) => {
+  try {
+    await deleteAccount(c, c.get("email"));
+  } catch (e) {
+    if (e instanceof AccountDeletionError) return c.json({ error: e.message }, e.status);
+    throw e;
+  }
+  return c.json({ ok: true });
 });
 
 // ---- Admin: onboarding test tooling -----------------------------------------
@@ -3888,10 +4126,7 @@ app.post("/api/admin/phone/reset", async (c) => {
     const pus = (await photonUsers(c.env)).filter((u) => u.phoneNumber === phone);
     if (pus.length && c.env.PHOTON_PROJECT_ID && c.env.PHOTON_ACCESS_TOKEN) {
       for (const pu of pus) {
-        const res = await fetch(
-          `https://app.photon.codes/api/projects/${c.env.PHOTON_PROJECT_ID}/spectrum/users/${pu.id}`,
-          { method: "DELETE", headers: { authorization: `Bearer ${c.env.PHOTON_ACCESS_TOKEN}` } },
-        );
+        const res = await photonDeleteUser(c.env, pu.id);
         report.push(
           res.ok
             ? `photon: registration removed (${pu.assignedPhoneNumber ?? "no line"})`
@@ -3961,52 +4196,13 @@ app.post("/api/admin/phone/reset", async (c) => {
     } else if (!accountEmail.endsWith("@phone.skcal.fit")) {
       report.push("wipe: refused (not a temp phone account)");
     } else {
-      // stored meal photos in R2 first
-      const mealRows = await db(c).select().from(schema.meals).where(eq(schema.meals.userEmail, accountEmail));
-      for (const m of mealRows) {
-        const keys: string[] = m.photoKeys ? JSON.parse(m.photoKeys) : [];
-        await Promise.all(keys.map((k) => c.env.PHOTOS.delete(k).catch(() => {})));
+      try {
+        await deleteAccount(c, accountEmail);
+        report.push(`wipe: ${accountEmail} deleted (billing, data, photos, conversation history, sessions, account)`);
+      } catch (e) {
+        if (!(e instanceof AccountDeletionError)) throw e;
+        report.push(`wipe: failed, account data kept (${e.message})`);
       }
-      const convs = await db(c)
-        .select({ id: schema.coachConversations.id })
-        .from(schema.coachConversations)
-        .where(eq(schema.coachConversations.userEmail, accountEmail));
-      for (const cv of convs) {
-        await db(c).delete(schema.coachMessages).where(eq(schema.coachMessages.conversationId, cv.id));
-      }
-      await db(c).delete(schema.coachConversations).where(eq(schema.coachConversations.userEmail, accountEmail));
-      await db(c).delete(schema.weightReadings).where(eq(schema.weightReadings.userEmail, accountEmail));
-      await db(c).delete(schema.measurements).where(eq(schema.measurements.userEmail, accountEmail));
-      await db(c).delete(schema.photos).where(eq(schema.photos.userEmail, accountEmail));
-      await db(c).delete(schema.targets).where(eq(schema.targets.userEmail, accountEmail));
-      await db(c).delete(schema.nutritionDays).where(eq(schema.nutritionDays.userEmail, accountEmail));
-      await db(c).delete(schema.nutritionItems).where(eq(schema.nutritionItems.userEmail, accountEmail));
-      await db(c).delete(schema.meals).where(eq(schema.meals.userEmail, accountEmail));
-      await db(c).delete(schema.workouts).where(eq(schema.workouts.userEmail, accountEmail));
-      await db(c).delete(schema.agentMemories).where(eq(schema.agentMemories.userEmail, accountEmail));
-      await db(c).delete(schema.apiKeys).where(eq(schema.apiKeys.userEmail, accountEmail));
-      await db(c).delete(schema.billing).where(eq(schema.billing.userEmail, accountEmail));
-      // Conversation history for every number linked to the account (the reset
-      // phone itself was already handled above).
-      const acctPhones = (
-        await db(c)
-          .select({ value: schema.linkedChannels.value })
-          .from(schema.linkedChannels)
-          .where(and(eq(schema.linkedChannels.userEmail, accountEmail), eq(schema.linkedChannels.kind, "phone")))
-      ).map((r) => r.value);
-      if (acctPhones.length) {
-        await db(c).delete(schema.agentThreads).where(inArray(schema.agentThreads.phone, acctPhones));
-      }
-      await db(c).delete(schema.linkedChannels).where(eq(schema.linkedChannels.userEmail, accountEmail));
-      const authUser = (
-        await db(c).select().from(schema.user).where(eq(schema.user.email, accountEmail)).limit(1)
-      )[0];
-      if (authUser) {
-        await db(c).delete(schema.session).where(eq(schema.session.userId, authUser.id));
-        await db(c).delete(schema.account).where(eq(schema.account.userId, authUser.id));
-        await db(c).delete(schema.user).where(eq(schema.user.id, authUser.id));
-      }
-      report.push(`wipe: ${accountEmail} deleted (data, conversation history, sessions, account)`);
     }
   }
 
@@ -4575,7 +4771,17 @@ app.post("/api/stripe/webhook", async (c) => {
           .where(and(eq(schema.billing.source, "stripe"), eq(schema.billing.stripeCustomerId, customerId)))
           .limit(1);
     const email = bySub[0]?.userEmail ?? byCust[0]?.userEmail ?? metaEmail;
-    if (email) {
+    // With no billing row, the metadata email is only trusted while that account
+    // exists. Deleting an account deletes its Stripe customer, and the
+    // customer.subscription.deleted event that follows must not recreate a
+    // billing row for the erased email.
+    const known =
+      bySub.length > 0 ||
+      byCust.length > 0 ||
+      (!!email &&
+        (await db(c).select({ id: schema.user.id }).from(schema.user).where(eq(schema.user.email, email)).limit(1))
+          .length > 0);
+    if (email && known) {
       await db(c)
         .insert(schema.billing)
         .values({

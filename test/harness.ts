@@ -128,7 +128,13 @@ function bindings(bypass: boolean, extra: Record<string, string> = {}) {
   };
 }
 
-async function makeInstance(bypass: boolean, extra: Record<string, string> = {}): Promise<Miniflare> {
+type Outbound = (request: Request) => Response | Promise<Response>;
+
+async function makeInstance(
+  bypass: boolean,
+  extra: Record<string, string> = {},
+  outboundService?: Outbound,
+): Promise<Miniflare> {
   const { scriptPath, modulesRoot } = await bundleOnce();
   const instance = new Miniflare({
     modules: true,
@@ -144,6 +150,7 @@ async function makeInstance(bypass: boolean, extra: Record<string, string> = {})
     bindings: bindings(bypass, extra),
     // The Worker's SPA fallback hits env.ASSETS; stub it so non-API paths resolve.
     serviceBindings: { ASSETS: () => new Response("spa", { status: 200 }) },
+    ...(outboundService ? { outboundService: outboundService as never } : {}),
   });
   await applyMigrations(instance);
   return instance;
@@ -210,6 +217,41 @@ export async function seedBillingRow(row: {
     .run();
 }
 
+// A fourth instance whose outbound fetch() is answered by a local fake of the
+// Stripe API instead of the network, so account deletion's billing cleanup and
+// the webhook can be exercised end to end. Tests script the fake's reply with
+// setStripeReply() and read what the Worker sent from stripeCalls.
+export const STRIPE_WEBHOOK_SECRET = "whsec_test_not_a_real_secret";
+export const stripeCalls: { method: string; url: string }[] = [];
+let stripeReply: () => Response = () => new Response(JSON.stringify({ deleted: true }), { status: 200 });
+let mfStripe: Miniflare | undefined;
+
+export function setStripeReply(reply: () => Response): void {
+  stripeReply = reply;
+}
+
+export async function getMiniflareStripe(): Promise<Miniflare> {
+  if (!mfStripe) {
+    mfStripe = await makeInstance(
+      true,
+      { STRIPE_SECRET_KEY: "sk_test_not_a_real_key", STRIPE_WEBHOOK_SECRET },
+      (request) => {
+        const url = new URL(request.url);
+        if (url.hostname !== "api.stripe.com") return new Response("unexpected outbound fetch", { status: 599 });
+        stripeCalls.push({ method: request.method, url: request.url });
+        return stripeReply();
+      },
+    );
+  }
+  return mfStripe;
+}
+
+/** Dispatch to the Worker whose Stripe calls go to the local fake. */
+export async function workerFetchStripe(path: string, init: RequestInit = {}): Promise<Response> {
+  const instance = await getMiniflareStripe();
+  return instance.dispatchFetch(`http://example.com${path}`, init as never) as unknown as Promise<Response>;
+}
+
 /** Tear down the shared instances (called from a global afterAll). */
 export async function disposeMiniflare(): Promise<void> {
   if (mf) {
@@ -223,5 +265,9 @@ export async function disposeMiniflare(): Promise<void> {
   if (mfBilling) {
     await mfBilling.dispose();
     mfBilling = undefined;
+  }
+  if (mfStripe) {
+    await mfStripe.dispose();
+    mfStripe = undefined;
   }
 }

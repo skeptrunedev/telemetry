@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, BackHandler, Platform, Linking } from "react-native";
+import { View, Text, Pressable, StyleSheet, BackHandler, Platform, Linking, Alert } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { C } from "./src/theme";
-import { getToken, setToken, whoami, listConversations, deleteConversation, ChatMessage, Conversation } from "./src/api";
+import {
+  getToken,
+  setToken,
+  whoami,
+  listConversations,
+  deleteConversation,
+  deleteAccount,
+  ChatMessage,
+  Conversation,
+} from "./src/api";
 import { SignIn } from "./src/SignIn";
 import { Today } from "./src/Today";
 import { Agent } from "./src/Agent";
@@ -15,6 +24,16 @@ import { PanelLeftIcon } from "./src/icons";
 // Content height of the top bar (below the status-bar inset).
 const TOPBAR_H = 50;
 
+// Account deletion confirmation. Apple can't be told to cancel an App Store
+// subscription on the user's behalf, so iOS says so before the user commits.
+const DELETE_ACCOUNT_WARNING =
+  "This permanently deletes your account and everything in it: weigh-ins, meals, photos, workouts, reminders, " +
+  "and agent history. It can't be undone." +
+  (Platform.OS === "ios"
+    ? "\n\nIf you subscribed through the App Store, also cancel it in Settings > your name > Subscriptions. " +
+      "Deleting your account doesn't stop App Store billing."
+    : "");
+
 type Session = { key: string; convId: string | null; messages: ChatMessage[] };
 
 function Shell() {
@@ -24,6 +43,7 @@ function Shell() {
   const [view, setView] = useState<DrawerView>("today");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   // Set when any API call answers 402. Replaces the whole body with the paywall
   // so no screen can surface a raw "subscription required" string.
@@ -116,6 +136,28 @@ function Shell() {
     setBlocked(false);
     setAuthed(false);
   }, []);
+
+  const confirmDeleteAccount = useCallback(() => {
+    Alert.alert("Delete your account?", DELETE_ACCOUNT_WARNING, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete account",
+        style: "destructive",
+        onPress: async () => {
+          setDeleting(true);
+          try {
+            await deleteAccount();
+          } catch (e) {
+            setDeleting(false);
+            Alert.alert("Couldn’t delete your account", e instanceof Error ? e.message : String(e));
+            return;
+          }
+          setDeleting(false);
+          await signOut();
+        },
+      },
+    ]);
+  }, [signOut]);
 
   const navigate = (v: DrawerView) => {
     setDrawerOpen(false);
@@ -214,6 +256,15 @@ function Shell() {
             <Pressable style={s.menuItem} onPress={signOut}>
               <Text style={s.menuItemText}>Sign out</Text>
             </Pressable>
+            <Pressable
+              style={s.menuItem}
+              onPress={confirmDeleteAccount}
+              disabled={deleting}
+              accessibilityRole="button"
+              accessibilityLabel="Delete account"
+            >
+              <Text style={[s.menuItemText, s.menuItemDanger]}>{deleting ? "Deleting…" : "Delete account"}</Text>
+            </Pressable>
           </View>
         </>
       )}
@@ -274,4 +325,5 @@ const s = StyleSheet.create({
   },
   menuItem: { marginTop: 5, paddingVertical: 10, paddingHorizontal: 9, borderRadius: 10 },
   menuItemText: { color: C.fg, fontSize: 14.5 },
+  menuItemDanger: { color: C.attention },
 });

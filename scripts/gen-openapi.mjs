@@ -49,6 +49,7 @@ const options = {
       { name: "Coach", description: "AI coach chat grounded in the caller's targets, intake, and weight trend." },
       { name: "Workouts", description: "Free-text and photo workout logging, normalized to platform-standard fields." },
       { name: "Dashboard", description: "Pre-aggregated snapshot powering the home screen." },
+      { name: "Account", description: "The signed-in account itself, including permanent deletion." },
       { name: "Ingest", description: "Token-authenticated machine ingest from the Bluetooth scale listener." },
       { name: "Spec", description: "The OpenAPI document itself." },
     ],

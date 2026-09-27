@@ -59,6 +59,10 @@
       "description": "Pre-aggregated snapshot powering the home screen."
     },
     {
+      "name": "Account",
+      "description": "The signed-in account itself, including permanent deletion."
+    },
+    {
       "name": "Ingest",
       "description": "Token-authenticated machine ingest from the Bluetooth scale listener."
     },
@@ -1061,6 +1065,68 @@
                     },
                     "paths": {}
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account": {
+      "delete": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Delete the caller's account",
+        "description": "Permanently deletes the signed-in account and everything it owns: weigh-ins, measurements, meals, food items, photos, workouts, targets, agent conversations and memories, reminders, API keys, linked phone numbers, sessions, and the sign-in itself. A Stripe subscription is cancelled. An App Store subscription has to be cancelled in the Apple ID settings. Requires a signed-in session; API keys and the messaging agent cannot call it. This cannot be undone.",
+        "operationId": "deleteAccount",
+        "responses": {
+          "200": {
+            "description": "The account and all of its data were deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No signed-in session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Called with an API key or by the messaging agent, which cannot delete accounts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Stripe or the iMessage provider refused the cleanup. The account's data was not deleted; retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The account has a Stripe customer but billing is not configured. The account's data was not deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

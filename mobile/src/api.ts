@@ -260,6 +260,19 @@ export async function appendMessages(id: string, messages: ChatMessage[]): Promi
   if (!r.ok) throw new Error(`appendMessages → ${r.status}`);
 }
 
+/**
+ * Permanently delete the signed-in account and all of its data. The worker
+ * cancels a Stripe subscription itself; an App Store one has to be cancelled in
+ * the Apple ID settings. Throws the worker's error message on failure.
+ */
+export async function deleteAccount(): Promise<void> {
+  const r = await req(`/api/account`, { method: "DELETE" });
+  if (!r.ok) {
+    const b = (await r.json().catch(() => ({}))) as { error?: string };
+    throw new Error(b.error ?? `delete account → ${r.status}`);
+  }
+}
+
 export async function deleteConversation(id: string): Promise<void> {
   const r = await req(`/api/agent/conversations/${id}`, { method: "DELETE" });
   if (!r.ok) throw new Error(`deleteConversation → ${r.status}`);
