@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Miniflare } from "miniflare";
 import {
   STRIPE_WEBHOOK_SECRET,
@@ -148,24 +148,25 @@ function hash(s: string): number {
   return h;
 }
 
-/** Rows still tied to the account, per table (tables with zero rows omitted). */
+/** Rows still tied to the account, per table (tables with zero rows omitted). One query for all tables. */
 async function remainingRows(mf: Miniflare, a: Seeded): Promise<Record<string, number>> {
-  const db = await d1(mf);
-  const out: Record<string, number> = {};
-  for (const [table, column] of OWNED) {
-    const key =
-      column === "user_email"
-        ? a.email
-        : column === "phone" || column === "identifier"
-          ? a.phone
-          : column === "conversation_id"
-            ? a.convId
-            : a.userId;
-    const col = table === "user" ? "id" : column;
-    const row = await db.prepare(`SELECT COUNT(*) AS n FROM "${table}" WHERE ${col} = ?1`).bind(key).first<{ n: number }>();
-    if (row && row.n > 0) out[table] = row.n;
-  }
-  return out;
+  const keyFor = (column: (typeof OWNED)[number][1]) =>
+    column === "user_email"
+      ? a.email
+      : column === "phone" || column === "identifier"
+        ? a.phone
+        : column === "conversation_id"
+          ? a.convId
+          : a.userId;
+  const parts = OWNED.map(
+    ([table, column], i) =>
+      `(SELECT COUNT(*) FROM "${table}" WHERE ${table === "user" ? "id" : column} = ?${i + 1}) AS "${table}"`,
+  );
+  const row = await (await d1(mf))
+    .prepare(`SELECT ${parts.join(", ")}`)
+    .bind(...OWNED.map(([, column]) => keyFor(column)))
+    .first<Record<string, number>>();
+  return Object.fromEntries(Object.entries(row ?? {}).filter(([, n]) => n > 0));
 }
 
 async function remainingObjects(mf: Miniflare, a: Seeded): Promise<string[]> {
@@ -174,6 +175,13 @@ async function remainingObjects(mf: Miniflare, a: Seeded): Promise<string[]> {
   for (const k of a.r2Keys) if (await r2.head(k)) left.push(k);
   return left;
 }
+
+// Bundling the Worker and booting Miniflare is slow when every test file does
+// it at once, so pay for it in the hook (60s budget), not the first test.
+beforeAll(async () => {
+  await getMiniflareStripe();
+  await workerFetchBilling("/api/health");
+});
 
 beforeEach(() => {
   stripeCalls.length = 0;
