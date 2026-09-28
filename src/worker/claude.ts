@@ -14,14 +14,14 @@ const FAST_MODE_BETA = "fast-mode-2026-02-01";
 
 /** The Worker bindings these helpers read. */
 export interface ClaudeEnv {
-  ANTHROPIC_API_KEY: string;
+  ANTHROPIC_API_KEY?: string;
   CLAUDE_FAST_MODE?: string;
 }
 
 const fastModeOn = (env: ClaudeEnv) => env.CLAUDE_FAST_MODE === "1";
 
 type CreateParams = Omit<Anthropic.Beta.MessageCreateParamsNonStreaming, "model" | "speed" | "betas">;
-type StreamParams = Omit<Anthropic.Beta.MessageStreamParams, "model" | "speed" | "betas">;
+type StreamParams = CreateParams;
 
 function withDefaults<P extends { output_config?: Anthropic.Beta.BetaOutputConfig | null }>(params: P) {
   return { ...params, model: CLAUDE_MODEL, output_config: { effort: "low" as const, ...params.output_config } };

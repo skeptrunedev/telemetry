@@ -1766,7 +1766,7 @@ app.post("/api/log/analyze", async (c) => {
     return c.json({ error: "classification failed", detail: String(e) }, 502);
   }
 
-  const extract = async (schemaDef: object, prompt: string) => {
+  const extract = async (schemaDef: Record<string, unknown>, prompt: string) => {
     const msg = await claudeCreate(c.env, {
       max_tokens: EXTRACT_MAX_TOKENS,
       output_config: { format: { type: "json_schema", schema: schemaDef } },
