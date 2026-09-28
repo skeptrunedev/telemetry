@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { summarizeWeightHistory } from "./weight-history";
 import { buildUserQuery, USER_SQL_MAX_ROWS, USER_SQL_SCHEMA } from "./user-sql";
+import { cachedTools, claudeCreate, claudeStream, isFastModeRateLimit, logClaudeUsage } from "./claude";
 import { and, asc, desc, eq, gte, inArray, like, lt } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -359,10 +360,8 @@ async function userEmail(c: {
 
 const DAY_MS = 86_400_000;
 
-// Every Claude call (coach chat and its extraction helpers) uses this model.
-// Opus 5.5 always thinks and its thinking counts against max_tokens, so
-// extraction calls run at low effort with room to think before the JSON.
-const CLAUDE_MODEL = "claude-opus-5-5";
+// Opus 5.5 always thinks and its thinking counts against max_tokens, so the
+// structured-output helpers get room to think before the JSON.
 const EXTRACT_MAX_TOKENS = 4096;
 const DEFAULT_TARGETS = { goalWeightKg: 66.7, startWeightKg: 72.6, dailyKcalTarget: 1850, proteinTargetG: 160 };
 
@@ -752,16 +751,14 @@ async function logDescribedWorkout(
   startedAt: Date,
   images?: Anthropic.ImageBlockParam[],
 ): Promise<WorkoutOut> {
-  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const content: Anthropic.MessageCreateParamsNonStreaming["messages"][number]["content"] = images?.length
     ? [...images, { type: "text", text: `${WORKOUT_VISION_PROMPT}${text ? `\n\nUser's caption: ${text}` : ""}` }]
     : `${WORKOUT_PROMPT}\n\nWorkout: ${text}`;
-  const msg = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
+  const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
     max_tokens: EXTRACT_MAX_TOKENS,
-    output_config: { effort: "low", format: { type: "json_schema", schema: WORKOUT_SCHEMA } },
+    output_config: { format: { type: "json_schema", schema: WORKOUT_SCHEMA } },
     messages: [{ role: "user", content }],
-  } as Anthropic.MessageCreateParamsNonStreaming);
+  });
   const out = msg.content.filter((bk): bk is Anthropic.TextBlock => bk.type === "text").map((bk) => bk.text).join("");
   const parsed = JSON.parse(out) as (WorkoutMetrics & { summary?: string; activity_type?: string; exercises?: WorkoutExercise[] });
   const num = (v: number | null | undefined) => (typeof v === "number" && isFinite(v) && v >= 0 ? v : null);
@@ -1610,12 +1607,10 @@ async function analyzeMealPhotos(
     });
   }
 
-  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   type Macro = { items: { name: string; kcal: number; protein_g: number }[]; total_kcal: number; total_protein_g: number; note: string };
-  const msg = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
+  const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
     max_tokens: EXTRACT_MAX_TOKENS,
-    output_config: { effort: "low", format: { type: "json_schema", schema: MACRO_SCHEMA } },
+    output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
     messages: [
       {
         role: "user",
@@ -1630,7 +1625,7 @@ async function analyzeMealPhotos(
         ],
       },
     ],
-  } as Anthropic.MessageCreateParamsNonStreaming);
+  });
   const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
   const parsed: Macro = JSON.parse(out);
 
@@ -1748,13 +1743,11 @@ app.post("/api/log/analyze", async (c) => {
     source: { type: "base64", media_type: mt as "image/jpeg", data: bufToBase64(buf) },
   }));
 
-  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   let kind: string;
   try {
-    const msg = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
+    const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
       max_tokens: EXTRACT_MAX_TOKENS,
-      output_config: { effort: "low", format: { type: "json_schema", schema: PHOTO_KIND_SCHEMA } },
+      output_config: { format: { type: "json_schema", schema: PHOTO_KIND_SCHEMA } },
       messages: [
         {
           role: "user",
@@ -1764,7 +1757,7 @@ app.post("/api/log/analyze", async (c) => {
           ],
         },
       ],
-    } as Anthropic.MessageCreateParamsNonStreaming);
+    });
     const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
     kind = String((JSON.parse(out) as { kind: string }).kind);
   } catch (e) {
@@ -1772,17 +1765,16 @@ app.post("/api/log/analyze", async (c) => {
   }
 
   const extract = async (schemaDef: object, prompt: string) => {
-    const msg = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
+    const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
       max_tokens: EXTRACT_MAX_TOKENS,
-      output_config: { effort: "low", format: { type: "json_schema", schema: schemaDef } },
+      output_config: { format: { type: "json_schema", schema: schemaDef } },
       messages: [
         {
           role: "user",
           content: [...imageBlocks, { type: "text", text: note ? `${prompt}\n\nUser's caption: ${note}` : prompt }],
         },
       ],
-    } as Anthropic.MessageCreateParamsNonStreaming);
+    });
     return JSON.parse(msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join(""));
   };
 
@@ -1880,14 +1872,12 @@ async function logDescribedMeal(
   text: string,
   today: string,
 ) {
-  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   type Macro = { items: { name: string; kcal: number; protein_g: number }[]; total_kcal: number; total_protein_g: number; note: string };
-  const msg = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
+  const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
     max_tokens: EXTRACT_MAX_TOKENS,
-    output_config: { effort: "low", format: { type: "json_schema", schema: MACRO_SCHEMA } },
+    output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
     messages: [{ role: "user", content: `${DESCRIBE_PROMPT}\n\nMeal: ${text}` }],
-  } as Anthropic.MessageCreateParamsNonStreaming);
+  });
   const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
   const parsed: Macro = JSON.parse(out);
 
@@ -2580,7 +2570,7 @@ function resolveToolDate(input: string, today: string): string | null {
   return dt.toISOString().slice(0, 10);
 }
 
-const COACH_TOOLS: Anthropic.Tool[] = [
+const COACH_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "list_food_log",
     description:
@@ -3142,16 +3132,13 @@ app.post("/api/agent", async (c) => {
   const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
   const system = await buildCoachSystem(c, email, today, tzMin);
 
-  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   let reply: string;
   try {
-    const msg = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
+    const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
       max_tokens: 16000,
-      output_config: { effort: "medium" },
       system,
       messages: messages.map((m) => ({ role: m.role, content: coachContent(m) })),
-    } as Anthropic.MessageCreateParamsNonStreaming);
+    });
     reply = msg.content
       .filter((bk) => bk.type === "text")
       .map((bk) => (bk as Anthropic.TextBlock).text)
@@ -3181,36 +3168,43 @@ app.post("/api/agent/stream", async (c) => {
     (await buildCoachSystem(c, email, today, tzMin)) +
     `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; clean up mistakes and duplicates with delete_meal and delete_food_item, and when the user corrects an entry ("that was actually 600 kcal", "it was two scoops") fix it in place with edit_food_item instead of deleting and relogging; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); answer questions about weight history (first weigh-in, lb lost per week, what they weighed on a date) with get_weight_history instead of guessing from the summary above; for any other question about their past data that no tool covers (averages, streaks, trends across meals, workouts or measurements), write a read-only query with query_user_data rather than guessing; log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory; update daily calorie and protein targets with set_targets. When the user describes their day to day activity, a new job, a change in training volume, or a big lifestyle change, recompute their daily calorie target with Mifflin-St Jeor from the height, sex, and latest weigh-in in the context above, scaled by the closest activity multiplier, 1.2 sedentary, 1.375 lightly active, 1.55 moderately active, 1.725 very active, 1.9 athlete, then apply the deficit or surplus their current goal implies, state the new daily calorie and protein numbers plainly, and call set_targets with them, passing their activity in a few words. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. REMINDERS, when the user asks to be reminded of something ("remind me to log lunch at noon", "ping me to weigh in on weekday mornings"), create it with set_reminder, and when they correct or adjust one ("no, 9am", "weekdays only") edit it in place with update_reminder using the id from your create result or list_reminders, never create a second one for the same thing. Cancellations use delete_reminder. Reminders DELIVER OVER IMESSAGE, if the tool result says phoneLinked is false, tell the user they won't receive reminder texts until they link their phone in their profile or text the skcal number. If the result says tzDefaulted is true, state the timezone you assumed and ask them to correct it if wrong. After creating one, confirm in plain words what was set, the time and the cadence. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
-  const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
   // NDJSON event protocol so the client renders tool calls as real parts rather
   // than mashing each turn's text together: {t:"text",v} / {t:"tool"} / {t:"result"}.
-  const convo: Anthropic.MessageParam[] = messages.map((m) => ({ role: m.role, content: coachContent(m) }));
+  const convo: Anthropic.Beta.BetaMessageParam[] = messages.map((m) => ({ role: m.role, content: coachContent(m) }));
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
       try {
         // Agentic loop: stream each turn's text; if the model calls tools,
         // emit tool + result events, then continue until it stops.
+        let fast = true;
         for (let turn = 0; turn < 6; turn++) {
-          const msgStream = anthropic.messages.stream({
-            model: CLAUDE_MODEL,
-            max_tokens: 16000,
-            output_config: { effort: "medium" },
-            system,
-            messages: convo,
-            tools: COACH_TOOLS,
-          });
-          for await (const event of msgStream) {
-            if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-              send({ t: "text", v: event.delta.text });
+          const startedAt = Date.now();
+          const msgStream = claudeStream(c.env.ANTHROPIC_API_KEY, { max_tokens: 16000, system, messages: convo, tools: cachedTools(COACH_TOOLS) }, fast);
+          let sentText = false;
+          try {
+            for await (const event of msgStream) {
+              if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+                sentText = true;
+                send({ t: "text", v: event.delta.text });
+              }
             }
+          } catch (e) {
+            // Fast mode has its own rate limit: redo this turn at standard speed.
+            if (fast && !sentText && isFastModeRateLimit(e)) {
+              fast = false;
+              turn--;
+              continue;
+            }
+            throw e;
           }
           const final = await msgStream.finalMessage();
-          const toolUses = final.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+          logClaudeUsage("coach-stream", final, startedAt);
+          const toolUses = final.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
           if (toolUses.length === 0) break;
           convo.push({ role: "assistant", content: final.content });
-          const results: Anthropic.ToolResultBlockParam[] = [];
+          const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
           for (const tu of toolUses) {
             send({ t: "tool", id: tu.id, name: tu.name, args: tu.input });
             const out = await executeCoachTool(c, email, tu.name, tu.input as Record<string, unknown>, today, tzMin);
@@ -5556,14 +5550,12 @@ async function evaluateReminder(
 ): Promise<{ send: boolean; message: string; why: string } | null> {
   if (!env.ANTHROPIC_API_KEY) return null;
   try {
-    const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-    const msg = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
+    const msg = await claudeCreate(env.ANTHROPIC_API_KEY, {
       max_tokens: EXTRACT_MAX_TOKENS,
       system: REMINDER_EVAL_SYSTEM,
-      output_config: { effort: "low", format: { type: "json_schema", schema: REMINDER_EVAL_SCHEMA } },
+      output_config: { format: { type: "json_schema", schema: REMINDER_EVAL_SCHEMA } },
       messages: [{ role: "user", content: contextBlock }],
-    } as Anthropic.MessageCreateParamsNonStreaming);
+    });
     const out = msg.content.filter((bk): bk is Anthropic.TextBlock => bk.type === "text").map((bk) => bk.text).join("");
     const parsed = JSON.parse(out) as { send?: unknown; message?: unknown; why?: unknown };
     if (typeof parsed.send !== "boolean") return null;
