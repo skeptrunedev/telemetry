@@ -1891,7 +1891,9 @@ a {
   border-radius: 5px;
 }
 .bubble-thinking {
-  display: inline-flex;
+  /* block-level so it never sits on the same line as an inline tool chip */
+  display: flex;
+  width: fit-content;
   align-items: center;
   gap: 0.5rem;
   color: var(--muted);
@@ -1940,6 +1942,12 @@ a {
 }
 .tool-chip.done {
   color: var(--fg);
+}
+/* Text above a chip ends in a paragraph's 0.5rem bottom margin; give whatever
+   follows a chip the same gap so the chip row sits evenly between the two. */
+.tool-chip + .coach-md,
+.tool-chip + .bubble-thinking {
+  margin-top: 0.5rem;
 }
 .tool-chip-icon {
   width: 0.85rem;

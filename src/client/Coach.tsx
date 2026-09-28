@@ -110,7 +110,7 @@ export function useCoachHistory() {
 }
 export type CoachHistory = ReturnType<typeof useCoachHistory>;
 
-const MarkdownText = () => <MarkdownTextPrimitive />;
+const MarkdownText = () => <MarkdownTextPrimitive className="coach-md" />;
 
 const TOOL_LABELS: Record<string, string> = {
   list_food_log: "Reading food log",
