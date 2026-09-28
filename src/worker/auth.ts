@@ -24,11 +24,22 @@ export type AuthEnv = {
   TWILIO_API_KEY_SECRET?: string;
   TWILIO_VERIFY_SERVICE_SID?: string;
   AUTH_DEV_BYPASS?: string;
-  // App Review demo access: this exact phone number skips Twilio and accepts
-  // only REVIEW_OTP (a worker secret). No SMS is ever sent to it.
+  // Demo access: each of these exact phone numbers skips Twilio and accepts
+  // only its fixed code (a worker secret). No SMS is ever sent to them.
+  // REVIEW_* is for App Review; TESTER_* is a separate shared account for
+  // closed-test testers, so either code can be rotated without the other.
   REVIEW_PHONE?: string;
   REVIEW_OTP?: string;
+  TESTER_PHONE?: string;
+  TESTER_OTP?: string;
 };
+
+// The fixed code for a demo phone number, or undefined for a real number.
+function demoCode(env: AuthEnv, phone: string): string | undefined {
+  if (env.REVIEW_PHONE && env.REVIEW_OTP && phone === env.REVIEW_PHONE) return env.REVIEW_OTP;
+  if (env.TESTER_PHONE && env.TESTER_OTP && phone === env.TESTER_PHONE) return env.TESTER_OTP;
+  return undefined;
+}
 
 // Twilio Verify REST helper (shared with the linked-channels flow): Verify
 // generates and checks its own codes, so Better Auth's generated OTP is unused.
@@ -186,8 +197,8 @@ export function makeAuth(env: AuthEnv) {
           // Local dev/tests: no Twilio round-trip; verify accepts 000000.
           if (env.AUTH_DEV_BYPASS) return;
           const phone = toE164(raw) ?? raw;
-          // App Review's demo number: no SMS, fixed code checked in verifyOTP.
-          if (env.REVIEW_PHONE && env.REVIEW_OTP && phone === env.REVIEW_PHONE) return;
+          // Demo numbers: no SMS, fixed code checked in verifyOTP.
+          if (demoCode(env, phone) !== undefined) return;
           if (!toE164(raw)) {
             throw new APIError("BAD_REQUEST", { message: "Enter a valid phone number." });
           }
@@ -210,8 +221,8 @@ export function makeAuth(env: AuthEnv) {
         verifyOTP: async ({ phoneNumber: phone, code }) => {
           if (env.AUTH_DEV_BYPASS) {
             if (code !== "000000") return false;
-          } else if (env.REVIEW_PHONE && env.REVIEW_OTP && (toE164(phone) ?? phone) === env.REVIEW_PHONE) {
-            if (code !== env.REVIEW_OTP) return false;
+          } else if (demoCode(env, toE164(phone) ?? phone) !== undefined) {
+            if (code !== demoCode(env, toE164(phone) ?? phone)) return false;
           } else {
             try {
               const check = await twilioVerify(env, "VerificationCheck", { To: phone, Code: code });
