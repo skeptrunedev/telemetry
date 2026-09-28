@@ -174,12 +174,13 @@ type AgentEvent =
 // body incrementally via expo/fetch (RN's global fetch has no readable body).
 // onText is called with the full accumulated reply on each text delta so the UI
 // re-renders live; the resolved value is the final complete reply so callers can
-// persist the finished turn. onTool fires when a tool call starts (lightweight
-// "thinking" hint). Falls back to the non-streaming agent() on stream failure.
+// persist the finished turn. onTool fires when a tool call starts (done false)
+// and when its result is back (done true) so the UI can show what the coach is
+// doing. Falls back to the non-streaming agent() on stream failure.
 export async function agentStream(
   messages: ChatMessage[],
   onText: (fullReply: string) => void,
-  onTool?: (name: string) => void,
+  onTool?: (name: string, done: boolean) => void,
 ): Promise<string> {
   const token = await getToken();
   const day = new Date().toLocaleDateString("en-CA");
@@ -225,9 +226,10 @@ export async function agentStream(
       reply += ev.v;
       onText(reply);
     } else if (ev.t === "tool") {
-      onTool?.(typeof ev.name === "string" ? ev.name : "");
+      onTool?.(typeof ev.name === "string" ? ev.name : "", false);
+    } else if (ev.t === "result") {
+      onTool?.("", true);
     }
-    // t:"result" carries tool output — nothing to render inline for now.
   };
 
   for (;;) {

@@ -3227,6 +3227,9 @@ app.post("/api/agent/stream", async (c) => {
   const encoder = new TextEncoder();
   // NDJSON event protocol so the client renders tool calls as real parts rather
   // than mashing each turn's text together: {t:"text",v} / {t:"tool"} / {t:"result"}.
+  // {t:"tool"} goes out when the model starts the call, not when its turn ends:
+  // the coach writes no prose around tool calls, so otherwise the chat shows
+  // nothing while the model streams the arguments (seconds for a big log_meal).
   const convo: Anthropic.Beta.BetaMessageParam[] = messages.map((m) => ({ role: m.role, content: coachContent(m) }));
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -3238,17 +3241,20 @@ app.post("/api/agent/stream", async (c) => {
         for (let turn = 0; turn < 6; turn++) {
           const startedAt = Date.now();
           const msgStream = claudeStream(c.env, { max_tokens: 16000, system, messages: convo, tools: cachedTools(COACH_TOOLS) }, fast);
-          let sentText = false;
+          let sentAny = false;
           try {
             for await (const event of msgStream) {
               if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-                sentText = true;
+                sentAny = true;
                 send({ t: "text", v: event.delta.text });
+              } else if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
+                sentAny = true;
+                send({ t: "tool", id: event.content_block.id, name: event.content_block.name });
               }
             }
           } catch (e) {
             // Fast mode has its own rate limit: redo this turn at standard speed.
-            if (fast && !sentText && isFastModeRateLimit(e)) {
+            if (fast && !sentAny && isFastModeRateLimit(e)) {
               fast = false;
               turn--;
               continue;
@@ -3262,7 +3268,6 @@ app.post("/api/agent/stream", async (c) => {
           convo.push({ role: "assistant", content: final.content });
           const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
           for (const tu of toolUses) {
-            send({ t: "tool", id: tu.id, name: tu.name, args: tu.input });
             const out = await executeCoachTool(c, email, tu.name, tu.input as Record<string, unknown>, today, tzMin);
             send({ t: "result", id: tu.id, result: out });
             results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out) });

@@ -35,6 +35,40 @@ function Bubble({ item }: { item: ChatMessage }) {
   );
 }
 
+// What the coach is doing while no reply text is streaming (mirrors the web
+// app's tool chips).
+const TOOL_LABELS: Record<string, string> = {
+  list_food_log: "Reading food log",
+  move_meal: "Moving meal",
+  move_food_item: "Moving food",
+  delete_meal: "Deleting meal",
+  delete_food_item: "Deleting food",
+  edit_food_item: "Fixing entry",
+  log_meal: "Logging meal",
+  log_measurement: "Logging measurement",
+  log_weight: "Logging weight",
+  log_workout: "Logging workout",
+  query_user_data: "Looking through your data",
+  get_weight_history: "Reading weight history",
+  set_targets: "Updating targets",
+  remember: "Saving to memory",
+  forget_memory: "Forgetting",
+  set_reminder: "Setting reminder",
+  update_reminder: "Updating reminder",
+  list_reminders: "Reading reminders",
+  delete_reminder: "Deleting reminder",
+};
+const THINKING = "Thinking";
+
+function Activity({ label }: { label: string }) {
+  return (
+    <View style={[s.bubble, s.assistant, s.activity]} accessibilityRole="progressbar" accessibilityLabel={label}>
+      <ActivityIndicator color={C.muted} size="small" />
+      <Text style={s.activityText}>{label}</Text>
+    </View>
+  );
+}
+
 // Picker result → data URL the worker's vision path accepts directly.
 const toDataUrl = (a: ImagePicker.ImagePickerAsset): string | null => {
   if (a.uri.startsWith("data:")) return a.uri;
@@ -72,6 +106,10 @@ export function Agent({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [focused, setFocused] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Status shown under the thread while the coach works: "Thinking" until the
+  // first token and between tool calls, a tool label while one runs, and
+  // nothing while reply text streams in.
+  const [activity, setActivity] = useState<string | null>(null);
   const list = useRef<FlatList<ChatMessage>>(null);
   const convIdRef = useRef<string | null>(initialConversationId);
   const insets = useSafeAreaInsets();
@@ -108,6 +146,7 @@ export function Agent({
     setInput("");
     setPending([]);
     setBusy(true);
+    setActivity(THINKING);
     try {
       // The worker caps history at 20 messages; send the newest window,
       // opened on a user message (mirrors the web client).
@@ -115,9 +154,15 @@ export function Agent({
       while (window.length && window[0]?.role !== "user") window = window.slice(1);
       // Stream the reply token-by-token into a live assistant bubble; each
       // delta re-renders the markdown so the text builds up in place.
-      const reply = await agentStream(window, (full) => {
-        setMessages([...next, { role: "assistant", content: full }]);
-      });
+      const reply = await agentStream(
+        window,
+        (full) => {
+          setActivity(null);
+          setMessages([...next, { role: "assistant", content: full }]);
+        },
+        (name, done) => setActivity(done ? THINKING : (TOOL_LABELS[name] ?? name)),
+      );
+      setActivity(null);
       setMessages([...next, { role: "assistant", content: reply }]);
       // Persist the completed turn exactly like the web app so history is
       // shared — data-URL photos are swapped for uploaded R2 URLs first (an
@@ -154,6 +199,7 @@ export function Agent({
       setMessages([...next, { role: "assistant", content: `Something broke, try again. (${e instanceof Error ? e.message : e})` }]);
     } finally {
       setBusy(false);
+      setActivity(null);
       setTimeout(() => list.current?.scrollToEnd({ animated: true }), 50);
     }
   };
@@ -176,6 +222,7 @@ export function Agent({
         keyExtractor={(_, i) => String(i)}
         renderItem={({ item }) => <Bubble item={item} />}
         ListEmptyComponent={<Text style={s.empty}>Ask before you eat.</Text>}
+        ListFooterComponent={busy && activity ? <Activity label={activity} /> : null}
         onContentSizeChange={() => list.current?.scrollToEnd({ animated: false })}
       />
       {/* Mirrors the web composer: one pill — pending photo chips on top, the
@@ -253,6 +300,8 @@ const s = StyleSheet.create({
   bubble: { maxWidth: "82%", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
   user: { alignSelf: "flex-end", backgroundColor: C.amber, borderBottomRightRadius: 5 },
   assistant: { alignSelf: "flex-start", backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderBottomLeftRadius: 5 },
+  activity: { flexDirection: "row", alignItems: "center", gap: 8 },
+  activityText: { color: C.muted, fontSize: 14 },
   userText: { color: C.amberInk, fontSize: 15.5, lineHeight: 21 },
   photo: { width: 180, height: 180, borderRadius: 12, backgroundColor: C.line },
   composerWrap: { padding: 12, borderTopWidth: 1, borderTopColor: C.line },

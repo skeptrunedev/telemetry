@@ -8,10 +8,12 @@ import {
   ComposerPrimitive,
   AttachmentPrimitive,
   useAttachment,
+  useAuiState,
   useComposerRuntime,
   SimpleImageAttachmentAdapter,
   type ChatModelAdapter,
   type ChatModelRunResult,
+  type EmptyMessagePartProps,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { ArrowUp, Square, Camera, Check, ImagePlus, Loader2, X } from "lucide-react";
@@ -114,7 +116,46 @@ const TOOL_LABELS: Record<string, string> = {
   list_food_log: "Reading food log",
   move_meal: "Moving meal",
   move_food_item: "Moving food",
+  delete_meal: "Deleting meal",
+  delete_food_item: "Deleting food",
+  edit_food_item: "Fixing entry",
+  log_meal: "Logging meal",
+  log_measurement: "Logging measurement",
+  log_weight: "Logging weight",
+  log_workout: "Logging workout",
+  query_user_data: "Looking through your data",
+  get_weight_history: "Reading weight history",
+  set_targets: "Updating targets",
+  remember: "Saving to memory",
+  forget_memory: "Forgetting",
+  set_reminder: "Setting reminder",
+  update_reminder: "Updating reminder",
+  list_reminders: "Reading reminders",
+  delete_reminder: "Deleting reminder",
 };
+
+// Shown while the coach is working but nothing visible is streaming: before
+// the first token (the model always thinks first) and after a tool finishes,
+// while the next turn thinks. assistant-ui renders Empty when a running
+// message has no parts or ends on a non-text part; a still-running tool chip
+// already shows its own spinner, so skip that case.
+function Thinking({ status }: EmptyMessagePartProps) {
+  const toolRunning = useAuiState((s) => {
+    const last = s.message.parts[s.message.parts.length - 1];
+    return last?.type === "tool-call" && last.result === undefined;
+  });
+  if (status.type !== "running" || toolRunning) return null;
+  return (
+    <div className="bubble-thinking" role="status">
+      <span className="thinking-dots" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+      Thinking
+    </div>
+  );
+}
 
 // Compact chip for a coach tool call — spinner while running, check when done.
 function ToolFallback({ toolName, result }: { toolName: string; result?: unknown }) {
@@ -154,7 +195,7 @@ function UserMessage() {
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="bubble bubble-assistant">
-      <MessagePrimitive.Parts components={{ Text: MarkdownText, tools: { Fallback: ToolFallback } }} />
+      <MessagePrimitive.Parts components={{ Text: MarkdownText, Empty: Thinking, tools: { Fallback: ToolFallback } }} />
     </MessagePrimitive.Root>
   );
 }
