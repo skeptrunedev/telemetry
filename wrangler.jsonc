@@ -39,6 +39,9 @@
     "STRIPE_PRICE_ID": "price_1TozrdAORpgtf3danYpcO3FA",
     "REVIEW_PHONE": "+15005550999",
     "TESTER_PHONE": "+15005550998",
+    // Claude fast mode (2.5x output speed, 2x price). Our Anthropic org is not
+    // enrolled yet (fast-mode limit 0 tokens/min), so it stays "0" until it is.
+    "CLAUDE_FAST_MODE": "0",
     "BILLING_EXEMPT_EMAILS": "me@skeptrune.com,nick.k@skeptrune.com,dev@local",
     // Apple in-app purchase needs no vars: the bundle id and product id are
     // constants in src/worker/apple.ts, and the App Store Connect In-App

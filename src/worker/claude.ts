@@ -4,11 +4,21 @@ import Anthropic from "@anthropic-ai/sdk";
 // - Opus 5.5 always thinks (it can't be disabled), so effort "low" keeps the
 //   thinking, and the latency it adds, to a minimum.
 // - Fast mode (research preview, Claude API only) serves the same model at up
-//   to 2.5x the output speed for 2x the price. It has its own rate limit, so a
-//   429 on a fast request falls back to standard speed instead of failing.
+//   to 2.5x the output speed for 2x the price. It needs the organization to be
+//   enrolled (an unenrolled org has a fast-mode limit of 0 tokens/min), so it is
+//   off unless the Worker var CLAUDE_FAST_MODE is "1". It has its own rate
+//   limit, so a 429 on a fast request falls back to standard speed.
 
 export const CLAUDE_MODEL = "claude-opus-5-5";
 const FAST_MODE_BETA = "fast-mode-2026-02-01";
+
+/** The Worker bindings these helpers read. */
+export interface ClaudeEnv {
+  ANTHROPIC_API_KEY: string;
+  CLAUDE_FAST_MODE?: string;
+}
+
+const fastModeOn = (env: ClaudeEnv) => env.CLAUDE_FAST_MODE === "1";
 
 type CreateParams = Omit<Anthropic.Beta.MessageCreateParamsNonStreaming, "model" | "speed" | "betas">;
 type StreamParams = Omit<Anthropic.Beta.MessageStreamParams, "model" | "speed" | "betas">;
@@ -26,15 +36,18 @@ export function logClaudeUsage(label: string, msg: Anthropic.Beta.BetaMessage, s
 }
 
 /** One request at fast speed, retried at standard speed if fast mode is rate limited. */
-export async function claudeCreate(apiKey: string, params: CreateParams): Promise<Anthropic.Beta.BetaMessage> {
-  const client = new Anthropic({ apiKey });
+export async function claudeCreate(env: ClaudeEnv, params: CreateParams): Promise<Anthropic.Beta.BetaMessage> {
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   const base = withDefaults(params);
   const startedAt = Date.now();
   let msg: Anthropic.Beta.BetaMessage;
   try {
-    msg = await client.beta.messages.create({ ...base, speed: "fast", betas: [FAST_MODE_BETA] }, { maxRetries: 0 });
+    msg = fastModeOn(env)
+      ? await client.beta.messages.create({ ...base, speed: "fast", betas: [FAST_MODE_BETA] }, { maxRetries: 0 })
+      : await client.beta.messages.create(base);
   } catch (e) {
     if (!(e instanceof Anthropic.RateLimitError)) throw e;
+    console.log(`claude fast mode rate limited, retrying at standard speed: ${e.message.slice(0, 300)}`);
     msg = await client.beta.messages.create(base);
   }
   logClaudeUsage("create", msg, startedAt);
@@ -42,18 +55,22 @@ export async function claudeCreate(apiKey: string, params: CreateParams): Promis
 }
 
 /**
- * A streamed request. `fast` is false after the caller saw a fast-mode 429
- * (isFastModeRateLimit), so it can retry the turn at standard speed.
+ * A streamed request. Pass `fast` false after a fast-mode 429
+ * (isFastModeRateLimit) to retry the turn at standard speed.
  */
-export function claudeStream(apiKey: string, params: StreamParams, fast = true) {
-  const client = new Anthropic({ apiKey });
+export function claudeStream(env: ClaudeEnv, params: StreamParams, fast = true) {
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   const base = withDefaults(params);
-  return fast
+  return fast && fastModeOn(env)
     ? client.beta.messages.stream({ ...base, speed: "fast", betas: [FAST_MODE_BETA] }, { maxRetries: 0 })
     : client.beta.messages.stream(base);
 }
 
-export const isFastModeRateLimit = (e: unknown) => e instanceof Anthropic.RateLimitError;
+export function isFastModeRateLimit(e: unknown): boolean {
+  if (!(e instanceof Anthropic.RateLimitError)) return false;
+  console.log(`claude fast mode rate limited, retrying at standard speed: ${e.message.slice(0, 300)}`);
+  return true;
+}
 
 /** Marks the last tool for prompt caching so the fixed tool list is reused across turns. */
 export function cachedTools(tools: Anthropic.Beta.BetaTool[]): Anthropic.Beta.BetaTool[] {

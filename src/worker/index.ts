@@ -39,6 +39,8 @@ type Bindings = {
   INGEST_TOKEN?: string;
   INGEST_USER_EMAIL?: string;
   ANTHROPIC_API_KEY?: string;
+  // "1" = Claude fast mode (see ./claude.ts); needs the Anthropic org enrolled.
+  CLAUDE_FAST_MODE?: string;
   // ---- Better Auth (self-hosted auth, replacing Cloudflare Access) ----
   BETTER_AUTH_SECRET?: string;
   BETTER_AUTH_URL?: string;
@@ -754,7 +756,7 @@ async function logDescribedWorkout(
   const content: Anthropic.MessageCreateParamsNonStreaming["messages"][number]["content"] = images?.length
     ? [...images, { type: "text", text: `${WORKOUT_VISION_PROMPT}${text ? `\n\nUser's caption: ${text}` : ""}` }]
     : `${WORKOUT_PROMPT}\n\nWorkout: ${text}`;
-  const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
+  const msg = await claudeCreate(c.env, {
     max_tokens: EXTRACT_MAX_TOKENS,
     output_config: { format: { type: "json_schema", schema: WORKOUT_SCHEMA } },
     messages: [{ role: "user", content }],
@@ -1608,7 +1610,7 @@ async function analyzeMealPhotos(
   }
 
   type Macro = { items: { name: string; kcal: number; protein_g: number }[]; total_kcal: number; total_protein_g: number; note: string };
-  const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
+  const msg = await claudeCreate(c.env, {
     max_tokens: EXTRACT_MAX_TOKENS,
     output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
     messages: [
@@ -1745,7 +1747,7 @@ app.post("/api/log/analyze", async (c) => {
 
   let kind: string;
   try {
-    const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
+    const msg = await claudeCreate(c.env, {
       max_tokens: EXTRACT_MAX_TOKENS,
       output_config: { format: { type: "json_schema", schema: PHOTO_KIND_SCHEMA } },
       messages: [
@@ -1765,7 +1767,7 @@ app.post("/api/log/analyze", async (c) => {
   }
 
   const extract = async (schemaDef: object, prompt: string) => {
-    const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
+    const msg = await claudeCreate(c.env, {
       max_tokens: EXTRACT_MAX_TOKENS,
       output_config: { format: { type: "json_schema", schema: schemaDef } },
       messages: [
@@ -1873,7 +1875,7 @@ async function logDescribedMeal(
   today: string,
 ) {
   type Macro = { items: { name: string; kcal: number; protein_g: number }[]; total_kcal: number; total_protein_g: number; note: string };
-  const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
+  const msg = await claudeCreate(c.env, {
     max_tokens: EXTRACT_MAX_TOKENS,
     output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
     messages: [{ role: "user", content: `${DESCRIBE_PROMPT}\n\nMeal: ${text}` }],
@@ -3134,7 +3136,7 @@ app.post("/api/agent", async (c) => {
 
   let reply: string;
   try {
-    const msg = await claudeCreate(c.env.ANTHROPIC_API_KEY, {
+    const msg = await claudeCreate(c.env, {
       max_tokens: 16000,
       system,
       messages: messages.map((m) => ({ role: m.role, content: coachContent(m) })),
@@ -3181,7 +3183,7 @@ app.post("/api/agent/stream", async (c) => {
         let fast = true;
         for (let turn = 0; turn < 6; turn++) {
           const startedAt = Date.now();
-          const msgStream = claudeStream(c.env.ANTHROPIC_API_KEY, { max_tokens: 16000, system, messages: convo, tools: cachedTools(COACH_TOOLS) }, fast);
+          const msgStream = claudeStream(c.env, { max_tokens: 16000, system, messages: convo, tools: cachedTools(COACH_TOOLS) }, fast);
           let sentText = false;
           try {
             for await (const event of msgStream) {
@@ -5550,7 +5552,7 @@ async function evaluateReminder(
 ): Promise<{ send: boolean; message: string; why: string } | null> {
   if (!env.ANTHROPIC_API_KEY) return null;
   try {
-    const msg = await claudeCreate(env.ANTHROPIC_API_KEY, {
+    const msg = await claudeCreate(env, {
       max_tokens: EXTRACT_MAX_TOKENS,
       system: REMINDER_EVAL_SYSTEM,
       output_config: { format: { type: "json_schema", schema: REMINDER_EVAL_SCHEMA } },
