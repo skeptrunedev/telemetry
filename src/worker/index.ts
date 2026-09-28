@@ -1882,18 +1882,33 @@ async function logDescribedMeal(
   });
   const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
   const parsed: Macro = JSON.parse(out);
+  return saveMealItems(c, email, text, today, parsed.items ?? [], parsed.note);
+}
 
+type MealItemEstimate = { name: string; kcal: number; protein_g: number };
+
+// Writes one meal and its food items, then refreshes the day's totals. Used by
+// the AI estimator above and by the coach's log_meal, which passes its own
+// per-item estimates so logging a meal takes no extra model call.
+async function saveMealItems(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+  text: string,
+  day: string,
+  estimates: MealItemEstimate[],
+  note?: string,
+) {
   const mealId = crypto.randomUUID();
-  await db(c).insert(schema.meals).values({ id: mealId, userEmail: email, date: today, note: text, photoKeys: null });
-  const items = dropSummaryRows(parsed.items ?? []).slice(0, 30).map((it) => ({
-    userEmail: email, mealId, date: today,
+  await db(c).insert(schema.meals).values({ id: mealId, userEmail: email, date: day, note: text, photoKeys: null });
+  const items = dropSummaryRows(estimates).slice(0, 30).map((it) => ({
+    userEmail: email, mealId, date: day,
     name: String(it.name).slice(0, 120),
     kcal: Math.max(0, Math.round(Number(it.kcal) || 0)),
     proteinG: Math.max(0, Number(it.protein_g) || 0),
     source: "ai" as const,
   }));
   if (items.length) await db(c).insert(schema.nutritionItems).values(items);
-  await recomputeDay(c, email, today);
+  await recomputeDay(c, email, day);
 
   return {
     ok: true,
@@ -1901,8 +1916,23 @@ async function logDescribedMeal(
     items: items.map((i) => ({ name: i.name, kcal: i.kcal, proteinG: i.proteinG })),
     totalKcal: items.reduce((s, i) => s + i.kcal, 0),
     totalProteinG: Math.round(items.reduce((s, i) => s + i.proteinG, 0)),
-    note: parsed.note,
+    note,
   };
+}
+
+/** The coach's per-item estimates for log_meal, or null if missing or malformed. */
+function parseMealItemEstimates(raw: unknown): MealItemEstimate[] | null {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 30) return null;
+  const items: MealItemEstimate[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== "object") return null;
+    const { name, kcal, protein_g } = r as Record<string, unknown>;
+    if (typeof name !== "string" || !name.trim()) return null;
+    if (typeof kcal !== "number" || !(kcal >= 0 && kcal <= 5000)) return null;
+    if (typeof protein_g !== "number" || !(protein_g >= 0 && protein_g <= 500)) return null;
+    items.push({ name: name.trim(), kcal, protein_g });
+  }
+  return items;
 }
 
 app.post("/api/nutrition/describe", async (c) => {
@@ -2657,14 +2687,28 @@ const COACH_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: "log_meal",
     description:
-      "Log food the user ate from a plain-text description; skcal's AI estimates calories + protein per item and writes the entries. For a PHOTO the user sent, describe exactly what you see in the photo (foods + portions) and pass that as text.",
+      "Log food the user ate. YOU estimate each item: list each distinct food or drink they ACTUALLY ate with kcal and protein (grams) for the described portion, respecting stated quantities, sides and sauces, and EXCLUDING anything they say they skipped, ignored, or left over. Items are individual foods only, never a Total or summary row. For a PHOTO the user sent, estimate from what you see and put your description of the photo in text.",
     input_schema: {
       type: "object",
       properties: {
-        text: { type: "string", description: "What they ate, e.g. 'chipotle double chicken bowl' or your description of their photo" },
+        text: { type: "string", description: "What they ate in plain words, e.g. 'chipotle double chicken bowl' or your description of their photo. Stored as the meal's note." },
+        items: {
+          type: "array",
+          description: "Your per-item estimates.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Food with portion, e.g. 'grilled chicken (4 oz)'." },
+              kcal: { type: "number" },
+              protein_g: { type: "number" },
+            },
+            required: ["name", "kcal", "protein_g"],
+          },
+        },
+        note: { type: "string", description: "Main assumptions, e.g. portion sizes or restaurant defaults." },
         date: { type: "string", description: "YYYY-MM-DD or today/yesterday. Default today." },
       },
-      required: ["text"],
+      required: ["text", "items"],
     },
   },
   {
@@ -2945,6 +2989,11 @@ async function executeCoachTool(
     const text = String(input.text ?? "").trim().slice(0, 2000);
     if (!text) return { error: "text required" };
     const day = resolveToolDate(String(input.date ?? "today"), today) ?? today;
+    const estimates = parseMealItemEstimates(input.items);
+    if (estimates) {
+      const note = typeof input.note === "string" ? input.note.slice(0, 500) : undefined;
+      return saveMealItems(c, email, text, day, estimates, note);
+    }
     return await logDescribedMeal(c, email, text, day);
   }
 
