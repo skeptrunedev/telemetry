@@ -358,6 +358,12 @@ async function userEmail(c: {
 }
 
 const DAY_MS = 86_400_000;
+
+// Every Claude call (coach chat and its extraction helpers) uses this model.
+// Opus 5.5 always thinks and its thinking counts against max_tokens, so
+// extraction calls run at low effort with room to think before the JSON.
+const CLAUDE_MODEL = "claude-opus-5-5";
+const EXTRACT_MAX_TOKENS = 4096;
 const DEFAULT_TARGETS = { goalWeightKg: 66.7, startWeightKg: 72.6, dailyKcalTarget: 1850, proteinTargetG: 160 };
 
 // ---- API keys --------------------------------------------------------------
@@ -751,9 +757,9 @@ async function logDescribedWorkout(
     ? [...images, { type: "text", text: `${WORKOUT_VISION_PROMPT}${text ? `\n\nUser's caption: ${text}` : ""}` }]
     : `${WORKOUT_PROMPT}\n\nWorkout: ${text}`;
   const msg = await anthropic.messages.create({
-    model: "claude-opus-4-8",
-    max_tokens: 1024,
-    output_config: { format: { type: "json_schema", schema: WORKOUT_SCHEMA } },
+    model: CLAUDE_MODEL,
+    max_tokens: EXTRACT_MAX_TOKENS,
+    output_config: { effort: "low", format: { type: "json_schema", schema: WORKOUT_SCHEMA } },
     messages: [{ role: "user", content }],
   } as Anthropic.MessageCreateParamsNonStreaming);
   const out = msg.content.filter((bk): bk is Anthropic.TextBlock => bk.type === "text").map((bk) => bk.text).join("");
@@ -1607,9 +1613,9 @@ async function analyzeMealPhotos(
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   type Macro = { items: { name: string; kcal: number; protein_g: number }[]; total_kcal: number; total_protein_g: number; note: string };
   const msg = await anthropic.messages.create({
-    model: "claude-opus-4-8",
-    max_tokens: 1024,
-    output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
+    model: CLAUDE_MODEL,
+    max_tokens: EXTRACT_MAX_TOKENS,
+    output_config: { effort: "low", format: { type: "json_schema", schema: MACRO_SCHEMA } },
     messages: [
       {
         role: "user",
@@ -1746,9 +1752,9 @@ app.post("/api/log/analyze", async (c) => {
   let kind: string;
   try {
     const msg = await anthropic.messages.create({
-      model: "claude-opus-4-8",
-      max_tokens: 64,
-      output_config: { format: { type: "json_schema", schema: PHOTO_KIND_SCHEMA } },
+      model: CLAUDE_MODEL,
+      max_tokens: EXTRACT_MAX_TOKENS,
+      output_config: { effort: "low", format: { type: "json_schema", schema: PHOTO_KIND_SCHEMA } },
       messages: [
         {
           role: "user",
@@ -1767,9 +1773,9 @@ app.post("/api/log/analyze", async (c) => {
 
   const extract = async (schemaDef: object, prompt: string) => {
     const msg = await anthropic.messages.create({
-      model: "claude-opus-4-8",
-      max_tokens: 256,
-      output_config: { format: { type: "json_schema", schema: schemaDef } },
+      model: CLAUDE_MODEL,
+      max_tokens: EXTRACT_MAX_TOKENS,
+      output_config: { effort: "low", format: { type: "json_schema", schema: schemaDef } },
       messages: [
         {
           role: "user",
@@ -1877,9 +1883,9 @@ async function logDescribedMeal(
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   type Macro = { items: { name: string; kcal: number; protein_g: number }[]; total_kcal: number; total_protein_g: number; note: string };
   const msg = await anthropic.messages.create({
-    model: "claude-opus-4-8",
-    max_tokens: 1024,
-    output_config: { format: { type: "json_schema", schema: MACRO_SCHEMA } },
+    model: CLAUDE_MODEL,
+    max_tokens: EXTRACT_MAX_TOKENS,
+    output_config: { effort: "low", format: { type: "json_schema", schema: MACRO_SCHEMA } },
     messages: [{ role: "user", content: `${DESCRIBE_PROMPT}\n\nMeal: ${text}` }],
   } as Anthropic.MessageCreateParamsNonStreaming);
   const out = msg.content.filter((bk) => bk.type === "text").map((bk) => (bk as Anthropic.TextBlock).text).join("");
@@ -3140,8 +3146,9 @@ app.post("/api/agent", async (c) => {
   let reply: string;
   try {
     const msg = await anthropic.messages.create({
-      model: "claude-opus-4-8",
-      max_tokens: 600,
+      model: CLAUDE_MODEL,
+      max_tokens: 16000,
+      output_config: { effort: "medium" },
       system,
       messages: messages.map((m) => ({ role: m.role, content: coachContent(m) })),
     } as Anthropic.MessageCreateParamsNonStreaming);
@@ -3187,8 +3194,9 @@ app.post("/api/agent/stream", async (c) => {
         // emit tool + result events, then continue until it stops.
         for (let turn = 0; turn < 6; turn++) {
           const msgStream = anthropic.messages.stream({
-            model: "claude-opus-4-8",
-            max_tokens: 700,
+            model: CLAUDE_MODEL,
+            max_tokens: 16000,
+            output_config: { effort: "medium" },
             system,
             messages: convo,
             tools: COACH_TOOLS,
@@ -5550,10 +5558,10 @@ async function evaluateReminder(
   try {
     const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
     const msg = await anthropic.messages.create({
-      model: "claude-opus-4-8",
-      max_tokens: 400,
+      model: CLAUDE_MODEL,
+      max_tokens: EXTRACT_MAX_TOKENS,
       system: REMINDER_EVAL_SYSTEM,
-      output_config: { format: { type: "json_schema", schema: REMINDER_EVAL_SCHEMA } },
+      output_config: { effort: "low", format: { type: "json_schema", schema: REMINDER_EVAL_SCHEMA } },
       messages: [{ role: "user", content: contextBlock }],
     } as Anthropic.MessageCreateParamsNonStreaming);
     const out = msg.content.filter((bk): bk is Anthropic.TextBlock => bk.type === "text").map((bk) => bk.text).join("");
