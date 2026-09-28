@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { summarizeWeightHistory } from "./weight-history";
+import { buildUserQuery, USER_SQL_MAX_ROWS, USER_SQL_SCHEMA } from "./user-sql";
 import { and, asc, desc, eq, gte, inArray, like, lt } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -2681,6 +2682,19 @@ const COACH_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "query_user_data",
+    description:
+      "Run a read-only SQL SELECT (SQLite) over THIS user's own data when no other tool answers the question, e.g. averages, streaks, comparisons across tables, or anything historical. Only the user's rows are visible; one SELECT (WITH allowed), no comments, no main./temp. prefixes. Returns up to " +
+      USER_SQL_MAX_ROWS +
+      " rows; aggregate in SQL rather than pulling raw rows. Tables:\n" +
+      USER_SQL_SCHEMA,
+    input_schema: {
+      type: "object",
+      properties: { sql: { type: "string", description: "A single SELECT statement over the tables listed above." } },
+      required: ["sql"],
+    },
+  },
+  {
     name: "get_weight_history",
     description:
       "Read the user's weigh-in history in POUNDS: first and latest weigh-in with dates, the trend in lb/week (least-squares fit over every reading in the range, so one noisy day doesn't skew it), total change, weekly averages, and the readings themselves. Use it for questions like 'how much am I losing per week', 'when was my first weigh-in', or 'what did I weigh in March'. Omit from/to for all history.",
@@ -2808,6 +2822,32 @@ async function weightHistory(
   return summarizeWeightHistory(rows, from, to, tzMin);
 }
 
+// Read-only SQL over one user's rows for the coach's query_user_data tool. The
+// scoping lives in ./user-sql; this runs it and caps what goes back to the model.
+let userSqlTables: string[] | undefined;
+const USER_SQL_MAX_CHARS = 30_000;
+
+async function queryUserData(c: Context<{ Bindings: Bindings; Variables: Variables }>, email: string, userSql: string) {
+  userSqlTables ??= (
+    await c.env.DB.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')").all<{ name: string }>()
+  ).results.map((r) => r.name);
+  const built = buildUserQuery(userSql, userSqlTables);
+  if ("error" in built) return { error: built.error };
+  try {
+    const { results } = await c.env.DB.prepare(built.sql).bind(email).all<Record<string, unknown>>();
+    const truncatedRows = results.length > USER_SQL_MAX_ROWS;
+    let rows = results.slice(0, USER_SQL_MAX_ROWS);
+    let json = JSON.stringify(rows);
+    while (json.length > USER_SQL_MAX_CHARS && rows.length > 1) {
+      rows = rows.slice(0, Math.floor(rows.length / 2));
+      json = JSON.stringify(rows);
+    }
+    return { rowCount: rows.length, truncated: truncatedRows || rows.length < Math.min(results.length, USER_SQL_MAX_ROWS), rows };
+  } catch (e) {
+    return { error: `query failed: ${String(e).replace(/^Error:\s*/, "").slice(0, 300)}` };
+  }
+}
+
 async function executeCoachTool(
   c: Context<{ Bindings: Bindings; Variables: Variables }>,
   email: string,
@@ -2916,6 +2956,10 @@ async function executeCoachTool(
     const note = typeof input.note === "string" ? input.note.trim().slice(0, 500) || null : null;
     await db(c).insert(schema.weightReadings).values({ userEmail: email, weightKg: lbToKg(pounds), note, source: "manual" });
     return { ok: true, loggedPounds: pounds };
+  }
+
+  if (name === "query_user_data") {
+    return queryUserData(c, email, String(input.sql ?? ""));
   }
 
   if (name === "get_weight_history") {
@@ -3128,7 +3172,7 @@ app.post("/api/agent/stream", async (c) => {
   const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
   const system =
     (await buildCoachSystem(c, email, today, tzMin)) +
-    `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; clean up mistakes and duplicates with delete_meal and delete_food_item, and when the user corrects an entry ("that was actually 600 kcal", "it was two scoops") fix it in place with edit_food_item instead of deleting and relogging; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); answer questions about weight history (first weigh-in, lb lost per week, what they weighed on a date) with get_weight_history instead of guessing from the summary above; log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory; update daily calorie and protein targets with set_targets. When the user describes their day to day activity, a new job, a change in training volume, or a big lifestyle change, recompute their daily calorie target with Mifflin-St Jeor from the height, sex, and latest weigh-in in the context above, scaled by the closest activity multiplier, 1.2 sedentary, 1.375 lightly active, 1.55 moderately active, 1.725 very active, 1.9 athlete, then apply the deficit or surplus their current goal implies, state the new daily calorie and protein numbers plainly, and call set_targets with them, passing their activity in a few words. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. REMINDERS, when the user asks to be reminded of something ("remind me to log lunch at noon", "ping me to weigh in on weekday mornings"), create it with set_reminder, and when they correct or adjust one ("no, 9am", "weekdays only") edit it in place with update_reminder using the id from your create result or list_reminders, never create a second one for the same thing. Cancellations use delete_reminder. Reminders DELIVER OVER IMESSAGE, if the tool result says phoneLinked is false, tell the user they won't receive reminder texts until they link their phone in their profile or text the skcal number. If the result says tzDefaulted is true, state the timezone you assumed and ask them to correct it if wrong. After creating one, confirm in plain words what was set, the time and the cadence. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
+    `\n\nLOGGING JUDGMENT, log immediately when the user states something that happened (a meal eaten, a weigh-in, a workout done); when the conversation is exploratory ("should I eat", "what if", "how many calories are in"), answer first and ask before logging. When the user sends a PHOTO, look at it, food -> describe what you see and log it with log_meal, scale readout -> log_weight, workout screenshot -> log_workout, tape measure -> log_measurement. Tools: you can log meals with log_meal; view and reorganize the food log with list_food_log, move_meal, and move_food_item; clean up mistakes and duplicates with delete_meal and delete_food_item, and when the user corrects an entry ("that was actually 600 kcal", "it was two scoops") fix it in place with edit_food_item instead of deleting and relogging; record body measurements with log_measurement (inches); record weigh-ins with log_weight (pounds); answer questions about weight history (first weigh-in, lb lost per week, what they weighed on a date) with get_weight_history instead of guessing from the summary above; for any other question about their past data that no tool covers (averages, streaks, trends across meals, workouts or measurements), write a read-only query with query_user_data rather than guessing; log workouts from the user's plain description with log_workout (pass their words through); save durable user preferences/facts with remember and remove wrong ones with forget_memory; update daily calorie and protein targets with set_targets. When the user describes their day to day activity, a new job, a change in training volume, or a big lifestyle change, recompute their daily calorie target with Mifflin-St Jeor from the height, sex, and latest weigh-in in the context above, scaled by the closest activity multiplier, 1.2 sedentary, 1.375 lightly active, 1.55 moderately active, 1.725 very active, 1.9 athlete, then apply the deficit or surplus their current goal implies, state the new daily calorie and protein numbers plainly, and call set_targets with them, passing their activity in a few words. When the user states a lasting preference (dislikes yogurt, vegetarian, allergic to nuts), SAVE it — and never suggest foods that conflict with saved memories. REMINDERS, when the user asks to be reminded of something ("remind me to log lunch at noon", "ping me to weigh in on weekday mornings"), create it with set_reminder, and when they correct or adjust one ("no, 9am", "weekdays only") edit it in place with update_reminder using the id from your create result or list_reminders, never create a second one for the same thing. Cancellations use delete_reminder. Reminders DELIVER OVER IMESSAGE, if the tool result says phoneLinked is false, tell the user they won't receive reminder texts until they link their phone in their profile or text the skcal number. If the result says tzDefaulted is true, state the timezone you assumed and ask them to correct it if wrong. After creating one, confirm in plain words what was set, the time and the cadence. Today's date is ${today}. To move / re-date / fix which day food was logged on, first call list_food_log for the relevant day to find the exact meal or item, then move it. IMPORTANT: while calling tools, do NOT write any prose — just make the tool calls. Only AFTER every change is done, write exactly ONE short sentence confirming what changed (item + from day → to day). Never repeat that confirmation.`;
 
   const anthropic = new Anthropic({ apiKey: c.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
