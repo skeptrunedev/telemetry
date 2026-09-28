@@ -7,7 +7,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Markdown from "react-native-markdown-display";
 import { C } from "./theme";
-import { agentStream, createConversation, appendMessages, photoSource, uploadAgentPhoto, ChatMessage, ChatPart } from "./api";
+import { agentStream, photoSource, ChatMessage, ChatPart } from "./api";
 
 // Persisted conversations may carry parts arrays (text + photos the web app
 // uploaded to R2); flatten to display text for bubbles and titles.
@@ -154,8 +154,11 @@ export function Agent({
       while (window.length && window[0]?.role !== "user") window = window.slice(1);
       // Stream the reply token-by-token into a live assistant bubble; each
       // delta re-renders the markdown so the text builds up in place.
-      const reply = await agentStream(
+      // The worker saves the turn as it runs (a new chat gets its id in the
+      // stream), so history is shared with the web app.
+      const { reply, conversationId } = await agentStream(
         window,
+        convIdRef.current,
         (full) => {
           setActivity(null);
           setMessages([...next, { role: "assistant", content: full }]);
@@ -164,36 +167,9 @@ export function Agent({
       );
       setActivity(null);
       setMessages([...next, { role: "assistant", content: reply }]);
-      // Persist the completed turn exactly like the web app so history is
-      // shared — data-URL photos are swapped for uploaded R2 URLs first (an
-      // upload failure keeps the data URL; the server flattens it to a
-      // "[photo]" marker, the old behavior).
-      let persistedMsg = userMsg;
-      if (photos.length && typeof userMsg.content !== "string") {
-        const swapped = await Promise.all(
-          userMsg.content.map(async (p) => {
-            if (p.type !== "image" || !p.image.startsWith("data:")) return p;
-            try {
-              const { url } = await uploadAgentPhoto(p.image);
-              return { type: "image" as const, image: url };
-            } catch {
-              return p;
-            }
-          }),
-        );
-        persistedMsg = { role: "user", content: swapped };
-      }
-      const turn: ChatMessage[] = [persistedMsg, { role: "assistant", content: reply }];
-      try {
-        if (!convIdRef.current) {
-          const { id } = await createConversation(text || "[photo]", turn);
-          convIdRef.current = id;
-        } else {
-          await appendMessages(convIdRef.current, turn);
-        }
-        onPersisted(convIdRef.current);
-      } catch {
-        /* non-fatal: the reply still renders, it just isn't saved */
+      if (conversationId) {
+        convIdRef.current = conversationId;
+        onPersisted(conversationId);
       }
     } catch (e) {
       setMessages([...next, { role: "assistant", content: `Something broke, try again. (${e instanceof Error ? e.message : e})` }]);

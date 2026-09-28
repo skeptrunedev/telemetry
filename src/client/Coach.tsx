@@ -335,29 +335,8 @@ function Composer() {
   );
 }
 
-// Swap data-URL photos in a completed user turn for uploaded R2 URLs before
-// persisting, so saved conversations stay small and the photos render again on
-// reload. An upload failure keeps the data URL (the server flattens it to a
-// "[photo]" marker, matching the old behavior).
-async function uploadTurnPhotos(m: CoachMessage): Promise<CoachMessage> {
-  if (typeof m.content === "string") return m;
-  const content = await Promise.all(
-    m.content.map(async (p) => {
-      if (p.type !== "image" || !p.image.startsWith("data:")) return p;
-      try {
-        const blob = await (await fetch(p.image)).blob();
-        const { url } = await api.uploadAgentPhoto(blob);
-        return { type: "image" as const, image: url };
-      } catch {
-        return p;
-      }
-    }),
-  );
-  return { ...m, content };
-}
-
 // The live coach thread. Seeded from a saved conversation (or empty for a new
-// chat); streams from the coach endpoint and persists each completed turn.
+// chat); streams from the coach endpoint, which saves each turn as it runs.
 // The parent applies `key={session.key}` so switching threads remounts it.
 export function CoachThread({
   initialMessages,
@@ -411,7 +390,7 @@ export function CoachThread({
 
         let res: Response;
         try {
-          res = await api.coachStream(window, todayLocal(), abortSignal);
+          res = await api.coachStream(window, todayLocal(), convIdRef.current, abortSignal);
         } catch (err) {
           if (err instanceof DOMException && err.name === "AbortError") throw err;
           yield {
@@ -442,7 +421,9 @@ export function CoachThread({
           } catch {
             return;
           }
-          if (ev.t === "text" && ev.v) {
+          if (ev.t === "conversation" && ev.id) {
+            convIdRef.current = String(ev.id);
+          } else if (ev.t === "text" && ev.v) {
             if (!cur) {
               cur = { type: "text", text: "" };
               parts.push(cur);
@@ -487,37 +468,11 @@ export function CoachThread({
           }
         } finally {
           reader.cancel().catch(() => {});
+          // The server has saved the turn (a stopped one too): refresh history.
+          if (convIdRef.current) onPersistedRef.current(convIdRef.current);
         }
         if (buf.trim()) handle(buf);
         yield snapshot();
-
-        const lastUser = history[history.length - 1];
-        const reply = parts
-          .filter((p): p is { type: "text"; text: string } => p.type === "text")
-          .map((p) => p.text)
-          .join("\n")
-          .trim();
-        const lastUserText =
-          typeof lastUser?.content === "string"
-            ? lastUser.content
-            : (lastUser?.content ?? [])
-                .map((p) => (p.type === "text" ? p.text : "[photo]"))
-                .join(" ")
-                .trim();
-        if (lastUser?.role === "user" && reply) {
-          const turn: CoachMessage[] = [await uploadTurnPhotos(lastUser), { role: "assistant", content: reply }];
-          try {
-            if (!convIdRef.current) {
-              const { id } = await api.createConversation(lastUserText, turn);
-              convIdRef.current = id;
-            } else {
-              await api.appendMessages(convIdRef.current, turn);
-            }
-            onPersistedRef.current(convIdRef.current);
-          } catch {
-            /* non-fatal: the reply still renders, it just isn't saved */
-          }
-        }
       },
     }),
     [],

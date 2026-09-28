@@ -2442,6 +2442,11 @@ const DATA_URL_RE = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]
 const AGENT_PHOTO_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const AGENT_PHOTO_URL_RE = /^\/api\/agent\/photos\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
+// The 2000-char cap is for what the user types. Assistant messages are the
+// coach's own replies coming back as history, so they get the room a full
+// reply can take (max_tokens 16000).
+const COACH_USER_MAX_CHARS = 2000;
+const COACH_ASSISTANT_MAX_CHARS = 64_000;
 function parseCoachMessages(raw: unknown): { messages: CoachMsg[] } | { error: string } {
   let arr = Array.isArray(raw) ? (raw as { role?: string; content?: unknown }[]) : [];
   if (!arr.length) return { error: "messages required" };
@@ -2456,9 +2461,11 @@ function parseCoachMessages(raw: unknown): { messages: CoachMsg[] } | { error: s
   const messages: CoachMsg[] = [];
   for (const m of arr) {
     if (m.role !== "user" && m.role !== "assistant") return { error: "each message needs role user or assistant" };
+    const maxChars = m.role === "user" ? COACH_USER_MAX_CHARS : COACH_ASSISTANT_MAX_CHARS;
+    const tooLong = { error: `message content too long (max ${maxChars} chars)` };
     if (typeof m.content === "string") {
       if (!m.content.trim()) return { error: "each message needs content" };
-      if (m.content.length > 2000) return { error: "message content too long (max 2000 chars)" };
+      if (m.content.length > maxChars) return tooLong;
       messages.push({ role: m.role, content: m.content });
       continue;
     }
@@ -2467,7 +2474,7 @@ function parseCoachMessages(raw: unknown): { messages: CoachMsg[] } | { error: s
       let images = 0;
       for (const part of m.content as { type?: string; text?: string; image?: string }[]) {
         if (part.type === "text" && typeof part.text === "string") {
-          if (part.text.length > 2000) return { error: "message content too long (max 2000 chars)" };
+          if (part.text.length > maxChars) return tooLong;
           if (part.text.trim()) blocks.push({ type: "text", text: part.text });
         } else if (part.type === "image" && typeof part.image === "string") {
           if (++images > 4) return { error: "too many images (max 4 per message)" };
@@ -3212,11 +3219,20 @@ app.post("/api/agent", async (c) => {
 // route above stays for the CLI/API/MCP surface.
 app.post("/api/agent/stream", async (c) => {
   const email = c.get("email");
-  const b = await c.req.json<{ messages?: unknown; date?: string; tz?: number }>();
+  const b = await c.req.json<{ messages?: unknown; date?: string; tz?: number; conversationId?: string | null }>();
   const parsed = parseCoachMessages(b.messages);
   if ("error" in parsed) return c.json({ error: parsed.error }, 400);
+  // Clients that send conversationId (null for a new chat) have the turn saved
+  // here. Older app builds omit it and save the turn themselves afterwards.
+  const persist = "conversationId" in b;
+  const userMsg = parsed.messages[parsed.messages.length - 1];
+  if (persist && userMsg?.role !== "user") return c.json({ error: "the last message must be the user's" }, 400);
   if (!c.env.ANTHROPIC_API_KEY) return c.json({ error: "coach not configured" }, 503);
   const messages = await resolveCoachImageRefs(c, email, parsed.messages);
+  const conversationId =
+    persist && userMsg
+      ? await saveCoachUserMessage(c, email, typeof b.conversationId === "string" ? b.conversationId : null, userMsg)
+      : null;
 
   const tzMin = Number(b.tz ?? 0) || 0;
   const today = c.req.query("date") ?? new Date(Date.now() - tzMin * 60_000).toISOString().slice(0, 10);
@@ -3226,58 +3242,101 @@ app.post("/api/agent/stream", async (c) => {
 
   const encoder = new TextEncoder();
   // NDJSON event protocol so the client renders tool calls as real parts rather
-  // than mashing each turn's text together: {t:"text",v} / {t:"tool"} / {t:"result"}.
+  // than mashing each turn's text together: {t:"text",v} / {t:"tool"} / {t:"result"},
+  // opened by {t:"conversation",id} when the turn is being saved.
   // {t:"tool"} goes out when the model starts the call, not when its turn ends:
   // the coach writes no prose around tool calls, so otherwise the chat shows
   // nothing while the model streams the arguments (seconds for a big log_meal).
   const convo: Anthropic.Beta.BetaMessageParam[] = messages.map((m) => ({ role: m.role, content: coachContent(m) }));
+  // Text of each model turn, saved as the reply when the stream ends.
+  const replyTurns: string[] = [];
+  // The client going away (tab closed, stop pressed) cancels the stream: stop
+  // the model, but still save what was said so far.
+  let cancelled = false;
+  let current: ReturnType<typeof claudeStream> | null = null;
   const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (obj: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
-      try {
-        // Agentic loop: stream each turn's text; if the model calls tools,
-        // emit tool + result events, then continue until it stops.
-        let fast = true;
-        for (let turn = 0; turn < 6; turn++) {
-          const startedAt = Date.now();
-          const msgStream = claudeStream(c.env, { max_tokens: 16000, system, messages: convo, tools: cachedTools(COACH_TOOLS) }, fast);
-          let sentAny = false;
-          try {
-            for await (const event of msgStream) {
-              if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-                sentAny = true;
-                send({ t: "text", v: event.delta.text });
-              } else if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
-                sentAny = true;
-                send({ t: "tool", id: event.content_block.id, name: event.content_block.name });
+    start(controller) {
+      const send = (obj: unknown) => {
+        if (!cancelled) controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
+      };
+      const run = async () => {
+        let failure: unknown = null;
+        try {
+          if (conversationId) send({ t: "conversation", id: conversationId });
+          // Agentic loop: stream each turn's text; if the model calls tools,
+          // emit tool + result events, then continue until it stops.
+          let fast = true;
+          for (let turn = 0; turn < 6 && !cancelled; turn++) {
+            const startedAt = Date.now();
+            const msgStream = claudeStream(c.env, { max_tokens: 16000, system, messages: convo, tools: cachedTools(COACH_TOOLS) }, fast);
+            current = msgStream;
+            let sentAny = false;
+            let text = "";
+            try {
+              for await (const event of msgStream) {
+                if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+                  sentAny = true;
+                  text += event.delta.text;
+                  send({ t: "text", v: event.delta.text });
+                } else if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
+                  sentAny = true;
+                  send({ t: "tool", id: event.content_block.id, name: event.content_block.name });
+                }
               }
+            } catch (e) {
+              if (cancelled) {
+                replyTurns.push(text);
+                break;
+              }
+              // Fast mode has its own rate limit: redo this turn at standard speed.
+              if (fast && !sentAny && isFastModeRateLimit(e)) {
+                fast = false;
+                turn--;
+                continue;
+              }
+              replyTurns.push(text);
+              throw e;
             }
-          } catch (e) {
-            // Fast mode has its own rate limit: redo this turn at standard speed.
-            if (fast && !sentAny && isFastModeRateLimit(e)) {
-              fast = false;
-              turn--;
-              continue;
+            replyTurns.push(text);
+            const final = await msgStream.finalMessage();
+            logClaudeUsage("coach-stream", final, startedAt);
+            const toolUses = final.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
+            if (toolUses.length === 0) break;
+            convo.push({ role: "assistant", content: final.content });
+            const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
+            for (const tu of toolUses) {
+              const out = await executeCoachTool(c, email, tu.name, tu.input as Record<string, unknown>, today, tzMin);
+              send({ t: "result", id: tu.id, result: out });
+              results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out) });
             }
-            throw e;
+            convo.push({ role: "user", content: results });
           }
-          const final = await msgStream.finalMessage();
-          logClaudeUsage("coach-stream", final, startedAt);
-          const toolUses = final.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
-          if (toolUses.length === 0) break;
-          convo.push({ role: "assistant", content: final.content });
-          const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
-          for (const tu of toolUses) {
-            const out = await executeCoachTool(c, email, tu.name, tu.input as Record<string, unknown>, today, tzMin);
-            send({ t: "result", id: tu.id, result: out });
-            results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out) });
-          }
-          convo.push({ role: "user", content: results });
+        } catch (e) {
+          failure = e;
         }
-        controller.close();
-      } catch (e) {
-        controller.error(e);
+        const reply = replyTurns.map((t) => t.trim()).filter(Boolean).join("\n\n");
+        if (conversationId && reply) {
+          try {
+            await saveCoachReply(c, conversationId, reply);
+          } catch (e) {
+            console.error(`coach reply not saved for conversation ${conversationId}: ${String(e)}`);
+          }
+        }
+        if (cancelled) return;
+        if (failure) controller.error(failure);
+        else controller.close();
+      };
+      const done = run();
+      try {
+        // Keep the Worker alive to save the reply after the client disconnects.
+        c.executionCtx.waitUntil(done);
+      } catch {
+        /* executionCtx not always available (e.g. tests) */
       }
+    },
+    cancel() {
+      cancelled = true;
+      current?.abort();
     },
   });
 
@@ -3657,6 +3716,67 @@ app.get("/api/agent/conversations", async (c) => {
     })),
   );
 });
+
+// The in-app chat saves itself from /api/agent/stream: the user's message is
+// stored before the model runs and the reply when the stream ends, so a turn
+// is kept even if the tab closes, the user hits stop, or the reply fails.
+
+// Chat photos arrive as data URLs; the saved copy of the message points at R2
+// objects instead (the same keys /api/agent/photos writes).
+async function storeCoachPhotos(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+  m: CoachMsg,
+): Promise<CoachMsg> {
+  if (typeof m.content === "string" || !m.content.some((b) => b.type === "image")) return m;
+  const blocks: CoachBlock[] = [];
+  for (const b of m.content) {
+    if (b.type !== "image") {
+      blocks.push(b);
+      continue;
+    }
+    const id = crypto.randomUUID();
+    const bytes = Uint8Array.from(atob(b.data), (ch) => ch.charCodeAt(0));
+    await c.env.PHOTOS.put(`${email}/agent/${id}`, bytes, { httpMetadata: { contentType: b.mediaType } });
+    blocks.push({ type: "image_ref", id });
+  }
+  return { role: m.role, content: blocks };
+}
+
+// Save the user's message into their conversation, or a new one when there is
+// no id yet (or it no longer exists, e.g. deleted in another tab). Returns the
+// conversation id.
+async function saveCoachUserMessage(
+  c: Context<{ Bindings: Bindings; Variables: Variables }>,
+  email: string,
+  conversationId: string | null,
+  userMsg: CoachMsg,
+): Promise<string> {
+  const stored = await storeCoachPhotos(c, email, userMsg);
+  let id = conversationId;
+  if (id) {
+    const owned = await db(c)
+      .select({ id: schema.coachConversations.id })
+      .from(schema.coachConversations)
+      .where(and(eq(schema.coachConversations.id, id), eq(schema.coachConversations.userEmail, email)))
+      .limit(1);
+    if (!owned.length) id = null;
+  }
+  if (id) {
+    await db(c).update(schema.coachConversations).set({ updatedAt: new Date() }).where(eq(schema.coachConversations.id, id));
+  } else {
+    id = crypto.randomUUID();
+    const title = deriveConversationTitle([{ role: "user", content: coachText(stored) }]);
+    await db(c).insert(schema.coachConversations).values({ id, userEmail: email, title });
+  }
+  await db(c).insert(schema.coachMessages).values({ conversationId: id, role: "user", content: coachStoredContent(stored) });
+  return id;
+}
+
+async function saveCoachReply(c: Context<{ Bindings: Bindings; Variables: Variables }>, conversationId: string, reply: string) {
+  await db(c).insert(schema.coachMessages).values({ conversationId, role: "assistant", content: reply });
+  await db(c).update(schema.coachConversations).set({ updatedAt: new Date() }).where(eq(schema.coachConversations.id, conversationId));
+}
 
 // Create a conversation seeded with its first turn.
 app.post("/api/agent/conversations", async (c) => {

@@ -131,27 +131,6 @@ export async function whoami(): Promise<{ email: string }> {
   return r.json() as Promise<{ email: string }>;
 }
 
-// Store a chat photo in R2 (same endpoint the web app uses); the returned
-// same-origin URL goes into the persisted conversation. Accepts a data URL or
-// file uri; on web FormData needs a real Blob.
-export async function uploadAgentPhoto(uri: string): Promise<{ url: string }> {
-  const token = await getToken();
-  const fd = new FormData();
-  if (WEB || uri.startsWith("data:")) {
-    const blob = await (await fetch(uri)).blob();
-    fd.append("photo", blob, "photo.jpg");
-  } else {
-    fd.append("photo", { uri, name: "photo.jpg", type: "image/jpeg" } as unknown as Blob);
-  }
-  const r = await fetch(`${BASE}/api/agent/photos`, {
-    method: "POST",
-    headers: { ...CLIENT_HEADERS, ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    body: fd,
-  });
-  if (!r.ok) throw new Error(`photo upload → ${r.status}`);
-  return r.json() as Promise<{ url: string }>;
-}
-
 export async function agent(messages: ChatMessage[]): Promise<string> {
   const r = await req(`/api/agent`, {
     method: "POST",
@@ -163,9 +142,11 @@ export async function agent(messages: ChatMessage[]): Promise<string> {
 }
 
 // NDJSON event protocol shared with the web client (src/client/Coach.tsx):
-// {t:"text",v} appends a reply delta, {t:"tool"} / {t:"result"} bracket a tool
-// call. The reply is the concatenation of every text delta.
+// {t:"conversation",id} names the saved conversation, {t:"text",v} appends a
+// reply delta, {t:"tool"} / {t:"result"} bracket a tool call. The reply is the
+// concatenation of every text delta.
 type AgentEvent =
+  | { t: "conversation"; id?: string }
   | { t: "text"; v?: string }
   | { t: "tool"; id?: string; name?: string; args?: unknown }
   | { t: "result"; id?: string; result?: unknown };
@@ -173,15 +154,18 @@ type AgentEvent =
 // Streaming twin of agent(): POSTs to /api/agent/stream and reads the response
 // body incrementally via expo/fetch (RN's global fetch has no readable body).
 // onText is called with the full accumulated reply on each text delta so the UI
-// re-renders live; the resolved value is the final complete reply so callers can
-// persist the finished turn. onTool fires when a tool call starts (done false)
-// and when its result is back (done true) so the UI can show what the coach is
-// doing. Falls back to the non-streaming agent() on stream failure.
+// re-renders live. onTool fires when a tool call starts (done false) and when
+// its result is back (done true) so the UI can show what the coach is doing.
+//
+// The worker saves the turn into conversationId (null starts a new one) and
+// the resolved value carries the id it used. If the stream can't start, the
+// non-streaming agent() answers instead and the turn is saved from here.
 export async function agentStream(
   messages: ChatMessage[],
+  conversationId: string | null,
   onText: (fullReply: string) => void,
   onTool?: (name: string, done: boolean) => void,
-): Promise<string> {
+): Promise<{ reply: string; conversationId: string | null }> {
   const token = await getToken();
   const day = new Date().toLocaleDateString("en-CA");
   const tz = new Date().getTimezoneOffset();
@@ -194,25 +178,22 @@ export async function agentStream(
         "content-type": "application/json",
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ messages, date: day, tz }),
+      body: JSON.stringify({ messages, date: day, tz, conversationId }),
     });
   } catch {
     // Network/stream setup failed — fall back to the buffered endpoint.
-    const reply = await agent(messages);
-    onText(reply);
-    return reply;
+    return agentFallback(messages, conversationId, onText);
   }
   if (!res.ok || !res.body) {
     // Non-2xx or no streamable body — buffered fallback keeps chat working.
-    const reply = await agent(messages);
-    onText(reply);
-    return reply;
+    return agentFallback(messages, conversationId, onText);
   }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
   let reply = "";
+  let savedId = conversationId;
   const handle = (line: string) => {
     const s = line.trim();
     if (!s) return;
@@ -222,7 +203,9 @@ export async function agentStream(
     } catch {
       return;
     }
-    if (ev.t === "text" && ev.v) {
+    if (ev.t === "conversation" && ev.id) {
+      savedId = ev.id;
+    } else if (ev.t === "text" && ev.v) {
       reply += ev.v;
       onText(reply);
     } else if (ev.t === "tool") {
@@ -243,7 +226,30 @@ export async function agentStream(
     }
   }
   if (buf.trim()) handle(buf);
-  return reply;
+  return { reply, conversationId: savedId };
+}
+
+// The buffered endpoint doesn't save, so the turn is saved here.
+async function agentFallback(
+  messages: ChatMessage[],
+  conversationId: string | null,
+  onText: (fullReply: string) => void,
+): Promise<{ reply: string; conversationId: string | null }> {
+  const reply = await agent(messages);
+  onText(reply);
+  const user = messages[messages.length - 1];
+  if (!user || !reply) return { reply, conversationId };
+  const turn: ChatMessage[] = [user, { role: "assistant", content: reply }];
+  try {
+    if (conversationId) {
+      await appendMessages(conversationId, turn);
+      return { reply, conversationId };
+    }
+    const title = typeof user.content === "string" ? user.content : "[photo]";
+    return { reply, conversationId: (await createConversation(title, turn)).id };
+  } catch {
+    return { reply, conversationId };
+  }
 }
 
 // ---- Agent conversation history (same endpoints the web app uses) ----

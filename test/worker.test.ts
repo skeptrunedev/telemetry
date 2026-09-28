@@ -231,6 +231,43 @@ describe("AI guard rails (no model call)", () => {
     expect(await res.text()).toContain("coach not configured");
   });
 
+  it("POST /api/agent/stream saving a turn that doesn't end on the user → 400 (never calls the model)", async () => {
+    const res = await jsonPost(user, "/api/agent/stream", {
+      conversationId: null,
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "hello" },
+      ],
+    });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("the last message must be the user's");
+  });
+
+  it("saves a coach reply longer than the 2000-char user cap", async () => {
+    const reply = "Protein first. ".repeat(250); // ~3750 chars
+    const res = await jsonPost(user, "/api/agent/conversations", {
+      messages: [
+        { role: "user", content: "give me the long version" },
+        { role: "assistant", content: reply },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const { id } = (await res.json()) as { id: string };
+    const list = (await (await asUser(user, "/api/agent/conversations")).json()) as {
+      id: string;
+      messages: { role: string; content: string }[];
+    }[];
+    expect(list.find((c) => c.id === id)?.messages[1]?.content).toBe(reply);
+  });
+
+  it("still caps what the user types at 2000 chars", async () => {
+    const res = await jsonPost(user, "/api/agent/conversations", {
+      messages: [{ role: "user", content: "x".repeat(2001) }],
+    });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("max 2000 chars");
+  });
+
   it("POST /api/nutrition/analyze with a photo but no key → 503 (never calls the model)", async () => {
     const fd = new FormData();
     fd.append("photos", new Blob([new Uint8Array([1, 2, 3, 4])], { type: "image/jpeg" }), "meal.jpg");

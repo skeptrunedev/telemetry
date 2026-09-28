@@ -135,39 +135,25 @@ export const api = {
     return r.json() as Promise<{ reply: string }>;
   },
   // Streaming variant for the in-app chat: returns the raw Response so the
-  // caller can read the plain-text token stream off `.body`.
-  coachStream: async (messages: CoachMessage[], date: string, signal?: AbortSignal): Promise<Response> => {
+  // caller can read the NDJSON event stream off `.body`.
+  // conversationId (null starts a new one) has the server save the turn.
+  coachStream: async (
+    messages: CoachMessage[],
+    date: string,
+    conversationId: string | null,
+    signal?: AbortSignal,
+  ): Promise<Response> => {
     const r = await rawFetch(`/api/agent/stream?date=${date}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages, date, tz: new Date().getTimezoneOffset() }),
+      body: JSON.stringify({ messages, date, tz: new Date().getTimezoneOffset(), conversationId }),
       signal,
     });
     if (!r.ok) throw new Error(`coach → ${r.status}: ${await r.text().catch(() => "")}`);
     return r;
   },
-  // Store a chat photo in R2; the returned same-origin URL goes into the
-  // persisted conversation so the photo renders again on reload.
-  uploadAgentPhoto: async (file: Blob): Promise<{ url: string }> => {
-    const fd = new FormData();
-    fd.append("photo", file, "photo.jpg");
-    const r = await rawFetch(`/api/agent/photos`, { method: "POST", body: fd });
-    if (!r.ok) throw new Error(`uploadAgentPhoto → ${r.status}`);
-    return r.json() as Promise<{ url: string }>;
-  },
   // ---- Coach conversation history ----
   listConversations: () => jget<CoachConversation[]>(`/api/agent/conversations`),
-  createConversation: async (title: string, messages: CoachMessage[]): Promise<{ id: string; title: string }> => {
-    const r = await rawFetch(`/api/agent/conversations`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title, messages }),
-    });
-    if (!r.ok) throw new Error(`createConversation → ${r.status}`);
-    return r.json() as Promise<{ id: string; title: string }>;
-  },
-  appendMessages: (id: string, messages: CoachMessage[]) =>
-    jsend(`/api/agent/conversations/${id}/messages`, "POST", { messages }),
   deleteConversation: (id: string) => jsend(`/api/agent/conversations/${id}`, "DELETE", undefined),
   meals: (date: string) => jget<Meal[]>(`/api/nutrition/meals?date=${date}`),
   workouts: (date: string) => jget<Workout[]>(`/api/workouts?date=${date}&tz=${new Date().getTimezoneOffset()}`),
