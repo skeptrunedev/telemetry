@@ -142,6 +142,15 @@ function toE164(input: string): string | null {
   return null;
 }
 
+// Verification texts go only to +1 (US/Canada) numbers. Bots were pumping
+// codes to premium ranges abroad (Zimbabwe, Senegal, Guatemala...) at ~$0.37
+// each, none ever entered; widen this when real users abroad need it.
+export const SMS_COUNTRY_PREFIX = "+1";
+export const SMS_ONLY_MESSAGE = "Only US and Canadian (+1) phone numbers are supported right now.";
+export function smsAllowed(e164: string): boolean {
+  return e164.startsWith(SMS_COUNTRY_PREFIX);
+}
+
 export function makeAuth(env: AuthEnv) {
   return betterAuth({
     database: drizzleAdapter(drizzle(env.DB, { schema }), { provider: "sqlite" }),
@@ -202,6 +211,7 @@ export function makeAuth(env: AuthEnv) {
           if (!toE164(raw)) {
             throw new APIError("BAD_REQUEST", { message: "Enter a valid phone number." });
           }
+          if (!smsAllowed(phone)) throw new APIError("BAD_REQUEST", { message: SMS_ONLY_MESSAGE });
           try {
             await twilioVerify(env, "Verifications", { To: phone, Channel: "sms" });
           } catch (e) {

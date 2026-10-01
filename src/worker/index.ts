@@ -11,7 +11,7 @@ import { StreamableHTTPTransport } from "@hono/mcp";
 import { z } from "zod";
 import * as schema from "../db/schema";
 import { isValidTimeZone, localDayInTz, localTimeLineInTz, nextFireAt, offsetMinutesToTz, parseDays, zonedTimeToUtc } from "./reminders";
-import { makeAuth, twilioVerify } from "./auth";
+import { makeAuth, SMS_ONLY_MESSAGE, smsAllowed, twilioVerify } from "./auth";
 import {
   APPLE_BUNDLE_ID,
   APPLE_PRODUCT_IDS,
@@ -4902,7 +4902,8 @@ app.post("/api/channels/phone/start", async (c) => {
   if (!c.env.TWILIO_VERIFY_SERVICE_SID) return c.json({ error: "phone verification not configured" }, 503);
   const b = await c.req.json<{ phone?: string }>();
   const phone = normalizePhone(b.phone ?? "");
-  if (!phone) return c.json({ error: "enter a valid phone number, e.g. 415 555 0123 or +44…" }, 400);
+  if (!phone) return c.json({ error: "enter a valid phone number, e.g. 415 555 0123" }, 400);
+  if (!smsAllowed(phone)) return c.json({ error: SMS_ONLY_MESSAGE }, 400);
   // Refuse numbers already verified on another account.
   const existing = (
     await db(c)
