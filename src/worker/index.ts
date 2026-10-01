@@ -54,7 +54,7 @@ type Bindings = {
   // When set (local dev + tests), unauthenticated requests fall back to a dev
   // identity instead of being rejected. Unset in production ⇒ 401.
   AUTH_DEV_BYPASS?: string;
-  // ---- Stripe billing (one $100/mo plan) ----
+  // ---- Stripe billing (one $10/mo plan) ----
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   STRIPE_PRICE_ID?: string;
@@ -419,7 +419,7 @@ async function resolveApiKey(
 }
 
 // ---- Stripe billing ---------------------------------------------------------
-// One $100/mo plan. The webhook keeps the `billing` table in sync; the guard
+// One $10/mo plan. The webhook keeps the `billing` table in sync; the guard
 // requires an active subscription for data routes (exempt emails + dev skip).
 /** A non-2xx Stripe response, keeping the HTTP status and Stripe's error code. */
 class StripeApiError extends Error {
@@ -3988,7 +3988,7 @@ app.delete("/api/keys/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-// ---- Billing (Stripe: one $100/mo plan) -------------------------------------
+// ---- Billing (Stripe: one $10/mo plan) -------------------------------------
 app.get("/api/billing", async (c) => {
   const email = c.get("email");
   const exempt =

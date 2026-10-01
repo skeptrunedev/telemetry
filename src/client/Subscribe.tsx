@@ -39,11 +39,11 @@ export function Subscribe({ billing, email, onSignOut }: { billing: Billing; ema
         <p className="signin-sub">
           {lapsed
             ? "Renew to pick up right where you left off — your data is safe."
-            : "skcal is $100/month — no free tier, no feature gates. Cancel anytime."}
+            : "skcal is $10/month — no free tier, no feature gates. Cancel anytime."}
         </p>
 
         <div className="sub-price">
-          <span className="sub-num">$100</span>
+          <span className="sub-num">$10</span>
           <span className="sub-per">/mo</span>
         </div>
         <ul className="sub-list">
@@ -55,7 +55,7 @@ export function Subscribe({ billing, email, onSignOut }: { billing: Billing; ema
         </ul>
 
         <button className="btn signin-google" onClick={() => go(api.billingCheckout)} disabled={busy}>
-          {busy ? "Redirecting…" : lapsed ? "Renew subscription" : "Subscribe — $100/mo"}
+          {busy ? "Redirecting…" : lapsed ? "Renew subscription" : "Subscribe — $10/mo"}
         </button>
         {billing.status && (
           <button className="btn ghost" onClick={() => go(api.billingPortal)} disabled={busy}>

@@ -34,9 +34,9 @@
   // skfit daemon to deliver.
   "triggers": { "crons": ["*/15 * * * *"] },
   "vars": {
-    // Stripe price for the single $100/mo plan (secret key + webhook signing
+    // Stripe price for the single $10/mo plan (secret key + webhook signing
     // secret live in Worker secrets). Exempt emails skip the subscription gate.
-    "STRIPE_PRICE_ID": "price_1TozrdAORpgtf3danYpcO3FA",
+    "STRIPE_PRICE_ID": "price_1ULc4lAORpgtf3daU2jJZRVk",
     "REVIEW_PHONE": "+15005550999",
     "TESTER_PHONE": "+15005550998",
     // Claude fast mode (2.5x output speed, 2x price). Our Anthropic org is not
