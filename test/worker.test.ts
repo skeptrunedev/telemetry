@@ -231,6 +231,25 @@ describe("AI guard rails (no model call)", () => {
     expect(await res.text()).toContain("coach not configured");
   });
 
+  // A photo with no caption is a complete message (the app's send button
+  // allows it): it must clear validation and reach the model guard, never be
+  // rejected as empty. JPEG magic bytes so the byte sniffer accepts it.
+  const CAPTIONLESS_PHOTO = [
+    { role: "user", content: [{ type: "image", image: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==" }] },
+  ];
+
+  it("POST /api/agent with a caption-less photo passes validation → 503 without a key", async () => {
+    const res = await jsonPost(user, "/api/agent", { messages: CAPTIONLESS_PHOTO });
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain("coach not configured");
+  });
+
+  it("POST /api/agent/stream with a caption-less photo passes validation → 503 without a key", async () => {
+    const res = await jsonPost(user, "/api/agent/stream", { conversationId: null, messages: CAPTIONLESS_PHOTO });
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain("coach not configured");
+  });
+
   it("POST /api/agent/stream saving a turn that doesn't end on the user → 400 (never calls the model)", async () => {
     const res = await jsonPost(user, "/api/agent/stream", {
       conversationId: null,
