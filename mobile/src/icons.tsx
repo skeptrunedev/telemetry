@@ -63,3 +63,9 @@ export const TrashIcon = ({ size, color }: P) => (
     <Line x1={14} x2={14} y1={11} y2={17} />
   </Svg>
 );
+
+export const ActivityIcon = ({ size, color }: P) => (
+  <Svg {...base(size)} stroke={color}>
+    <Path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />
+  </Svg>
+);

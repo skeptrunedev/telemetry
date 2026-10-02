@@ -39,6 +39,8 @@ export async function setToken(t: string | null): Promise<void> {
 // RN <Image> source for a persisted agent photo (`/api/agent/photos/…`) —
 // same-origin on the web app, so mobile must attach the bearer header itself.
 export function photoSource(image: string): { uri: string; headers?: Record<string, string> } {
+  // A photo just sent from this device is still its inline data URL.
+  if (image.startsWith("data:")) return { uri: image };
   const uri = image.startsWith("http") ? image : `${BASE}${image}`;
   return { uri, headers: { ...CLIENT_HEADERS, ...(cachedToken ? { authorization: `Bearer ${cachedToken}` } : {}) } };
 }
@@ -345,11 +347,85 @@ export async function setReminderEnabled(id: string, enabled: boolean): Promise<
   if (!r.ok) throw new Error(`setReminderEnabled → ${r.status}`);
 }
 
-// ---- Logging (used by the Apple Health sync) ----
-export async function logWeight(weightKg: number, note?: string): Promise<void> {
-  const r = await req(`/api/weight`, { method: "POST", body: JSON.stringify({ weightKg, note }) });
-  if (!r.ok) throw new Error(`logWeight → ${r.status}`);
+// Turn a failed response into the error the screens already branch on
+// (unauthorized / subscription required), else the worker's own message.
+async function fail(r: Response, label: string): Promise<never> {
+  if (r.status === 401) throw new Error("unauthorized");
+  if (r.status === 402) throw new Error("subscription required");
+  const b = (await r.json().catch(() => ({}))) as { error?: string };
+  throw new Error(b.error ?? `${label} → ${r.status}`);
 }
+
+// ---- Body: weigh-ins and measurements (same endpoints as the web app) ----
+export type WeightReading = {
+  id: number;
+  ts: number;
+  weightKg: number;
+  bodyFatPct: number | null;
+  note: string | null;
+  source: string;
+};
+export type Measurement = { id: number; ts: number; site: string; valueCm: number; source: string };
+
+/** Up to 365 weigh-ins, newest first. */
+export async function listWeight(): Promise<WeightReading[]> {
+  const r = await req(`/api/weight`);
+  if (!r.ok) return fail(r, "weight");
+  return r.json() as Promise<WeightReading[]>;
+}
+
+// Also used by the Apple Health sync (weight + note only).
+export async function logWeight(weightKg: number, note?: string | null, bodyFatPct?: number | null): Promise<void> {
+  const r = await req(`/api/weight`, { method: "POST", body: JSON.stringify({ weightKg, bodyFatPct, note }) });
+  if (!r.ok) return fail(r, "logWeight");
+}
+
+export async function setWeightNote(id: number, note: string | null): Promise<void> {
+  const r = await req(`/api/weight/${id}`, { method: "PATCH", body: JSON.stringify({ note }) });
+  if (!r.ok) return fail(r, "weight note");
+}
+
+/** Up to 500 measurements, newest first. */
+export async function listMeasurements(): Promise<Measurement[]> {
+  const r = await req(`/api/measurements`);
+  if (!r.ok) return fail(r, "measurements");
+  return r.json() as Promise<Measurement[]>;
+}
+
+export async function addMeasurement(site: string, valueCm: number): Promise<void> {
+  const r = await req(`/api/measurements`, { method: "POST", body: JSON.stringify({ site, valueCm }) });
+  if (!r.ok) return fail(r, "addMeasurement");
+}
+
+// ---- Food log (same endpoints as the web FoodLog card) ----
+export type LoggedItem = { id: number; name: string; kcal: number; proteinG: number };
+export type Meal = { id: string; note: string | null; createdAt: number; photoKeys: string[]; items: LoggedItem[] };
+
+/** Meals logged on a local YYYY-MM-DD day, newest first. */
+export async function listMeals(date: string): Promise<Meal[]> {
+  const r = await req(`/api/nutrition/meals?date=${date}`);
+  if (!r.ok) return fail(r, "meals");
+  return r.json() as Promise<Meal[]>;
+}
+
+export async function deleteMeal(id: string): Promise<void> {
+  const r = await req(`/api/nutrition/meals/${id}`, { method: "DELETE" });
+  if (!r.ok) return fail(r, "deleteMeal");
+}
+
+export async function deleteMealItem(id: number): Promise<void> {
+  const r = await req(`/api/nutrition/items/${id}`, { method: "DELETE" });
+  if (!r.ok) return fail(r, "deleteItem");
+}
+
+/** Partial edit of a logged item; the worker recomputes the day's totals. */
+export async function editMealItem(id: number, patch: { name?: string; kcal?: number; proteinG?: number }): Promise<void> {
+  const r = await req(`/api/nutrition/items/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+  if (!r.ok) return fail(r, "editItem");
+}
+
+/** <Image> source for a meal photo key (owner-scoped, so it needs the bearer). */
+export const mealPhotoSource = (key: string) => photoSource(`/api/nutrition/photo/${key}`);
 
 // Same freeform-description path the agent's log_workout tool uses: the worker
 // parses the text into a normalized workout row and logs it.
@@ -402,4 +478,9 @@ export async function appleVerify(transactionId: string): Promise<AppleVerifyRes
 }
 
 export const kgToLb = (kg: number) => kg * 2.2046226218;
+export const lbToKg = (lb: number) => lb / 2.2046226218;
 export const cmToIn = (cm: number) => cm / 2.54;
+export const inToCm = (inch: number) => inch * 2.54;
+
+/** Local calendar day as YYYY-MM-DD (the key meals are logged under). */
+export const todayLocal = () => new Date().toLocaleDateString("en-CA");

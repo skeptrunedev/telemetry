@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, Pressable, StyleSheet, BackHandler, Platform, Linking, Alert } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
-import { C } from "./src/theme";
+import { makeStyles, useTheme, ThemeProvider, type Palette, type ThemePref } from "./src/theme";
 import {
   getToken,
   setToken,
@@ -16,6 +16,7 @@ import {
 import { SignIn } from "./src/SignIn";
 import { Today } from "./src/Today";
 import { Agent } from "./src/Agent";
+import { Body } from "./src/Body";
 import { Drawer, DrawerView } from "./src/Drawer";
 import { Paywall } from "./src/Paywall";
 import { reconcilePendingTransactions, watchTransactions } from "./src/iap";
@@ -42,7 +43,17 @@ const DELETE_ACCOUNT_WARNING =
 
 type Session = { key: string; convId: string | null; messages: ChatMessage[] };
 
+const THEME_OPTIONS: { pref: ThemePref; label: string }[] = [
+  { pref: "system", label: "System" },
+  { pref: "light", label: "Light" },
+  { pref: "dark", label: "Dark" },
+];
+
+const TITLES: Record<DrawerView, string> = { today: "Today", body: "Body", coach: "Agent" };
+
 function Shell() {
+  const s = useS();
+  const { c, scheme, pref, setPref } = useTheme();
   const insets = useSafeAreaInsets();
   const [ready, setReady] = useState(false);
   const [authed, setAuthed] = useState(false);
@@ -120,16 +131,21 @@ function Shell() {
     });
   }, [authed]);
 
-  // Android back: close the drawer / avatar menu before leaving the app.
+  // Android back: close the drawer / avatar menu, then step back from Body or
+  // Agent to Today, before leaving the app.
   useEffect(() => {
-    if (!drawerOpen && !menuOpen) return;
+    if (!drawerOpen && !menuOpen && view === "today") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      setDrawerOpen(false);
-      setMenuOpen(false);
+      if (drawerOpen || menuOpen) {
+        setDrawerOpen(false);
+        setMenuOpen(false);
+      } else {
+        setView("today");
+      }
       return true;
     });
     return () => sub.remove();
-  }, [drawerOpen, menuOpen]);
+  }, [drawerOpen, menuOpen, view]);
 
   const signOut = useCallback(async () => {
     setMenuOpen(false);
@@ -196,11 +212,17 @@ function Shell() {
     loadConversations();
   };
 
-  if (!ready) return <View style={s.boot} />;
+  // Light content on the dark theme, dark content on the light one.
+  const statusBar = <StatusBar style={scheme === "dark" ? "light" : "dark"} />;
+  // Every system bar and cutout is padded off: in landscape the nav bar or
+  // camera cutout sits on a side, so left/right matter as much as top/bottom.
+  const sideInsets = { paddingLeft: insets.left, paddingRight: insets.right };
+
+  if (!ready) return <View style={s.boot}>{statusBar}</View>;
   if (!authed)
     return (
-      <View style={s.boot}>
-        <StatusBar style="light" />
+      <View style={[s.boot, sideInsets, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        {statusBar}
         <SignIn onSignedIn={() => setAuthed(true)} />
       </View>
     );
@@ -221,13 +243,13 @@ function Shell() {
 
   return (
     <View style={s.root}>
-      <StatusBar style="light" />
+      {statusBar}
 
-      <View style={[s.topbar, { paddingTop: insets.top }]}>
+      <View style={[s.topbar, { paddingTop: insets.top, paddingLeft: 10 + insets.left, paddingRight: 10 + insets.right }]}>
         <Pressable style={s.iconBtn} onPress={() => setDrawerOpen(true)} accessibilityLabel="Menu">
-          <PanelLeftIcon size={20} color={C.muted} />
+          <PanelLeftIcon size={20} color={c.muted} />
         </Pressable>
-        <Text style={s.topbarTitle}>{view === "coach" ? "Agent" : "Today"}</Text>
+        <Text style={s.topbarTitle}>{TITLES[view]}</Text>
         <Pressable
           style={s.avatar}
           onPress={() => setMenuOpen((v) => !v)}
@@ -238,11 +260,17 @@ function Shell() {
         </Pressable>
       </View>
 
-      <View style={s.body}>
+      <View style={[s.body, sideInsets]}>
         {blocked ? (
           <Paywall onActivated={() => setBlocked(false)} />
         ) : view === "today" ? (
-          <Today onAuthError={onAuthError} onSubscriptionRequired={HAS_PAYWALL ? () => setBlocked(true) : undefined} />
+          <Today
+            onAuthError={onAuthError}
+            onSubscriptionRequired={HAS_PAYWALL ? () => setBlocked(true) : undefined}
+            onOpenBody={() => navigate("body")}
+          />
+        ) : view === "body" ? (
+          <Body onAuthError={onAuthError} onSubscriptionRequired={HAS_PAYWALL ? () => setBlocked(true) : undefined} />
         ) : (
           <Agent
             key={session.key}
@@ -257,8 +285,24 @@ function Shell() {
       {menuOpen && (
         <>
           <Pressable style={s.menuBackdrop} onPress={() => setMenuOpen(false)} accessibilityLabel="Close account menu" />
-          <View style={[s.menu, { top: insets.top + TOPBAR_H - 4 }]}>
+          <View style={[s.menu, { top: insets.top + TOPBAR_H - 4, right: 10 + insets.right }]}>
             <Text style={s.menuEmail}>{email ?? "…"}</Text>
+            <Text style={s.menuSection}>APPEARANCE</Text>
+            <View style={s.segment} accessibilityRole="radiogroup" accessibilityLabel="Appearance">
+              {THEME_OPTIONS.map((o) => (
+                <Pressable
+                  key={o.pref}
+                  style={[s.segmentItem, pref === o.pref && s.segmentItemOn]}
+                  onPress={() => setPref(o.pref)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: pref === o.pref }}
+                  accessibilityLabel={`${o.label} appearance`}
+                >
+                  <Text style={[s.segmentText, pref === o.pref && s.segmentTextOn]}>{o.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={s.menuDivider} />
             <Pressable style={s.menuItem} onPress={signOut}>
               <Text style={s.menuItemText}>Sign out</Text>
             </Pressable>
@@ -295,34 +339,37 @@ function Shell() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <Shell />
+      <ThemeProvider>
+        <Shell />
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
 
-const s = StyleSheet.create({
+const useS = makeStyles((C: Palette) =>
+  StyleSheet.create({
   boot: { flex: 1, backgroundColor: C.bg },
   root: { flex: 1, backgroundColor: C.bg },
   topbar: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    paddingHorizontal: 10, backgroundColor: C.bg,
+    backgroundColor: C.bg,
   },
   iconBtn: { width: 38, height: TOPBAR_H, alignItems: "center", justifyContent: "center", borderRadius: 8 },
   topbarTitle: { flex: 1, color: C.fg, fontSize: 15.5, fontWeight: "600" },
   avatar: {
     width: 30, height: 30, borderRadius: 15, marginRight: 4,
-    borderWidth: 1, borderColor: C.line, backgroundColor: "#26282b",
+    borderWidth: 1, borderColor: C.line, backgroundColor: C.raised,
     alignItems: "center", justifyContent: "center",
   },
   avatarText: { color: C.muted, fontFamily: "monospace", fontSize: 12, fontWeight: "600" },
-  // Cap the reading width so iPad shows a centered column instead of a
-  // phone layout stretched across 13 inches. No effect on phones.
-  body: { flex: 1, width: "100%", maxWidth: 720, alignSelf: "center" },
+  // Full window width in every orientation; screens lay out one or two
+  // columns from the width they get (src/layout.ts).
+  body: { flex: 1 },
   menuBackdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   menu: {
-    position: "absolute", right: 10, minWidth: 210,
-    backgroundColor: "#26282b", borderWidth: 1, borderColor: C.line, borderRadius: 14, padding: 6,
-    shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: { width: 4, height: 4 }, elevation: 8,
+    position: "absolute", minWidth: 230,
+    backgroundColor: C.raised, borderWidth: 1, borderColor: C.line, borderRadius: 14, padding: 6,
+    shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 10, shadowOffset: { width: 4, height: 4 }, elevation: 8,
   },
   menuEmail: {
     color: C.muted, fontFamily: "monospace", fontSize: 11,
@@ -331,5 +378,13 @@ const s = StyleSheet.create({
   },
   menuItem: { marginTop: 5, paddingVertical: 10, paddingHorizontal: 9, borderRadius: 10 },
   menuItemText: { color: C.fg, fontSize: 14.5 },
-  menuItemDanger: { color: C.attention },
-});
+  menuItemDanger: { color: C.error },
+  menuSection: { color: C.muted, fontFamily: "monospace", fontSize: 10, letterSpacing: 1, paddingHorizontal: 9, paddingTop: 10, paddingBottom: 6 },
+  segment: { flexDirection: "row", marginHorizontal: 6, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 2, gap: 2 },
+  segmentItem: { flex: 1, alignItems: "center", paddingVertical: 7, borderRadius: 8 },
+  segmentItemOn: { backgroundColor: C.amber },
+  segmentText: { color: C.fg, fontSize: 13 },
+  segmentTextOn: { color: C.amberInk, fontWeight: "700" },
+  menuDivider: { height: 1, backgroundColor: C.line, marginTop: 10, marginHorizontal: 3 },
+  }),
+);

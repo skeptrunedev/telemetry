@@ -6,7 +6,7 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Markdown from "react-native-markdown-display";
-import { C } from "./theme";
+import { makeStyles, useTheme, type Palette } from "./theme";
 import { agentStream, photoSource, ChatMessage, ChatPart } from "./api";
 
 // Persisted conversations may carry parts arrays (text + photos the web app
@@ -17,6 +17,8 @@ const textOf = (m: ChatMessage): string =>
     : m.content.map((p) => (p.type === "text" ? p.text : "")).filter(Boolean).join("\n");
 
 function Bubble({ item }: { item: ChatMessage }) {
+  const s = useS();
+  const md = useMd();
   const user = item.role === "user";
   const parts = typeof item.content === "string" ? null : item.content;
   const text = textOf(item);
@@ -61,9 +63,11 @@ const TOOL_LABELS: Record<string, string> = {
 const THINKING = "Thinking";
 
 function Activity({ label }: { label: string }) {
+  const s = useS();
+  const { c } = useTheme();
   return (
     <View style={[s.bubble, s.assistant, s.activity]} accessibilityRole="progressbar" accessibilityLabel={label}>
-      <ActivityIndicator color={C.muted} size="small" />
+      <ActivityIndicator color={c.muted} size="small" />
       <Text style={s.activityText}>{label}</Text>
     </View>
   );
@@ -114,6 +118,8 @@ export function Agent({
   // first token and between tool calls, a tool label while one runs, and
   // nothing while reply text streams in.
   const [activity, setActivity] = useState<string | null>(null);
+  const s = useS();
+  const { c } = useTheme();
   const list = useRef<FlatList<ChatMessage>>(null);
   const convIdRef = useRef<string | null>(initialConversationId);
   const insets = useSafeAreaInsets();
@@ -229,7 +235,7 @@ export function Agent({
           <TextInput
             style={[s.input, Platform.OS === "web" && WEB_NO_RING]}
             placeholder="What are you thinking of eating?"
-            placeholderTextColor={C.muted}
+            placeholderTextColor={c.muted}
             value={input}
             onChangeText={setInput}
             onFocus={() => setFocused(true)}
@@ -247,16 +253,25 @@ export function Agent({
               <Text style={s.attachText}>+</Text>
             </Pressable>
             <Pressable style={[s.send, !canSend && s.sendDim]} onPress={send} disabled={!canSend}>
-              {busy ? <ActivityIndicator color={C.amberInk} size="small" /> : <Text style={s.sendText}>↑</Text>}
+              {busy ? <ActivityIndicator color={c.amberInk} size="small" /> : <Text style={s.sendText}>↑</Text>}
             </Pressable>
           </View>
         </View>
       </View>
 
       {/* Two-option source sheet, same as the web composer's. */}
-      <Modal visible={sheetOpen} transparent animationType="fade" onRequestClose={() => setSheetOpen(false)}>
+      <Modal
+        visible={sheetOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSheetOpen(false)}
+        supportedOrientations={["portrait", "landscape"]}
+      >
         <Pressable style={s.sheetBackdrop} onPress={() => setSheetOpen(false)}>
-          <Pressable style={[s.sheet, { paddingBottom: 12 + insets.bottom }]} onPress={(e) => e.stopPropagation()}>
+          <Pressable
+            style={[s.sheet, { paddingBottom: 12 + insets.bottom, marginLeft: insets.left, marginRight: insets.right }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             {Platform.OS !== "web" && (
               <Pressable style={s.sheetOption} onPress={pickCamera}>
                 <Text style={s.sheetOptionText}>Take photo</Text>
@@ -272,7 +287,8 @@ export function Agent({
   );
 }
 
-const s = StyleSheet.create({
+const useS = makeStyles((C: Palette) =>
+  StyleSheet.create({
   wrap: { flex: 1, backgroundColor: C.bg },
   list: { flex: 1 },
   listContent: { padding: 16, gap: 10, flexGrow: 1 },
@@ -289,7 +305,7 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: C.line, borderRadius: 22, backgroundColor: C.card,
     paddingHorizontal: 8, paddingTop: 4, paddingBottom: 7,
   },
-  composerFocused: { borderColor: C.amber },
+  composerFocused: { borderColor: C.amberText },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 6, paddingTop: 8 },
   chip: { position: "relative" },
   chipThumb: { width: 72, height: 72, borderRadius: 12, borderWidth: 1, borderColor: C.line, backgroundColor: C.bg },
@@ -311,26 +327,29 @@ const s = StyleSheet.create({
   send: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.amber, alignItems: "center", justifyContent: "center" },
   sendDim: { opacity: 0.4 },
   sendText: { color: C.amberInk, fontSize: 20, fontWeight: "800" },
-  sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  sheetBackdrop: { flex: 1, backgroundColor: C.scrim, justifyContent: "flex-end", alignItems: "center" },
   sheet: {
+    width: "100%", maxWidth: 560,
     backgroundColor: C.card, borderTopLeftRadius: 18, borderTopRightRadius: 18,
     borderWidth: 1, borderColor: C.line, paddingTop: 6, paddingHorizontal: 8,
   },
   sheetOption: { minHeight: 52, justifyContent: "center", paddingHorizontal: 14 },
   sheetOptionBorder: { borderTopWidth: 1, borderTopColor: C.line },
   sheetOptionText: { color: C.fg, fontSize: 16 },
-});
+  }),
+);
 
-// Dark-theme markdown for assistant replies. body's text props (color, size,
+// Themed markdown for assistant replies. body's text props (color, size,
 // line height) cascade down to every text leaf via the renderer, matching the
 // ~15.5px bubble text; only element-specific tweaks are overridden below.
 const MONO = Platform.OS === "ios" ? "Menlo" : "monospace";
-const md = StyleSheet.create({
+const useMd = makeStyles((C: Palette) =>
+  StyleSheet.create({
   body: { color: C.fg, fontSize: 15.5, lineHeight: 21 },
   paragraph: { marginTop: 0, marginBottom: 8 },
   strong: { fontWeight: "700", color: C.fg },
   em: { fontStyle: "italic" },
-  link: { color: C.amber, textDecorationLine: "underline" },
+  link: { color: C.amberText, textDecorationLine: "underline" },
   heading1: { color: C.fg, fontSize: 20, fontWeight: "700", marginBottom: 6 },
   heading2: { color: C.fg, fontSize: 18, fontWeight: "700", marginBottom: 6 },
   heading3: { color: C.fg, fontSize: 16.5, fontWeight: "700", marginBottom: 4 },
@@ -356,4 +375,5 @@ const md = StyleSheet.create({
   },
   table: { borderColor: C.line, borderRadius: 6 },
   tr: { borderColor: C.line },
-});
+  }),
+);

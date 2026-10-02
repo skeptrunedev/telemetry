@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, Linking, ActivityIndicator, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { C } from "./theme";
+import { makeStyles, useTheme, type Palette } from "./theme";
 import { isIapAvailable } from "../modules/skcal-iap";
 import { buySubscription, checkIapReadiness, restoreSubscription, type IapReadiness } from "./iap";
 
@@ -23,6 +23,8 @@ const PRIVACY_URL = "https://skcal.fit/privacy";
 type Note = { tone: "info" | "bad"; text: string } | null;
 
 export function Paywall({ onActivated }: { onActivated: () => void }) {
+  const s = useS();
+  const { c } = useTheme();
   const insets = useSafeAreaInsets();
   const [readiness, setReadiness] = useState<IapReadiness | null>(null);
   const [busy, setBusy] = useState<"buy" | "restore" | null>(null);
@@ -88,7 +90,7 @@ export function Paywall({ onActivated }: { onActivated: () => void }) {
 
         {readiness === null ? (
           <View style={s.loadingRow}>
-            <ActivityIndicator color={C.amber} />
+            <ActivityIndicator color={c.amber} />
             <Text style={s.muted}>checking the App Store</Text>
           </View>
         ) : (
@@ -155,7 +157,8 @@ export function Paywall({ onActivated }: { onActivated: () => void }) {
   );
 }
 
-const s = StyleSheet.create({
+const useS = makeStyles((C: Palette) =>
+  StyleSheet.create({
   scroll: { flex: 1, backgroundColor: C.bg },
   content: { padding: 16, gap: 14 },
   card: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.line, padding: 16 },
@@ -169,7 +172,7 @@ const s = StyleSheet.create({
     marginTop: 16, paddingTop: 13, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line,
   },
   planName: { color: C.fg, fontSize: 15, fontWeight: "600" },
-  planPrice: { color: C.amber, fontSize: 15, fontFamily: "monospace" },
+  planPrice: { color: C.amberText, fontSize: 15, fontFamily: "monospace" },
   cta: {
     marginTop: 14, borderRadius: 999, backgroundColor: C.amber,
     paddingVertical: 13, alignItems: "center",
@@ -184,4 +187,5 @@ const s = StyleSheet.create({
   noteBad: { color: C.attention },
   restore: { alignSelf: "center", paddingVertical: 10, paddingHorizontal: 14 },
   restoreText: { color: C.muted, fontSize: 11, fontFamily: "monospace", letterSpacing: 1.2 },
-});
+  }),
+);

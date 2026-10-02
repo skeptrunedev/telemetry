@@ -1,16 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import {
   View, Text, TextInput, Pressable, ScrollView, StyleSheet,
-  Animated, Easing, Alert, Dimensions, AccessibilityInfo,
+  Animated, Easing, Alert, AccessibilityInfo, Platform, useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { C } from "./theme";
+import { makeStyles, useTheme } from "./theme";
 import { Conversation } from "./api";
-import { SunIcon, MessageSquareIcon, SquarePenIcon, SearchIcon, TrashIcon } from "./icons";
+import { SunIcon, MessageSquareIcon, SquarePenIcon, SearchIcon, TrashIcon, ActivityIcon } from "./icons";
 
-export type DrawerView = "today" | "coach";
-
-const DRAWER_W = Math.min(Dimensions.get("window").width * 0.84, 320);
+export type DrawerView = "today" | "body" | "coach";
 
 // "3m" / "2h" / "5d" ago, matching a compact recents list.
 function relTime(ts: number): string {
@@ -23,6 +21,7 @@ function relTime(ts: number): string {
 }
 
 function NavItem({ icon, label, active, onPress }: { icon: React.ReactNode; label: string; active?: boolean; onPress: () => void }) {
+  const s = useS();
   return (
     <Pressable style={[s.navItem, active && s.navItemActive]} onPress={onPress} accessibilityRole="button">
       <View style={s.navItemIcon}>{icon}</View>
@@ -58,7 +57,13 @@ export function Drawer({
   onOpenConversation: (c: Conversation) => void;
   onDeleteConversation: (id: string) => void;
 }) {
+  const s = useS();
+  const { c } = useTheme();
   const insets = useSafeAreaInsets();
+  // Recomputed on rotation; the left inset (cutout or side nav bar in
+  // landscape) is padded inside the panel so its contents stay clear of it.
+  const { width } = useWindowDimensions();
+  const DRAWER_W = Math.min(width * 0.84, 320) + insets.left;
   const progress = useRef(new Animated.Value(0)).current;
   // Keep mounted through the slide-out so the close animation plays.
   const [shown, setShown] = useState(open);
@@ -83,10 +88,10 @@ export function Drawer({
 
   if (!shown) return null;
 
-  const confirmDelete = (c: Conversation) =>
-    Alert.alert("Delete conversation?", c.title, [
+  const confirmDelete = (conv: Conversation) =>
+    Alert.alert("Delete conversation?", conv.title, [
       { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => onDeleteConversation(c.id) },
+      { text: "Delete", style: "destructive", onPress: () => onDeleteConversation(conv.id) },
     ]);
 
   return (
@@ -98,8 +103,10 @@ export function Drawer({
         style={[
           s.drawer,
           {
+            width: DRAWER_W,
             paddingTop: insets.top + 8,
             paddingBottom: insets.bottom + 8,
+            paddingLeft: insets.left + 10,
             transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [-DRAWER_W, 0] }) }],
           },
         ]}
@@ -109,13 +116,19 @@ export function Drawer({
         </View>
 
         <NavItem
-          icon={<SunIcon size={19} color={view === "today" ? C.amber : C.muted} />}
+          icon={<SunIcon size={19} color={view === "today" ? c.amberText : c.muted} />}
           label="Today"
           active={view === "today"}
           onPress={() => onNavigate("today")}
         />
         <NavItem
-          icon={<MessageSquareIcon size={19} color={view === "coach" ? C.amber : C.muted} />}
+          icon={<ActivityIcon size={19} color={view === "body" ? c.amberText : c.muted} />}
+          label="Body"
+          active={view === "body"}
+          onPress={() => onNavigate("body")}
+        />
+        <NavItem
+          icon={<MessageSquareIcon size={19} color={view === "coach" ? c.amberText : c.muted} />}
           label="Agent"
           active={view === "coach"}
           onPress={() => onNavigate("coach")}
@@ -123,15 +136,15 @@ export function Drawer({
 
         <View style={s.divider} />
 
-        <NavItem icon={<SquarePenIcon size={19} color={C.muted} />} label="New chat" onPress={onNewChat} />
+        <NavItem icon={<SquarePenIcon size={19} color={c.muted} />} label="New chat" onPress={onNewChat} />
         <View style={s.searchWrap}>
           <View style={s.searchIcon}>
-            <SearchIcon size={15} color={C.muted} />
+            <SearchIcon size={15} color={c.muted} />
           </View>
           <TextInput
-            style={s.search}
+            style={[s.search, Platform.OS === "web" && WEB_NO_RING]}
             placeholder="Search chats"
-            placeholderTextColor={C.muted}
+            placeholderTextColor={c.muted}
             value={search}
             onChangeText={onSearch}
           />
@@ -141,18 +154,18 @@ export function Drawer({
           {conversations.length === 0 && (
             <Text style={s.empty}>{search.trim() ? "No matches" : "No conversations yet"}</Text>
           )}
-          {conversations.map((c) => (
-            <View key={c.id} style={[s.recent, activeId === c.id && s.recentActive]}>
+          {conversations.map((conv) => (
+            <View key={conv.id} style={[s.recent, activeId === conv.id && s.recentActive]}>
               <Pressable
                 style={s.recentBtn}
-                onPress={() => onOpenConversation(c)}
-                onLongPress={() => confirmDelete(c)}
+                onPress={() => onOpenConversation(conv)}
+                onLongPress={() => confirmDelete(conv)}
               >
-                <Text style={s.recentTitle} numberOfLines={1}>{c.title}</Text>
-                <Text style={s.recentTime}>{relTime(c.updatedAt)}</Text>
+                <Text style={s.recentTitle} numberOfLines={1}>{conv.title}</Text>
+                <Text style={s.recentTime}>{relTime(conv.updatedAt)}</Text>
               </Pressable>
-              <Pressable style={s.recentDel} onPress={() => confirmDelete(c)} accessibilityLabel="Delete conversation">
-                <TrashIcon size={15} color={C.muted} />
+              <Pressable style={s.recentDel} onPress={() => confirmDelete(conv)} accessibilityLabel="Delete conversation">
+                <TrashIcon size={15} color={c.muted} />
               </Pressable>
             </View>
           ))}
@@ -162,34 +175,39 @@ export function Drawer({
   );
 }
 
-const s = StyleSheet.create({
-  scrim: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.5)" },
+// RNW draws a UA focus ring the border already replaces.
+const WEB_NO_RING = { outlineStyle: "none", outlineWidth: 0 } as unknown as object;
+
+const useS = makeStyles((c) =>
+  StyleSheet.create({
+  scrim: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: c.scrim },
   drawer: {
-    position: "absolute", top: 0, bottom: 0, left: 0, width: DRAWER_W,
-    backgroundColor: C.bg, paddingHorizontal: 10,
-    borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: "rgba(255,255,255,0.07)",
+    position: "absolute", top: 0, bottom: 0, left: 0,
+    backgroundColor: c.bg, paddingHorizontal: 10,
+    borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: c.line,
   },
   head: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 8 },
-  brand: { color: C.fg, fontFamily: "monospace", letterSpacing: 3, fontSize: 14, fontWeight: "700" },
+  brand: { color: c.fg, fontFamily: "monospace", letterSpacing: 3, fontSize: 14, fontWeight: "700" },
   navItem: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 9 },
-  navItemActive: { backgroundColor: "rgba(255,255,255,0.1)" },
+  navItemActive: { backgroundColor: c.selected },
   navItemIcon: { width: 20, alignItems: "center" },
-  navItemLabel: { color: C.fg, fontSize: 15 },
-  divider: { height: 1, backgroundColor: C.line, marginVertical: 8, marginHorizontal: 3 },
+  navItemLabel: { color: c.fg, fontSize: 15 },
+  divider: { height: 1, backgroundColor: c.line, marginVertical: 8, marginHorizontal: 3 },
   searchWrap: { position: "relative", justifyContent: "center", marginTop: 2 },
   searchIcon: { position: "absolute", left: 11, zIndex: 1 },
   search: {
-    backgroundColor: "#1a1c1e", borderWidth: 1, borderColor: C.line, borderRadius: 10,
-    color: C.fg, fontSize: 14.5, paddingVertical: 8, paddingLeft: 34, paddingRight: 12,
+    backgroundColor: c.field, borderWidth: 1, borderColor: c.line, borderRadius: 10,
+    color: c.fg, fontSize: 14.5, paddingVertical: 8, paddingLeft: 34, paddingRight: 12,
   },
-  recentsLabel: { color: C.muted, fontFamily: "monospace", fontSize: 10, letterSpacing: 1, marginTop: 12, marginBottom: 2, paddingHorizontal: 4 },
+  recentsLabel: { color: c.muted, fontFamily: "monospace", fontSize: 10, letterSpacing: 1, marginTop: 12, marginBottom: 2, paddingHorizontal: 4 },
   recents: { flex: 1 },
   recentsContent: { gap: 1 },
-  empty: { color: C.muted, fontSize: 13, padding: 6 },
+  empty: { color: c.muted, fontSize: 13, padding: 6 },
   recent: { flexDirection: "row", alignItems: "center", borderRadius: 8 },
-  recentActive: { backgroundColor: "rgba(255,255,255,0.08)" },
+  recentActive: { backgroundColor: c.selected },
   recentBtn: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 9, paddingHorizontal: 8 },
-  recentTitle: { flex: 1, color: C.fg, fontSize: 14 },
-  recentTime: { color: C.muted, fontFamily: "monospace", fontSize: 11 },
+  recentTitle: { flex: 1, color: c.fg, fontSize: 14 },
+  recentTime: { color: c.muted, fontFamily: "monospace", fontSize: 11 },
   recentDel: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
-});
+  }),
+);

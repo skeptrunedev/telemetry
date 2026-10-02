@@ -9,7 +9,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
 } from "react-native";
-import { C } from "./theme";
+import { makeStyles, useTheme, type Palette } from "./theme";
 import { sendOtp, verifyOtp } from "./api";
 
 function normalizePhone(input: string): string | null {
@@ -22,6 +22,8 @@ function normalizePhone(input: string): string | null {
 }
 
 export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
+  const s = useS();
+  const { c } = useTheme();
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [stage, setStage] = useState<"phone" | "code">("phone");
@@ -82,7 +84,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
             <TextInput
               style={s.input}
               placeholder="(415) 555-0132"
-              placeholderTextColor={C.muted}
+              placeholderTextColor={c.muted}
               keyboardType="phone-pad"
               autoComplete="tel"
               value={phone}
@@ -90,7 +92,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
               editable={!busy}
             />
             <Pressable style={[s.btn, busy && s.btnDim]} onPress={send} disabled={busy}>
-              {busy ? <ActivityIndicator color={C.amberInk} /> : <Text style={s.btnText}>Text me a code</Text>}
+              {busy ? <ActivityIndicator color={c.amberInk} /> : <Text style={s.btnText}>Text me a code</Text>}
             </Pressable>
           </>
         ) : (
@@ -98,7 +100,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
             <TextInput
               style={s.input}
               placeholder="123456"
-              placeholderTextColor={C.muted}
+              placeholderTextColor={c.muted}
               keyboardType="number-pad"
               autoComplete="one-time-code"
               value={code}
@@ -106,7 +108,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
               editable={!busy}
             />
             <Pressable style={[s.btn, busy && s.btnDim]} onPress={verify} disabled={busy}>
-              {busy ? <ActivityIndicator color={C.amberInk} /> : <Text style={s.btnText}>Sign in</Text>}
+              {busy ? <ActivityIndicator color={c.amberInk} /> : <Text style={s.btnText}>Sign in</Text>}
             </Pressable>
             <Pressable onPress={() => setStage("phone")} disabled={busy}>
               <Text style={s.ghost}>Use a different number</Text>
@@ -120,20 +122,23 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   );
 }
 
-const s = StyleSheet.create({
+const useS = makeStyles((C: Palette) =>
+  StyleSheet.create({
   wrap: { flex: 1, backgroundColor: C.bg },
   scroll: { flexGrow: 1, justifyContent: "center", padding: 20 },
-  card: { backgroundColor: C.card, borderRadius: 18, padding: 24, borderWidth: 1, borderColor: C.line },
-  brand: { color: C.amber, fontFamily: "monospace", letterSpacing: 4, fontSize: 14, marginBottom: 14 },
+  // Capped so a landscape phone or tablet shows a form, not a banner.
+  card: { width: "100%", maxWidth: 480, alignSelf: "center", backgroundColor: C.card, borderRadius: 18, padding: 24, borderWidth: 1, borderColor: C.line },
+  brand: { color: C.amberText, fontFamily: "monospace", letterSpacing: 4, fontSize: 14, marginBottom: 14 },
   title: { color: C.fg, fontSize: 30, fontWeight: "800", marginBottom: 8 },
   sub: { color: C.muted, fontSize: 15, marginBottom: 20, lineHeight: 21 },
   input: {
-    borderWidth: 1, borderColor: C.amber, borderRadius: 12, color: C.fg,
+    borderWidth: 1, borderColor: C.amberText, borderRadius: 12, color: C.fg, backgroundColor: C.field,
     paddingHorizontal: 14, paddingVertical: 12, fontSize: 17, marginBottom: 12,
   },
   btn: { backgroundColor: C.amber, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   btnDim: { opacity: 0.6 },
   btnText: { color: C.amberInk, fontWeight: "700", fontSize: 16 },
   ghost: { color: C.muted, textAlign: "center", marginTop: 14, fontSize: 14 },
-  err: { color: "#ff8a70", marginTop: 12, fontSize: 14 },
-});
+  err: { color: C.error, marginTop: 12, fontSize: 14 },
+  }),
+);
