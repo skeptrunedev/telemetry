@@ -2439,6 +2439,26 @@ type CoachBlock =
 type CoachMsg = { role: "user" | "assistant"; content: string | CoachBlock[] };
 
 const DATA_URL_RE = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/;
+
+/**
+ * The image type its bytes say it is, or null when they match none of the four
+ * the model accepts. A photo's label can't be trusted: Android's image picker
+ * re-encodes a picked PNG as JPEG but still reports image/png, and the model
+ * rejects a label that disagrees with the bytes, which failed every such turn.
+ */
+function sniffImageType(base64: string): "image/jpeg" | "image/png" | "image/gif" | "image/webp" | null {
+  let head: string;
+  try {
+    head = atob(base64.slice(0, 16));
+  } catch {
+    return null;
+  }
+  if (head.startsWith("\xff\xd8\xff")) return "image/jpeg";
+  if (head.startsWith("\x89PNG\r\n\x1a\n")) return "image/png";
+  if (head.startsWith("GIF87a") || head.startsWith("GIF89a")) return "image/gif";
+  if (head.startsWith("RIFF") && head.slice(8, 12) === "WEBP") return "image/webp";
+  return null;
+}
 const AGENT_PHOTO_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const AGENT_PHOTO_URL_RE = /^\/api\/agent\/photos\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
@@ -2486,7 +2506,9 @@ function parseCoachMessages(raw: unknown): { messages: CoachMsg[] } | { error: s
           }
           const match = DATA_URL_RE.exec(part.image);
           if (!match) return { error: "images must be jpeg/png/webp/gif data URLs" };
-          blocks.push({ type: "image", mediaType: match[1], data: match[2] });
+          const actual = sniffImageType(match[2]);
+          if (!actual) return { error: "images must be jpeg/png/webp/gif" };
+          blocks.push({ type: "image", mediaType: actual, data: match[2] });
         }
       }
       if (!blocks.length) return { error: "each message needs content" };
@@ -2572,11 +2594,9 @@ async function resolveCoachImageRefs(
         blocks.push({ type: "text", text: "[photo unavailable]" });
         continue;
       }
-      blocks.push({
-        type: "image",
-        mediaType: obj.httpMetadata?.contentType ?? "image/jpeg",
-        data: bufToBase64(await obj.arrayBuffer()),
-      });
+      const data = bufToBase64(await obj.arrayBuffer());
+      // Photos saved before labels were checked can carry the wrong type.
+      blocks.push({ type: "image", mediaType: sniffImageType(data) ?? obj.httpMetadata?.contentType ?? "image/jpeg", data });
     }
     out.push({ role: m.role, content: blocks });
   }
@@ -3323,8 +3343,13 @@ app.post("/api/agent/stream", async (c) => {
           }
         }
         if (cancelled) return;
-        if (failure) controller.error(failure);
-        else controller.close();
+        if (failure) {
+          // The response is already a 200, so a failure partway through goes out
+          // as an event; the client shows it instead of waiting on a reply.
+          console.error(`coach stream failed: ${String(failure)}`);
+          send({ t: "error", message: "The coach couldn't finish that reply. Please try again." });
+        }
+        controller.close();
       };
       const done = run();
       try {

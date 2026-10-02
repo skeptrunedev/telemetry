@@ -147,6 +147,7 @@ export async function agent(messages: ChatMessage[]): Promise<string> {
 // concatenation of every text delta.
 type AgentEvent =
   | { t: "conversation"; id?: string }
+  | { t: "error"; message?: string }
   | { t: "text"; v?: string }
   | { t: "tool"; id?: string; name?: string; args?: unknown }
   | { t: "result"; id?: string; result?: unknown };
@@ -194,6 +195,7 @@ export async function agentStream(
   let buf = "";
   let reply = "";
   let savedId = conversationId;
+  let failure: string | null = null;
   const handle = (line: string) => {
     const s = line.trim();
     if (!s) return;
@@ -212,11 +214,14 @@ export async function agentStream(
       onTool?.(typeof ev.name === "string" ? ev.name : "", false);
     } else if (ev.t === "result") {
       onTool?.("", true);
+    } else if (ev.t === "error") {
+      failure = ev.message || "The coach couldn't finish that reply.";
     }
   };
 
   for (;;) {
-    const { done, value } = await reader.read();
+    // A reply that goes quiet this long is stuck: stop waiting and say so.
+    const { done, value } = await withTimeout(reader.read(), STREAM_IDLE_MS, () => reader.cancel().catch(() => {}));
     if (done) break;
     buf += decoder.decode(value, { stream: true });
     let nl: number;
@@ -226,7 +231,23 @@ export async function agentStream(
     }
   }
   if (buf.trim()) handle(buf);
+  if (failure) throw new Error(failure);
   return { reply, conversationId: savedId };
+}
+
+// Longest the reply stream may go without sending anything. Tool calls report
+// as they start, so a healthy reply is never silent anywhere near this long.
+const STREAM_IDLE_MS = 90_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => void): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      onTimeout();
+      reject(new Error("the coach took too long to answer"));
+    }, ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
 }
 
 // The buffered endpoint doesn't save, so the turn is saved here.

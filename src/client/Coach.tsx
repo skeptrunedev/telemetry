@@ -441,6 +441,10 @@ export function CoachThread({
           } else if (ev.t === "result") {
             const p = parts.find((x) => x.type === "tool-call" && x.toolCallId === String(ev.id));
             if (p && p.type === "tool-call") p.result = ev.result;
+          } else if (ev.t === "error") {
+            // The reply failed partway; say so rather than ending on silence.
+            cur = { type: "text", text: String((ev as { message?: unknown }).message ?? "The coach couldn't finish that reply. Please try again.") };
+            parts.push(cur);
           }
         };
 

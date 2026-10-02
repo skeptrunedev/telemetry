@@ -69,10 +69,14 @@ function Activity({ label }: { label: string }) {
   );
 }
 
-// Picker result → data URL the worker's vision path accepts directly.
+// Picker result → data URL the worker's vision path accepts directly. The
+// picker re-encodes what it returns as base64 (JPEG at quality < 1) but reports
+// the original file's type, so the label comes from the bytes, not mimeType.
+const imageTypeOf = (base64: string): string =>
+  base64.startsWith("/9j/") ? "image/jpeg" : base64.startsWith("iVBORw0KGgo") ? "image/png" : base64.startsWith("R0lGOD") ? "image/gif" : base64.startsWith("UklGR") ? "image/webp" : "image/jpeg";
 const toDataUrl = (a: ImagePicker.ImagePickerAsset): string | null => {
   if (a.uri.startsWith("data:")) return a.uri;
-  if (a.base64) return `data:${a.mimeType ?? "image/jpeg"};base64,${a.base64}`;
+  if (a.base64) return `data:${imageTypeOf(a.base64)};base64,${a.base64}`;
   return null;
 };
 
