@@ -6,7 +6,7 @@ import "./index.css";
 
 // PWA service worker: precaches hashed assets (and makes the app installable),
 // but NEVER serves the HTML shell — navigations always hit the network (see
-// navigateFallbackDenylist in vite.config.ts), so deploys can't leave a stale
+// HTML precache exclusion in vite.config.ts), so deploys can't leave a stale
 // shell pointing at 404'd asset hashes. Register + poll for updates (on load,
 // every 30 min, and when the tab regains focus) and apply them immediately.
 // Track the visual viewport so the chat view can shrink with the on-screen

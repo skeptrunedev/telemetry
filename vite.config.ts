@@ -14,13 +14,13 @@ export default defineConfig({
         clientsClaim: true,
         skipWaiting: true,
         cleanupOutdatedCaches: true,
-        // CRITICAL: never serve the HTML shell from the service worker. A
-        // cache-first shell on a frequently redeployed app goes stale and
-        // references asset hashes that have since 404'd, breaking the page.
-        // Denying ALL navigations means they always hit the network (the Worker
-        // serves index.html with no-cache), while hashed build assets stay
-        // precached for speed — which also keeps the app installable.
-        navigateFallbackDenylist: [/./],
+        // Never precache HTML: the precache route maps / to index.html even
+        // when the navigation fallback is denied. An old shell can outlive
+        // its hashed assets across a deploy and leave the page blank.
+        // Keep hashed assets cached, but fetch the shell from the Worker,
+        // which serves HTML with no-cache.
+        globIgnores: ["**/*.html"],
+        navigateFallback: null,
       },
       manifest: {
         name: "skcal",
